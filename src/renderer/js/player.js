@@ -75,6 +75,9 @@ class PlayerController {
         
         this.lyrics = metadata?.lyrics || null;
         
+        // Reset current position to 0 when loading a new song
+        this.currentPosition = 0;
+        
         // Load lyrics into karaoke renderer with song duration
         if (this.lyrics) {
             this.karaokeRenderer.loadLyrics(this.lyrics, this.songDuration);

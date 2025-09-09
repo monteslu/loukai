@@ -63,6 +63,7 @@ All time values are seconds (float). Use UTF-8 and LF newlines.
     "disc":  { "no": 1, "of": 1 },
     "year": "2020",
     "genre": "Pop",
+    "comment": "Optional comment about the song",
     "isrc": "US-XXX-20-00001",
     "musicbrainz": { "recording_id": "", "track_id": "", "release_id": "" },
     "source_filename": "InputFile.mp3",
@@ -96,6 +97,12 @@ All time values are seconds (float). Use UTF-8 and LF newlines.
       "end": 13.2,
       "text": "Hello world, this is a test",
       "disabled": false
+    },
+    {
+      "start": 12.0,
+      "end": 13.5,
+      "text": "(Hello world)",
+      "backup": true
     },
     {
       "start": 14.0,
@@ -153,13 +160,16 @@ Each lyric line in the `lines[]` array is an object with the following propertie
 | `end` | number | Yes | End time in seconds (float) |
 | `text` | string | Yes | Lyric text content |
 | `disabled` | boolean | No | If `true`, line is hidden during playback but preserved in editor. Defaults to `false` if omitted. |
+| `backup` | boolean | No | If `true`, line represents backup singer vocals. Defaults to `false` if omitted (lead singer). |
 
 **Notes:**
 - Time values must be non-negative and `end >= start`
 - Lines with `disabled: true` are filtered out during playback but remain visible in lyric editors
 - Lines without the `disabled` property are treated as enabled (`disabled: false`)
+- Lines with `backup: true` represent backup singer vocals; lines without this property are lead singer vocals
 - Empty `text` is permitted for instrumental sections
 - The `disabled` property enables selective lyric editing without losing original content
+- The `backup` property enables differentiation between lead and backup singer vocals for multi-singer songs
 
 ### 6.2 Metadata policy (ID3 ingestion & fallbacks)
 - Packers **MUST** attempt to read ID3v2.4/2.3/2.2 (and v1) from the **source MP3**.

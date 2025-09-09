@@ -457,7 +457,16 @@ class KaiPlayerApp {
                     <div class="info-label">Key:</div>
                     <div class="info-value">${metadata.key}</div>
                     <div class="info-label">Tempo:</div>
-                    <div class="info-value">${metadata.tempo} BPM</div>
+                    <div class="info-value">${metadata.tempo} BPM</div>`;
+        
+        // Add comment if it exists
+        if (metadata.comment && metadata.comment.trim()) {
+            html += `
+                    <div class="info-label">Comment:</div>
+                    <div class="info-value" style="white-space: pre-wrap; max-width: 400px; word-wrap: break-word;">${metadata.comment}</div>`;
+        }
+        
+        html += `
                 </div>
             </div>
             

@@ -47,6 +47,7 @@ class LyricsEditor {
         let endTime = 0;
         let text = '';
         let disabled = false;
+        let backup = false;
         
         console.log('Processing line:', index, line);
         
@@ -56,7 +57,8 @@ class LyricsEditor {
             endTime = line.end || line.end_time || (startTime + 3);
             text = line.text || line.lyrics || line.content || line.lyric || '';
             disabled = line.disabled === true;
-            console.log('Line timing:', { startTime, endTime, text, disabled });
+            backup = line.backup === true;
+            console.log('Line timing:', { startTime, endTime, text, disabled, backup });
         } else {
             text = line || '';
             startTime = index * 3;
@@ -64,8 +66,8 @@ class LyricsEditor {
             console.log('Simple line:', { startTime, endTime, text, disabled });
         }
         
-        // Update container class now that disabled is set
-        container.className = `lyric-line-editor ${disabled ? 'disabled' : ''}`;
+        // Update container class now that disabled and backup are set
+        container.className = `lyric-line-editor ${disabled ? 'disabled' : ''} ${backup ? 'backup' : ''}`;
         
         container.innerHTML = `
             <span class="line-number">${index + 1}</span>
@@ -75,6 +77,13 @@ class LyricsEditor {
                 <input type="number" class="time-input end-time" value="${endTime.toFixed(1)}" step="0.1" min="0">
             </div>
             <input type="text" class="text-input" value="${text}" placeholder="Enter lyrics...">
+            <div class="line-controls">
+                <label class="checkbox-label">
+                    <input type="checkbox" class="backup-checkbox" ${backup ? 'checked' : ''}>
+                    <span class="checkbox-custom"></span>
+                    Backup
+                </label>
+            </div>
             <div class="line-actions">
                 <button class="btn-icon toggle-btn ${!disabled ? 'toggle-enabled' : 'toggle-disabled'}" 
                         title="${!disabled ? 'Disable line' : 'Enable line'}">
@@ -94,6 +103,7 @@ class LyricsEditor {
         const startTimeInput = container.querySelector('.start-time');
         const endTimeInput = container.querySelector('.end-time');
         const textInput = container.querySelector('.text-input');
+        const backupCheckbox = container.querySelector('.backup-checkbox');
         const toggleBtn = container.querySelector('.toggle-btn');
         const deleteBtn = container.querySelector('.delete-btn');
         const addAfterBtn = container.querySelector('.add-after-btn');
@@ -112,6 +122,14 @@ class LyricsEditor {
         // Text input
         textInput.addEventListener('input', (e) => {
             this.updateLineData(index, 'text', e.target.value);
+        });
+        
+        // Backup checkbox
+        backupCheckbox.addEventListener('change', (e) => {
+            const isBackup = e.target.checked;
+            this.updateLineData(index, 'backup', isBackup);
+            
+            container.classList.toggle('backup', isBackup);
         });
         
         // Toggle enable/disable
@@ -176,7 +194,7 @@ class LyricsEditor {
             start: startTime,
             end: endTime,
             text: ''
-            // No disabled property - defaults to enabled
+            // No disabled or backup properties - defaults to enabled lead singer
         };
         
         this.lyricsData.splice(index + 1, 0, newLine);
@@ -196,7 +214,7 @@ class LyricsEditor {
             start: startTime,
             end: startTime + 3,
             text: ''
-            // No disabled property - defaults to enabled
+            // No disabled or backup properties - defaults to enabled lead singer
         };
         
         this.lyricsData.push(newLine);
@@ -228,6 +246,11 @@ class LyricsEditor {
             // Only include disabled property if it's true
             if (line.disabled !== true) {
                 delete cleanLine.disabled;
+            }
+            
+            // Only include backup property if it's true
+            if (line.backup !== true) {
+                delete cleanLine.backup;
             }
             
             return cleanLine;

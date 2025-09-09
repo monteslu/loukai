@@ -16,6 +16,9 @@ class KaraokeRenderer {
         this.animationFrame = null;
         this.isPlaying = false;
         
+        // Animation tracking for backup singers
+        this.backupAnimations = new Map(); // lineIndex -> { alpha, fadeDirection, lastStateChange }
+        
         // Karaoke visual settings scaled for 1080p
         this.settings = {
             fontSize: 80, // Scaled up for 1080p (was 40 for ~800px)
@@ -24,6 +27,8 @@ class KaraokeRenderer {
             textColor: '#ffffff',
             activeColor: '#00BFFF', // Light blue for active lines (easier to read)
             upcomingColor: '#888888', // Gray for upcoming lines
+            backupColor: '#DAA520', // Golden color for backup singer lines
+            backupActiveColor: '#FFD700', // Brighter gold when active
             backgroundColor: '#1a1a1a',
             shadowColor: '#000000',
             linesVisible: 1, // Show only current line
@@ -31,7 +36,13 @@ class KaraokeRenderer {
             progressBarHeight: 30, // Taller progress bar
             progressBarColor: '#007acc',
             progressBarBg: '#333333',
-            progressBarMargin: 100 // More space between progress bar and lyrics
+            progressBarMargin: 100, // More space between progress bar and lyrics
+            
+            // Backup singer animation settings
+            backupFadeDuration: 0.8, // seconds to fade in/out
+            backupMaxAlpha: 0.7, // maximum opacity for backup singers (translucent)
+            backupMinAlpha: 0.0, // minimum opacity (fully transparent)
+            backupAnimationEasing: 'ease-out' // animation curve
         };
         
         this.setupCanvas();
@@ -109,7 +120,7 @@ class KaraokeRenderer {
     parseLyricsData(data) {
         if (!data || !Array.isArray(data)) return [];
         
-        // Filter out disabled lines for playback
+        // Filter out disabled lines for playback (backup lines are still included)
         const enabledData = data.filter(line => line.disabled !== true);
         
         return enabledData.map((line, index) => {
@@ -121,7 +132,8 @@ class KaraokeRenderer {
                     startTime: line.start || line.time || line.start_time || index * 3,
                     endTime: line.end || line.end_time || (line.start || line.time || index * 3) + 3,
                     text: text,
-                    words: words
+                    words: words,
+                    isBackup: line.backup === true
                 };
             } else {
                 // Simple string - create word timing estimates
@@ -132,7 +144,8 @@ class KaraokeRenderer {
                     startTime: index * 3,
                     endTime: index * 3 + 3,
                     text: text,
-                    words: words
+                    words: words,
+                    isBackup: false
                 };
             }
         }).filter(line => line.text.trim().length > 0);
@@ -222,8 +235,8 @@ class KaraokeRenderer {
                 // During instrumental sections, only show the progress bar and upcoming lyrics
                 this.drawInstrumentalProgressBar(currentLineIndex, width, height);
             } else {
-                // Normal lyric display - show only current line
-                this.drawCurrentLyricLine(currentLineIndex, width, height);
+                // Normal lyric display - show all active lines (main + backup)
+                this.drawActiveLines(width, height);
             }
         }
     }
@@ -243,16 +256,22 @@ class KaraokeRenderer {
     }
     
     findCurrentLine() {
+        // Find current main singer line (exclude backup singers for progress tracking)
+        return this.findCurrentMainLine();
+    }
+
+    findCurrentMainLine() {
         if (!this.lyrics) return -1;
         
         for (let i = 0; i < this.lyrics.length; i++) {
             const line = this.lyrics[i];
-            if (this.currentTime >= line.startTime && this.currentTime <= line.endTime) {
+            // Only consider main singer lines for progress tracking
+            if (!line.isBackup && this.currentTime >= line.startTime && this.currentTime <= line.endTime) {
                 return i;
             }
         }
         
-        // Find the closest upcoming line
+        // Find the closest upcoming main singer line
         for (let i = 0; i < this.lyrics.length; i++) {
             if (this.currentTime < this.lyrics[i].startTime) {
                 return Math.max(0, i - 1);
@@ -318,6 +337,194 @@ class KaraokeRenderer {
                 this.drawTextWithShadow(line, canvasWidth / 2, currentY);
                 currentY += lineSpacing;
             });
+        }
+    }
+    
+    drawActiveLines(canvasWidth, canvasHeight) {
+        if (!this.lyrics) return;
+        
+        // Update backup singer animations first
+        this.updateBackupAnimations();
+        
+        // Find all active lines at current time (both main and backup singers)
+        const activeLines = [];
+        const now = this.currentTime;
+        
+        for (let i = 0; i < this.lyrics.length; i++) {
+            const line = this.lyrics[i];
+            if (!line.isDisabled && now >= line.startTime && now <= line.endTime) {
+                activeLines.push({ ...line, index: i });
+            }
+        }
+        
+        if (activeLines.length === 0) return;
+        
+        // Separate main and backup singers
+        const mainLines = activeLines.filter(line => !line.isBackup);
+        const backupLines = activeLines.filter(line => line.isBackup);
+        
+        // Calculate vertical positioning - stack multiple lines if needed
+        const totalLines = mainLines.length + backupLines.length;
+        const lineSpacing = this.settings.lineHeight * 1.2;
+        const totalHeight = totalLines * lineSpacing;
+        let currentY = (canvasHeight / 2) - (totalHeight / 2) + lineSpacing;
+        
+        // Draw main singer lines first (more prominent position)
+        mainLines.forEach(line => {
+            this.drawSingleLine(line, canvasWidth, currentY, false); // false = main singer
+            currentY += lineSpacing;
+        });
+        
+        // Draw backup singer lines below main singers with animation
+        backupLines.forEach(line => {
+            const animation = this.backupAnimations.get(line.index);
+            const alpha = animation ? animation.alpha : this.settings.backupMaxAlpha;
+            this.drawSingleLine(line, canvasWidth, currentY, true, alpha); // true = backup singer
+            currentY += lineSpacing;
+        });
+    }
+    
+    drawSingleLine(line, canvasWidth, yPosition, isBackup, alpha = 1.0) {
+        // Set up font
+        this.ctx.font = `${this.settings.fontSize}px ${this.settings.fontFamily}`;
+        this.ctx.textAlign = 'center';
+        
+        // Save context for alpha manipulation
+        this.ctx.save();
+        
+        // Apply alpha for backup singers
+        if (isBackup) {
+            this.ctx.globalAlpha = alpha;
+        }
+        
+        // Choose colors based on singer type
+        this.ctx.fillStyle = isBackup ? this.settings.backupActiveColor : this.settings.activeColor;
+        
+        // Get text from line
+        let text = '';
+        if (line.text) {
+            text = line.text;
+        } else if (line.words && line.words.length > 0) {
+            text = line.words.map(w => w.text || w.word || w).join(' ');
+        }
+        
+        if (text && text.trim() !== '') {
+            // Handle long text with proper wrapping
+            const maxWidth = canvasWidth * 0.9;
+            const words = text.split(' ');
+            const lines = [];
+            let currentLine = '';
+            
+            for (const word of words) {
+                const testLine = currentLine ? currentLine + ' ' + word : word;
+                const testWidth = this.ctx.measureText(testLine).width;
+                
+                if (testWidth <= maxWidth) {
+                    currentLine = testLine;
+                } else {
+                    if (currentLine) {
+                        lines.push(currentLine);
+                        currentLine = word;
+                    } else {
+                        lines.push(word);
+                    }
+                }
+            }
+            
+            if (currentLine) {
+                lines.push(currentLine);
+            }
+            
+            // Draw each wrapped line
+            lines.forEach((textLine, index) => {
+                const adjustedY = yPosition + (index * this.settings.lineHeight * 0.8);
+                
+                // Add visual indicator for backup singers (prefix)
+                if (isBackup) {
+                    const prefixedText = `♪ ${textLine}`;
+                    this.drawTextWithShadow(prefixedText, canvasWidth / 2, adjustedY);
+                } else {
+                    this.drawTextWithShadow(textLine, canvasWidth / 2, adjustedY);
+                }
+            });
+        }
+        
+        // Restore context (removes alpha changes)
+        this.ctx.restore();
+    }
+    
+    updateBackupAnimations() {
+        if (!this.lyrics) return;
+        
+        const now = this.currentTime;
+        const frameDelta = 16; // Assuming 60fps (16ms per frame)
+        
+        for (let i = 0; i < this.lyrics.length; i++) {
+            const line = this.lyrics[i];
+            
+            // Skip non-backup or disabled lines
+            if (!line.isBackup || line.isDisabled) {
+                this.backupAnimations.delete(i);
+                continue;
+            }
+            
+            const isActive = now >= line.startTime && now <= line.endTime;
+            const animation = this.backupAnimations.get(i) || {
+                alpha: this.settings.backupMinAlpha,
+                fadeDirection: 0, // 0 = stable, 1 = fading in, -1 = fading out
+                lastStateChange: now
+            };
+            
+            // Determine if we need to change fade direction
+            let targetAlpha = isActive ? this.settings.backupMaxAlpha : this.settings.backupMinAlpha;
+            let newFadeDirection = 0;
+            
+            if (isActive && animation.alpha < this.settings.backupMaxAlpha) {
+                newFadeDirection = 1; // Fade in
+            } else if (!isActive && animation.alpha > this.settings.backupMinAlpha) {
+                newFadeDirection = -1; // Fade out
+            }
+            
+            // Update fade direction if it changed
+            if (newFadeDirection !== animation.fadeDirection) {
+                animation.fadeDirection = newFadeDirection;
+                animation.lastStateChange = now;
+            }
+            
+            // Calculate alpha based on fade direction
+            if (animation.fadeDirection !== 0) {
+                const elapsed = now - animation.lastStateChange;
+                const progress = Math.min(elapsed / this.settings.backupFadeDuration, 1.0);
+                
+                // Apply easing (simple ease-out)
+                const easedProgress = 1 - Math.pow(1 - progress, 3);
+                
+                if (animation.fadeDirection === 1) {
+                    // Fading in
+                    animation.alpha = this.settings.backupMinAlpha + 
+                        (this.settings.backupMaxAlpha - this.settings.backupMinAlpha) * easedProgress;
+                } else {
+                    // Fading out
+                    animation.alpha = this.settings.backupMaxAlpha - 
+                        (this.settings.backupMaxAlpha - this.settings.backupMinAlpha) * easedProgress;
+                }
+                
+                // Stop fading when complete
+                if (progress >= 1.0) {
+                    animation.fadeDirection = 0;
+                    animation.alpha = targetAlpha;
+                }
+            }
+            
+            // Store the updated animation
+            this.backupAnimations.set(i, animation);
+        }
+        
+        // Clean up animations for lines that no longer exist
+        for (const [lineIndex] of this.backupAnimations) {
+            if (lineIndex >= this.lyrics.length) {
+                this.backupAnimations.delete(lineIndex);
+            }
         }
     }
     

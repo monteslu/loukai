@@ -930,6 +930,15 @@ body {
     background: #1a1a1a;
 }
 
+.lyric-line-editor.backup {
+    background: #2a2015;
+    border-color: #4a401a;
+}
+
+.lyric-line-editor.backup:hover {
+    border-color: #5a502a;
+}
+
 .line-number {
     font-size: 12px;
     color: #888;
@@ -977,6 +986,51 @@ body {
 .text-input:focus {
     outline: none;
     border-color: #555;
+}
+
+.line-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 8px;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #aaa;
+    cursor: pointer;
+    user-select: none;
+}
+
+.backup-checkbox {
+    display: none;
+}
+
+.checkbox-custom {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #555;
+    border-radius: 3px;
+    background: #333;
+    position: relative;
+    transition: all 0.2s;
+}
+
+.backup-checkbox:checked + .checkbox-custom {
+    background: #b8860b;
+    border-color: #daa520;
+}
+
+.backup-checkbox:checked + .checkbox-custom::after {
+    content: '✓';
+    position: absolute;
+    left: 2px;
+    top: -1px;
+    font-size: 12px;
+    color: white;
 }
 
 .line-actions {

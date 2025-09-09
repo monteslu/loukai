@@ -61,8 +61,8 @@ The app supports `.kai` v1.0 files as specified in `KAI-File-Format-v1.0.md`. Th
 
 ## Documentation
 
-- `KAI-File-Format-v1.0.md` - File format specification
-- `KAI-Play-Spec-v1.0.md` - Player application specification
+- `docs/KAI-File-Format-v1.0.md` - File format specification
+- `docs/KAI-Play-Spec-v1.0.md` - Player application specification
 
 ## License
 
