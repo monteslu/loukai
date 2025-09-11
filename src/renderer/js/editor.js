@@ -51,6 +51,8 @@ class LyricsEditorController {
 
     onSongLoaded(songData) {
         console.log('Editor onSongLoaded called with:', songData);
+        console.log('Song metadata structure:', songData?.song);
+        console.log('Looking for rejections at:', songData?.song?.lyric_update_rejections);
         this.currentSong = songData;
         this.songDuration = songData?.metadata?.duration || 0;
         
@@ -63,13 +65,18 @@ class LyricsEditorController {
         // Load lyrics directly into the line-by-line editor
         if (this.lyricsEditor && songData?.lyrics) {
             console.log('Loading lyrics into editor:', songData.lyrics.length, 'lines', songData.lyrics);
-            this.lyricsEditor.loadLyrics(songData.lyrics);
+            
+            // Get rejections from song metadata
+            const rejections = songData?.song?.lyric_update_rejections || [];
+            console.log('Found lyric rejections:', rejections.length, rejections);
+            
+            this.lyricsEditor.loadLyrics(songData.lyrics, rejections);
             
             // Set up callback to update karaoke renderer when lyrics are edited
             // Only set this up once to avoid duplicate callbacks
             if (!this.callbackSetup) {
-                this.lyricsEditor.onLyricsEdited((editedLyrics) => {
-                    this.onLyricsEdited(editedLyrics);
+                this.lyricsEditor.onLyricsEdited((editedLyrics, editedRejections) => {
+                    this.onLyricsEdited(editedLyrics, editedRejections);
                 });
                 this.callbackSetup = true;
             }
@@ -242,9 +249,16 @@ class LyricsEditorController {
         // Enable controls - line-by-line editor is always enabled when song is loaded
     }
 
-    onLyricsEdited(editedLyrics) {
+    onLyricsEdited(editedLyrics, editedRejections = []) {
         // Update the karaoke renderer with edited lyrics
-        console.log('Lyrics edited:', editedLyrics);
+        console.log('Lyrics edited:', editedLyrics, 'rejections:', editedRejections);
+        
+        // Update the current song data with edited lyrics and rejections
+        this.currentSong.lyrics = editedLyrics;
+        if (!this.currentSong.song) {
+            this.currentSong.song = {};
+        }
+        this.currentSong.song.lyric_update_rejections = editedRejections;
         
         // Find the player instance through the main app and update karaoke renderer
         if (window.appInstance && window.appInstance.player && window.appInstance.player.karaokeRenderer) {

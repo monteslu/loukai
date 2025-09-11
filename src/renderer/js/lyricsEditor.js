@@ -2,6 +2,7 @@ class LyricsEditor {
     constructor() {
         this.lyricsData = [];
         this.originalLyrics = null;
+        this.rejections = [];
         this.editedCallback = null;
         
         this.lyricsLinesContainer = document.getElementById('lyricsLines');
@@ -16,10 +17,11 @@ class LyricsEditor {
         this.resetLyricsBtn.addEventListener('click', () => this.resetToOriginal());
     }
     
-    loadLyrics(lyrics) {
-        console.log('LyricsEditor.loadLyrics called with:', lyrics);
+    loadLyrics(lyrics, rejections = []) {
+        console.log('LyricsEditor.loadLyrics called with:', lyrics, 'rejections:', rejections);
         this.originalLyrics = JSON.parse(JSON.stringify(lyrics));
         this.lyricsData = JSON.parse(JSON.stringify(lyrics));
+        this.rejections = JSON.parse(JSON.stringify(rejections));
         console.log('LyricsEditor data loaded, rendering editor...');
         this.renderEditor();
     }
@@ -32,9 +34,51 @@ class LyricsEditor {
         
         this.lyricsLinesContainer.innerHTML = '';
         
+        // Create a combined list of lyrics and rejections, sorted by line number
+        const items = [];
+        
+        // Add lyrics lines
         this.lyricsData.forEach((line, index) => {
-            const lineElement = this.createLineEditor(line, index);
-            this.lyricsLinesContainer.appendChild(lineElement);
+            items.push({
+                type: 'lyric',
+                data: line,
+                index: index,
+                lineNum: index + 1
+            });
+        });
+        
+        // Add rejections
+        console.log('Processing rejections:', this.rejections);
+        this.rejections.forEach((rejection, rejectionIndex) => {
+            console.log('Adding rejection:', rejection);
+            items.push({
+                type: 'rejection',
+                data: rejection,
+                rejectionIndex: rejectionIndex,
+                lineNum: rejection.line_num
+            });
+        });
+        
+        // Sort by line number
+        items.sort((a, b) => {
+            if (a.lineNum === b.lineNum) {
+                // If same line number, show rejection after lyric
+                return a.type === 'lyric' ? -1 : 1;
+            }
+            return a.lineNum - b.lineNum;
+        });
+        
+        // Render items
+        items.forEach(item => {
+            if (item.type === 'lyric') {
+                const lineElement = this.createLineEditor(item.data, item.index);
+                this.lyricsLinesContainer.appendChild(lineElement);
+            } else {
+                console.log('Creating rejection box for:', item.data);
+                const rejectionElement = this.createRejectionBox(item.data, item.rejectionIndex);
+                console.log('Created rejection element:', rejectionElement);
+                this.lyricsLinesContainer.appendChild(rejectionElement);
+            }
         });
     }
     
@@ -159,6 +203,70 @@ class LyricsEditor {
         });
     }
     
+    createRejectionBox(rejection, rejectionIndex) {
+        const container = document.createElement('div');
+        container.className = 'lyric-rejection-box';
+        container.dataset.rejectionIndex = rejectionIndex;
+        
+        container.innerHTML = `
+            <div class="rejection-header">
+                <span class="rejection-label">❌ Rejected Update (Line ${rejection.line_num})</span>
+                <button class="rejection-delete-btn" title="Delete this rejection">🗑️</button>
+            </div>
+            <div class="rejection-content">
+                <div class="rejection-text-pair">
+                    <div class="rejection-text old-text">
+                        <label>Original:</label>
+                        <div class="text-content">${rejection.old_text}</div>
+                    </div>
+                    <div class="rejection-text new-text">
+                        <label>Proposed:</label>
+                        <div class="text-content">${rejection.new_text}</div>
+                        <button class="copy-text-btn" title="Copy proposed text">📋 Copy</button>
+                    </div>
+                </div>
+                <div class="rejection-details">
+                    <span class="rejection-reason">Reason: ${rejection.reason}</span>
+                    ${rejection.retention_rate !== undefined ? 
+                        `<span class="rejection-retention">Retention: ${(rejection.retention_rate * 100).toFixed(1)}% (min: ${(rejection.min_required * 100).toFixed(1)}%)</span>` : 
+                        ''}
+                </div>
+            </div>
+        `;
+        
+        // Add delete functionality
+        const deleteBtn = container.querySelector('.rejection-delete-btn');
+        deleteBtn.addEventListener('click', () => {
+            this.deleteRejection(rejectionIndex);
+        });
+        
+        // Add copy functionality
+        const copyBtn = container.querySelector('.copy-text-btn');
+        copyBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(rejection.new_text);
+                copyBtn.textContent = '✅ Copied';
+                setTimeout(() => {
+                    copyBtn.textContent = '📋 Copy';
+                }, 2000);
+            } catch (error) {
+                console.error('Failed to copy text:', error);
+                copyBtn.textContent = '❌ Failed';
+                setTimeout(() => {
+                    copyBtn.textContent = '📋 Copy';
+                }, 2000);
+            }
+        });
+        
+        return container;
+    }
+    
+    deleteRejection(rejectionIndex) {
+        this.rejections.splice(rejectionIndex, 1);
+        this.renderEditor();
+        this.notifyChange();
+    }
+    
     updateLineData(index, property, value) {
         if (this.lyricsData[index]) {
             if (typeof this.lyricsData[index] === 'string') {
@@ -263,7 +371,7 @@ class LyricsEditor {
     
     notifyChange() {
         if (this.editedCallback) {
-            this.editedCallback(this.getEditedLyrics());
+            this.editedCallback(this.getEditedLyrics(), this.rejections);
         }
     }
     

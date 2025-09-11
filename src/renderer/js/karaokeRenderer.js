@@ -238,6 +238,9 @@ class KaraokeRenderer {
                 // Normal lyric display - show all active lines (main + backup)
                 this.drawActiveLines(width, height);
             }
+        } else {
+            // No current main line found - check if we should show progress bar during backup-only periods
+            this.drawBackupOnlyProgressBar(width, height);
         }
     }
     
@@ -273,12 +276,26 @@ class KaraokeRenderer {
         
         // Find the closest upcoming main singer line
         for (let i = 0; i < this.lyrics.length; i++) {
-            if (this.currentTime < this.lyrics[i].startTime) {
-                return Math.max(0, i - 1);
+            if (!this.lyrics[i].isBackup && this.currentTime < this.lyrics[i].startTime) {
+                // Find the previous main singer line (not backup)
+                for (let j = i - 1; j >= 0; j--) {
+                    if (!this.lyrics[j].isBackup) {
+                        return j;
+                    }
+                }
+                // No previous main singer line found, return -1 to trigger progress bar
+                return -1;
             }
         }
         
-        return this.lyrics.length - 1;
+        // Find the last main singer line
+        for (let i = this.lyrics.length - 1; i >= 0; i--) {
+            if (!this.lyrics[i].isBackup) {
+                return i;
+            }
+        }
+        
+        return -1;
     }
     
     drawCurrentLyricLine(currentLineIndex, canvasWidth, canvasHeight) {
@@ -650,13 +667,23 @@ class KaraokeRenderer {
         
         const now = this.currentTime;
         const currentLine = this.lyrics[currentLineIndex];
-        const nextLine = this.lyrics[currentLineIndex + 1];
         
-        if (!currentLine || !nextLine) return;
+        // Find the next main singer line (skip backup singers and disabled lines)
+        let nextMainLine = null;
+        let nextMainLineIndex = -1;
+        for (let i = currentLineIndex + 1; i < this.lyrics.length; i++) {
+            if (!this.lyrics[i].isBackup && !this.lyrics[i].isDisabled) {
+                nextMainLine = this.lyrics[i];
+                nextMainLineIndex = i;
+                break;
+            }
+        }
         
-        // Check if we're in an instrumental section (between current line end and next line start)
+        if (!currentLine || !nextMainLine) return;
+        
+        // Check if we're in an instrumental section (between current line end and next main line start)
         const currentLineEnd = currentLine.endTime;
-        const nextLineStart = nextLine.startTime;
+        const nextLineStart = nextMainLine.startTime;
         const gapDuration = nextLineStart - currentLineEnd;
         
         // Only show progress bar for instrumental gaps longer than 5 seconds
@@ -683,7 +710,7 @@ class KaraokeRenderer {
             this.ctx.fillRect(barX, barY, barWidth * gapProgress, barHeight);
             
             // Draw upcoming lyrics preview below progress bar with proper spacing
-            this.drawUpcomingLyricsPreview(nextLine, canvasWidth, canvasHeight, gapProgress, barY + this.settings.progressBarMargin);
+            this.drawUpcomingLyricsPreview(nextMainLine, canvasWidth, canvasHeight, gapProgress, barY + this.settings.progressBarMargin);
         }
     }
     
@@ -727,6 +754,60 @@ class KaraokeRenderer {
         const centerY = canvasHeight / 2;
         
         this.drawTextWithShadow('♫ Instrumental Outro ♫', centerX, centerY);
+    }
+    
+    drawBackupOnlyProgressBar(canvasWidth, canvasHeight) {
+        if (!this.lyrics) return;
+        
+        const now = this.currentTime;
+        
+        // Find the next main singer line
+        let nextMainLine = null;
+        for (let i = 0; i < this.lyrics.length; i++) {
+            if (!this.lyrics[i].isBackup && !this.lyrics[i].isDisabled && now < this.lyrics[i].startTime) {
+                nextMainLine = this.lyrics[i];
+                break;
+            }
+        }
+        
+        if (!nextMainLine) return;
+        
+        // Find when the backup-only period started (either song start or end of last main line)
+        let gapStart = 0;
+        for (let i = this.lyrics.length - 1; i >= 0; i--) {
+            if (!this.lyrics[i].isBackup && !this.lyrics[i].isDisabled && this.lyrics[i].endTime <= now) {
+                gapStart = this.lyrics[i].endTime;
+                break;
+            }
+        }
+        
+        const gapDuration = nextMainLine.startTime - gapStart;
+        
+        // Only show progress bar for gaps longer than 5 seconds
+        if (gapDuration <= 5) return;
+        
+        // Calculate progress
+        const gapProgress = (now - gapStart) / gapDuration;
+        
+        // Draw progress bar at top
+        const barWidth = canvasWidth * 0.8;
+        const barHeight = this.settings.progressBarHeight;
+        const barX = (canvasWidth - barWidth) / 2;
+        const barY = 80;
+        
+        // Background
+        this.ctx.fillStyle = this.settings.progressBarBg;
+        this.ctx.fillRect(barX, barY, barWidth, barHeight);
+        
+        // Progress fill
+        this.ctx.fillStyle = this.settings.progressBarColor;
+        this.ctx.fillRect(barX, barY, barWidth * gapProgress, barHeight);
+        
+        // Draw upcoming main lyrics preview
+        this.drawUpcomingLyricsPreview(nextMainLine, canvasWidth, canvasHeight, gapProgress, barY + this.settings.progressBarMargin);
+        
+        // Still render any active backup singers below the progress bar
+        this.drawActiveLines(canvasWidth, canvasHeight);
     }
     
     drawUpcomingLyricsPreview(nextLine, canvasWidth, canvasHeight, progress, startY) {

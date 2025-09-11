@@ -37,6 +37,11 @@ class RendererAudioEngine {
         // Event callbacks
         this.onSongEndedCallback = null;
         
+        // Microphone input
+        this.microphoneStream = null;
+        this.microphoneSource = null;
+        this.microphoneGain = null;
+        
         this.mixerState = {
             stems: [],
             scenes: { A: null, B: null },
@@ -210,6 +215,26 @@ class RendererAudioEngine {
         }
         
         console.log(`Loaded ${this.audioBuffers.size} audio buffers`);
+        
+        // Calculate the actual duration from the longest audio buffer
+        let maxDuration = 0;
+        for (const [name, buffer] of this.audioBuffers) {
+            console.log(`Audio buffer ${name}: ${buffer.duration.toFixed(2)}s`);
+            if (buffer.duration > maxDuration) {
+                maxDuration = buffer.duration;
+            }
+        }
+        
+        // Update the song metadata with the actual duration
+        if (maxDuration > 0) {
+            if (!this.songData.metadata) {
+                this.songData.metadata = {};
+            }
+            this.songData.metadata.duration = maxDuration;
+            console.log(`Updated song duration to ${maxDuration.toFixed(2)}s from audio buffers`);
+        } else {
+            console.warn('No audio buffers loaded, duration remains 0');
+        }
     }
     
     async reloadAudioBuffersForBus(busType) {
@@ -530,14 +555,20 @@ class RendererAudioEngine {
         if (this.isPlaying && this.audioContexts.PA) {
             const elapsed = this.audioContexts.PA.currentTime - this.startTime;
             const calculatedPosition = this.currentPosition + elapsed;
+            
+            // Don't let position exceed song duration
+            const duration = this.getDuration();
+            const clampedPosition = duration > 0 ? Math.min(calculatedPosition, duration) : calculatedPosition;
+            
             if (Math.random() < 0.01) { // Debug occasionally
                 console.log('AudioEngine timing - startTime:', this.startTime.toFixed(2), 
                            'currentTime:', this.audioContexts.PA.currentTime.toFixed(2),
                            'elapsed:', elapsed.toFixed(2), 
                            'basePosition:', this.currentPosition.toFixed(2),
-                           'calculated:', calculatedPosition.toFixed(2));
+                           'calculated:', calculatedPosition.toFixed(2),
+                           'clamped:', clampedPosition.toFixed(2));
             }
-            return calculatedPosition;
+            return clampedPosition;
         }
         return this.currentPosition;
     }
@@ -559,9 +590,76 @@ class RendererAudioEngine {
         };
     }
 
+    async startMicrophoneInput(deviceId = 'default') {
+        try {
+            console.log('Starting microphone input with device:', deviceId);
+            
+            // Stop existing microphone if running
+            this.stopMicrophoneInput();
+            
+            const constraints = {
+                audio: {
+                    deviceId: deviceId !== 'default' ? { exact: deviceId } : undefined,
+                    channelCount: 1,
+                    sampleRate: 44100,
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false
+                }
+            };
+            
+            // Get microphone stream
+            this.microphoneStream = await navigator.mediaDevices.getUserMedia(constraints);
+            
+            // Create audio source from microphone
+            this.microphoneSource = this.audioContexts.PA.createMediaStreamSource(this.microphoneStream);
+            
+            // Create gain node for microphone volume control
+            this.microphoneGain = this.audioContexts.PA.createGain();
+            this.microphoneGain.gain.value = 1.0; // Full volume, can be adjusted
+            
+            // Connect microphone to PA output
+            this.microphoneSource.connect(this.microphoneGain);
+            this.microphoneGain.connect(this.outputNodes.PA.masterGain);
+            
+            console.log('Microphone input connected to PA output');
+            
+        } catch (error) {
+            console.error('Failed to start microphone input:', error);
+            this.stopMicrophoneInput();
+        }
+    }
+    
+    stopMicrophoneInput() {
+        if (this.microphoneSource) {
+            this.microphoneSource.disconnect();
+            this.microphoneSource = null;
+        }
+        
+        if (this.microphoneGain) {
+            this.microphoneGain.disconnect();
+            this.microphoneGain = null;
+        }
+        
+        if (this.microphoneStream) {
+            this.microphoneStream.getTracks().forEach(track => track.stop());
+            this.microphoneStream = null;
+        }
+        
+        console.log('Microphone input stopped');
+    }
+    
+    setMicrophoneGain(gainValue) {
+        if (this.microphoneGain) {
+            this.microphoneGain.gain.value = gainValue;
+            console.log('Microphone gain set to:', gainValue);
+        }
+    }
+
     stop() {
         this.isPlaying = false;
         this.stopAllSources();
+        this.stopMicrophoneInput();
         
         if (this.audioContexts.PA) {
             this.audioContexts.PA.close();

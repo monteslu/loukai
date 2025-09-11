@@ -76,9 +76,6 @@ class KaiPlayerApp {
             this.togglePlayback();
         });
 
-        document.getElementById('playPauseBtn2').addEventListener('click', () => {
-            this.togglePlayback();
-        });
 
         document.getElementById('seekBackBtn').addEventListener('click', () => {
             this.seekRelative(-10);
@@ -114,9 +111,14 @@ class KaiPlayerApp {
             }
         });
 
-        document.getElementById('inputDeviceSelect').addEventListener('change', (e) => {
+        document.getElementById('inputDeviceSelect').addEventListener('change', async (e) => {
             const deviceId = e.target.value;
-            kaiAPI.audio.setDevice('input', parseInt(deviceId));
+            console.log('Input device selected:', deviceId);
+            
+            // Start microphone input with selected device
+            if (this.audioEngine && deviceId !== '') {
+                await this.audioEngine.startMicrophoneInput(deviceId);
+            }
             
             // Save device preference
             this.saveDevicePreference('input', deviceId);
@@ -409,12 +411,13 @@ class KaiPlayerApp {
         }
         
         if (this.player && this.currentSong) {
-            // Pass full song data which includes lyrics
+            // Pass full song data which includes lyrics and updated duration from audio engine
             const fullMetadata = {
                 ...metadata,
                 lyrics: this.currentSong.lyrics,
-                duration: this.currentSong.metadata?.duration || 0
+                duration: this.audioEngine ? this.audioEngine.getDuration() : (this.currentSong.metadata?.duration || 0)
             };
+            console.log('Main.js passing duration to player:', fullMetadata.duration);
             this.player.onSongLoaded(fullMetadata);
         }
         
@@ -563,7 +566,6 @@ class KaiPlayerApp {
 
     enableControls() {
         document.getElementById('playPauseBtn').disabled = false;
-        document.getElementById('playPauseBtn2').disabled = false;
     }
 
     async togglePlayback() {
@@ -597,8 +599,10 @@ class KaiPlayerApp {
     }
 
     updatePlayButton(text) {
-        document.querySelector('#playPauseBtn .icon-play').textContent = text;
-        document.getElementById('playPauseBtn2').textContent = text;
+        const playButton = document.getElementById('playPauseBtn');
+        if (playButton) {
+            playButton.textContent = text;
+        }
     }
 
     handleSongEnded() {

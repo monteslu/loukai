@@ -66,26 +66,50 @@ class PlayerController {
     }
 
     onSongLoaded(metadata) {
-        // Get real duration from audio engine if available
+        // Always reset timer to 0 first
+        this.currentPosition = 0;
+        
+        console.log('PlayerController received metadata:', {
+            duration: metadata?.duration,
+            hasAudioEngine: !!this.audioEngine,
+            audioEngineDuration: this.audioEngine ? this.audioEngine.getDuration() : 'N/A'
+        });
+        
+        // Get real duration from audio engine if available, otherwise from metadata
         if (this.audioEngine && this.audioEngine.getDuration) {
             this.songDuration = this.audioEngine.getDuration();
         } else {
             this.songDuration = metadata?.duration || 0;
         }
         
-        this.lyrics = metadata?.lyrics || null;
+        // If still zero, try to estimate from lyrics end time as fallback
+        if (this.songDuration === 0 && metadata?.lyrics && Array.isArray(metadata.lyrics)) {
+            let maxLyricTime = 0;
+            for (const line of metadata.lyrics) {
+                const endTime = line.end || line.end_time || (line.start || line.time || 0) + 3;
+                maxLyricTime = Math.max(maxLyricTime, endTime);
+            }
+            if (maxLyricTime > 0) {
+                this.songDuration = maxLyricTime + 10; // Add some padding
+                console.log('PlayerController estimated duration from lyrics:', this.songDuration + 's');
+            }
+        }
         
-        // Reset current position to 0 when loading a new song
-        this.currentPosition = 0;
+        this.lyrics = metadata?.lyrics || null;
         
         // Load lyrics into karaoke renderer with song duration
         if (this.lyrics) {
             this.karaokeRenderer.loadLyrics(this.lyrics, this.songDuration);
         }
         
-        console.log('PlayerController song loaded - duration:', this.songDuration + 's');
+        console.log('PlayerController song loaded - timer reset to 0, final duration:', this.songDuration + 's');
+        
+        // Update displays immediately to show reset timer and new duration
         this.updateTimeDisplay();
         this.updateProgressBar();
+        
+        // Ensure we're in stopped state
+        this.pause();
     }
 
 
@@ -145,9 +169,11 @@ class PlayerController {
             }
         }
         
-        if (this.currentPosition >= this.songDuration - 0.1 && this.songDuration > 0) {
+        // Stop playback when we reach the end of the song
+        if (this.songDuration > 0 && this.currentPosition >= this.songDuration) {
             this.currentPosition = this.songDuration;
             this.pause();
+            console.log('Song ended - timer stopped at duration:', this.songDuration + 's');
         }
         
         this.updateTimeDisplay();

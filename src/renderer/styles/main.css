@@ -68,6 +68,7 @@ body {
     -webkit-app-region: no-drag;
 }
 
+
 .transport-btn {
     background: #3a3a3a;
     border: none;
@@ -532,17 +533,6 @@ body {
     color: #ccc;
 }
 
-.time-display-bottom {
-    font-family: 'Monaco', monospace;
-    font-size: 18px;
-    color: #ccc;
-    text-align: center;
-    padding: 16px;
-    background: rgba(42, 42, 42, 0.9);
-    border-radius: 8px;
-    margin-top: 10px;
-    flex-shrink: 0;
-}
 
 /* Progress Bar */
 .progress-container {
@@ -1056,6 +1046,120 @@ body {
 .btn-icon:hover {
     background: #444;
     border-color: #555;
+}
+
+/* Lyric Rejection Boxes */
+.lyric-rejection-box {
+    background: #2d1515;
+    border: 2px solid #cc4444;
+    border-radius: 8px;
+    margin: 8px 0;
+    padding: 12px;
+    font-family: inherit;
+}
+
+.rejection-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #cc4444;
+}
+
+.rejection-label {
+    color: #ff6666;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.rejection-delete-btn {
+    background: #cc4444;
+    border: none;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background-color 0.2s;
+}
+
+.rejection-delete-btn:hover {
+    background: #dd5555;
+}
+
+.rejection-content {
+    color: #ffffff;
+}
+
+.rejection-text-pair {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 10px;
+}
+
+.rejection-text {
+    flex: 1;
+}
+
+.rejection-text label {
+    display: block;
+    font-size: 12px;
+    color: #cccccc;
+    margin-bottom: 4px;
+    font-weight: bold;
+}
+
+.rejection-text .text-content {
+    background: #1a1a1a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    word-wrap: break-word;
+}
+
+.rejection-text.old-text .text-content {
+    border-color: #cc7777;
+    background: #221818;
+}
+
+.rejection-text.new-text .text-content {
+    border-color: #77cc77;
+    background: #182218;
+}
+
+.copy-text-btn {
+    background: #4a7c59;
+    border: none;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    margin-top: 6px;
+    transition: all 0.2s;
+}
+
+.copy-text-btn:hover {
+    background: #5a8c69;
+}
+
+.rejection-details {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: #cccccc;
+}
+
+.rejection-reason {
+    font-weight: bold;
+    color: #ff9999;
+}
+
+.rejection-retention {
+    color: #ffcc99;
 }
 
 .btn-icon.toggle-enabled {

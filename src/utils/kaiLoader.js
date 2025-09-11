@@ -185,7 +185,10 @@ class KaiLoader {
         pitchTolerance: 50,
         timingTolerance: 0.1,
         stabilityThreshold: 20
-      }
+      },
+      
+      // Preserve the complete song object for additional metadata like rejections
+      song: data.song
     };
 
     return processedData;
