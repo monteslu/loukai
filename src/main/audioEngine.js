@@ -387,10 +387,14 @@ class AudioEngine extends EventEmitter {
   }
 
   setAutotuneEnabled(enabled) {
+    console.log('Auto-tune enabled set to:', enabled);
+    // TODO: Implement actual auto-tune processing
     return true;
   }
 
   setAutotuneSettings(settings) {
+    console.log('Auto-tune settings updated:', settings);
+    // TODO: Implement actual settings application
     return true;
   }
 

@@ -32,7 +32,7 @@ class KaraokeRenderer {
         this.audioContext = null;
         this.analyser = null;
         this.micDataArray = null;
-        this.waveformData = new Uint8Array(1440).fill(0); // 6 seconds at 240Hz (1440 pixels) - mic rolling buffer
+        this.waveformData = new Uint8Array(1440).fill(128); // 6 seconds at 240Hz (1440 pixels) - mic rolling buffer (128 = silence)
         this.micGainNode = null; // For routing mic to speakers
         
         // Waveform preferences (will be set from main app)
@@ -77,13 +77,12 @@ class KaraokeRenderer {
         this.workletAvailable = false;
         this.musicAudioBuffer = null;
         this.musicSourceNode = null;
-        this.vocalsWaveformData = new Uint8Array(1920).fill(0); // 8 seconds at 240Hz (1920 pixels) - vocals rendering array
-        this.zeroPadding = new Uint8Array(1920).fill(0); // Zero array for concatenation
+        this.vocalsWaveformData = new Uint8Array(1920).fill(128); // 8 seconds at 240Hz (1920 pixels) - vocals rendering array (128 = silence)
+        this.zeroPadding = new Uint8Array(1920).fill(128); // Center value array for concatenation (128 = silence)
         this.waveformDataIndex = 0;
         
         // Vocals track waveform
         this.vocalsAudioBuffer = null;
-        this.vocalsWaveformData = [];
         this.vocalsWaveformMaxLength = 480; // 8 seconds at 60fps
         this.vocalsAnalyser = null;
         this.vocalsSource = null;
@@ -1241,6 +1240,10 @@ class KaraokeRenderer {
             this.analyser.fftSize = 256;
             this.micDataArray = new Uint8Array(this.analyser.frequencyBinCount);
             
+            // Give the microphone a moment to stabilize before processing
+            console.log('Microphone initialized, waiting 150ms for stabilization...');
+            await new Promise(resolve => setTimeout(resolve, 150));
+            
             // Microphone capture started
         } catch (error) {
             // Could not start microphone capture
@@ -1360,7 +1363,7 @@ class KaraokeRenderer {
                 
                 // Left padding (zeros)
                 for (let i = 0; i < leftPadding; i++) {
-                    this.vocalsWaveformData[destIndex++] = 0;
+                    this.vocalsWaveformData[destIndex++] = 128;
                 }
                 
                 // Valid source data
@@ -1370,7 +1373,7 @@ class KaraokeRenderer {
                 
                 // Right padding (zeros)
                 for (let i = 0; i < rightPadding; i++) {
-                    this.vocalsWaveformData[destIndex++] = 0;
+                    this.vocalsWaveformData[destIndex++] = 128;
                 }
             }
         }
@@ -2065,21 +2068,37 @@ class KaraokeRenderer {
     }
     
     isInInstrumentalOutro() {
-        if (!this.originalLyricsData || this.originalLyricsData.length === 0 || !this.songDuration) return false;
+        if (!this.lyrics || this.lyrics.length === 0 || !this.songDuration) return false;
         
         const now = this.currentTime;
-        // Find the actual last line from original data, regardless of disabled status
-        const lastOriginalLine = this.originalLyricsData[this.originalLyricsData.length - 1];
+        // Find the last enabled main singer line (not backup, not disabled)
+        let lastMainLine = null;
+        for (let i = this.lyrics.length - 1; i >= 0; i--) {
+            const line = this.lyrics[i];
+            if (!line.isBackup && !line.isDisabled) {
+                lastMainLine = line;
+                break;
+            }
+        }
         
-        if (!lastOriginalLine) return false;
+        if (!lastMainLine) return false;
         
-        // Parse the last line timing using same logic as parseLyricsData
-        const lastLineEndTime = lastOriginalLine.end || lastOriginalLine.end_time || 
-            (lastOriginalLine.start || lastOriginalLine.time || lastOriginalLine.start_time || 0) + 3;
+        // Check if we're after the last main singer line and there's enough outro time
+        const outroLength = this.songDuration - lastMainLine.endTime;
+        return now > lastMainLine.endTime && outroLength > 0;
+    }
+    
+    getLastMainSingerLine() {
+        if (!this.lyrics) return null;
         
-        // Check if we're after the last lyrics and there's no progress bar shown
-        const outroLength = this.songDuration - lastLineEndTime;
-        return now > lastLineEndTime && outroLength > 0;
+        // Find the last enabled main singer line (not backup, not disabled)
+        for (let i = this.lyrics.length - 1; i >= 0; i--) {
+            const line = this.lyrics[i];
+            if (!line.isBackup && !line.isDisabled) {
+                return line;
+            }
+        }
+        return null;
     }
 
     isInInstrumentalGap(currentLineIndex) {
@@ -2137,17 +2156,10 @@ class KaraokeRenderer {
             
             // Draw progress bar at top
             const barWidth = canvasWidth * 0.8;
-            const barHeight = this.settings.progressBarHeight;
             const barX = (canvasWidth - barWidth) / 2;
             const barY = 80;
             
-            // Background
-            this.ctx.fillStyle = this.settings.progressBarBg;
-            this.ctx.fillRect(barX, barY, barWidth, barHeight);
-            
-            // Progress fill (shows how much of instrumental is complete)
-            this.ctx.fillStyle = this.settings.progressBarColor;
-            this.ctx.fillRect(barX, barY, barWidth * gapProgress, barHeight);
+            const barInfo = this.drawProgressBar(barX, barY, barWidth, undefined, gapProgress, canvasWidth);
             
             // Draw upcoming lyrics preview below progress bar with proper spacing
             this.drawUpcomingLyricsPreview(nextMainLine, canvasWidth, canvasHeight, gapProgress, barY + this.settings.progressBarMargin);
@@ -2167,25 +2179,29 @@ class KaraokeRenderer {
         
         // Draw progress bar at top
         const barWidth = canvasWidth * 0.8;
-        const barHeight = this.settings.progressBarHeight;
         const barX = (canvasWidth - barWidth) / 2;
         const barY = 80;
         
-        // Background
-        this.ctx.fillStyle = this.settings.progressBarBg;
-        this.ctx.fillRect(barX, barY, barWidth, barHeight);
-        
-        // Progress fill
-        this.ctx.fillStyle = this.settings.progressBarColor;
-        this.ctx.fillRect(barX, barY, barWidth * introProgress, barHeight);
+        const barInfo = this.drawProgressBar(barX, barY, barWidth, undefined, introProgress, canvasWidth);
         
         // Draw upcoming first lyrics with proper spacing
         this.drawUpcomingLyricsPreview(firstLine, canvasWidth, canvasHeight, introProgress, barY + this.settings.progressBarMargin);
     }
     
     drawInstrumentalOutro(canvasWidth, canvasHeight) {
-        // For outro, just show a simple message that the song is ending
-        // No progress bar since user requested no progress bar at the end
+        // Find the last main singer line to calculate outro progress
+        const lastMainLine = this.getLastMainSingerLine();
+        if (!lastMainLine) return;
+        
+        const currentTime = this.currentTime;
+        const outroStartTime = lastMainLine.endTime;
+        const outroLength = this.songDuration - outroStartTime;
+        const outroProgress = Math.max(0, Math.min(1, (currentTime - outroStartTime) / outroLength));
+        
+        // Draw progress bar at top
+        const barInfo = this.drawProgressBar(undefined, undefined, undefined, undefined, outroProgress, canvasWidth);
+        
+        // Show outro message below progress bar
         this.ctx.fillStyle = this.settings.textColor;
         this.ctx.font = `${this.settings.fontSize}px ${this.settings.fontFamily}`;
         this.ctx.textAlign = 'center';
@@ -2231,17 +2247,10 @@ class KaraokeRenderer {
         
         // Draw progress bar at top
         const barWidth = canvasWidth * 0.8;
-        const barHeight = this.settings.progressBarHeight;
         const barX = (canvasWidth - barWidth) / 2;
         const barY = 80;
         
-        // Background
-        this.ctx.fillStyle = this.settings.progressBarBg;
-        this.ctx.fillRect(barX, barY, barWidth, barHeight);
-        
-        // Progress fill
-        this.ctx.fillStyle = this.settings.progressBarColor;
-        this.ctx.fillRect(barX, barY, barWidth * gapProgress, barHeight);
+        const barInfo = this.drawProgressBar(barX, barY, barWidth, undefined, gapProgress, canvasWidth);
         
         // Draw upcoming main lyrics preview
         this.drawUpcomingLyricsPreview(nextMainLine, canvasWidth, canvasHeight, gapProgress, barY + this.settings.progressBarMargin);
@@ -2401,6 +2410,24 @@ class KaraokeRenderer {
         this.ctx.fillText(text, x, y);
     }
     
+    drawProgressBar(x, y, width, height, progress, canvasWidth) {
+        // Default positioning if not provided
+        const barX = x !== undefined ? x : 50;
+        const barY = y !== undefined ? y : 50;
+        const barWidth = width !== undefined ? width : canvasWidth - 100;
+        const barHeight = height !== undefined ? height : this.settings.progressBarHeight;
+        
+        // Progress bar background
+        this.ctx.fillStyle = this.settings.progressBarBg;
+        this.ctx.fillRect(barX, barY, barWidth, barHeight);
+        
+        // Progress fill
+        this.ctx.fillStyle = this.settings.progressBarColor;
+        this.ctx.fillRect(barX, barY, barWidth * Math.max(0, Math.min(1, progress)), barHeight);
+        
+        return { barX, barY, barWidth, barHeight };
+    }
+    
     drawBouncingBall(x, word, lineY) {
         // Calculate ball position based on progress through word
         const progress = (this.currentTime - word.startTime) / (word.endTime - word.startTime);
@@ -2461,11 +2488,8 @@ class KaraokeRenderer {
             this.audioContext = null;
         }
         
-        // Stop microphone stream
-        if (this.micStream) {
-            this.micStream.getTracks().forEach(track => track.stop());
-            this.micStream = null;
-        }
+        // Stop microphone capture properly
+        this.stopMicrophoneCapture();
         
         // Clear WebGL context if available
         if (this.gl) {
@@ -2502,7 +2526,36 @@ class KaraokeRenderer {
         this.setupResponsiveCanvas();
         this.startAnimation();
         
+        // Restart microphone if it was enabled (with delay to prevent issues)
+        if (this.waveformPreferences.enableMic) {
+            console.log('Restarting microphone after reinitialize...');
+            setTimeout(() => {
+                // Ensure the input device selection is properly restored before starting
+                this.ensureInputDeviceSelection();
+                this.startMicrophoneCapture();
+            }, 200); // Extra delay after reinitialize to let everything settle
+        }
+        
         console.log('✅ KaraokeRenderer reinitialized successfully');
+    }
+    
+    ensureInputDeviceSelection() {
+        try {
+            // Get saved input device preference from localStorage
+            const saved = localStorage.getItem('kaiPlayerDevicePrefs');
+            if (saved) {
+                const prefs = JSON.parse(saved);
+                if (prefs.input) {
+                    const inputSelect = document.getElementById('inputDeviceSelect');
+                    if (inputSelect && prefs.input !== inputSelect.value) {
+                        console.log('Restoring input device selection:', prefs.input);
+                        inputSelect.value = prefs.input;
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to ensure input device selection:', error);
+        }
     }
 }
 

@@ -67,7 +67,14 @@ class KaiWriter {
           try {
             // Update the song.json with new lyrics data and song metadata
             const updatedSongJson = { ...originalSongJson };
-            updatedSongJson.lyrics = kaiData.lyrics;
+            
+            // Only update lyrics if we have valid lyrics data, otherwise preserve original
+            if (kaiData.lyrics && Array.isArray(kaiData.lyrics) && kaiData.lyrics.length > 0) {
+              updatedSongJson.lyrics = kaiData.lyrics;
+              console.log('KaiWriter: Updated with new lyrics data');
+            } else {
+              console.log('KaiWriter: Preserving original lyrics (new lyrics empty/invalid)');
+            }
             
             // Update song metadata including rejections if present
             if (kaiData.song) {

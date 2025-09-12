@@ -42,6 +42,10 @@ class RendererAudioEngine {
         this.microphoneSource = null;
         this.microphoneGain = null;
         
+        // Auto-tune
+        this.autoTuneNode = null;
+        this.autoTuneWorkletLoaded = false;
+        
         this.mixerState = {
             stems: [],
             scenes: { A: null, B: null },
@@ -77,6 +81,9 @@ class RendererAudioEngine {
             this.outputNodes.IEM.masterGain.connect(this.audioContexts.IEM.destination);
             
             console.log('Dual audio engine initialized - PA:', this.audioContexts.PA.sampleRate, 'Hz (device:', this.outputDevices.PA + '), IEM:', this.audioContexts.IEM.sampleRate, 'Hz (device:', this.outputDevices.IEM + ')');
+            
+            // Load auto-tune worklet
+            await this.loadAutoTuneWorklet();
             return true;
         } catch (error) {
             console.error('Failed to initialize dual audio contexts:', error);
@@ -615,6 +622,21 @@ class RendererAudioEngine {
         };
     }
 
+    async loadAutoTuneWorklet() {
+        try {
+            if (!this.audioContexts.PA) {
+                return;
+            }
+            
+            await this.audioContexts.PA.audioWorklet.addModule('js/autoTuneWorklet.js');
+            this.autoTuneWorkletLoaded = true;
+            console.log('Auto-tune worklet loaded successfully');
+        } catch (error) {
+            console.error('Failed to load auto-tune worklet:', error);
+            this.autoTuneWorkletLoaded = false;
+        }
+    }
+    
     async startMicrophoneInput(deviceId = 'default') {
         try {
             console.log('Starting microphone input with device:', deviceId);
@@ -643,15 +665,121 @@ class RendererAudioEngine {
             this.microphoneGain = this.audioContexts.PA.createGain();
             this.microphoneGain.gain.value = 1.0; // Full volume, can be adjusted
             
-            // Connect microphone to PA output
+            // Connect microphone chain
             this.microphoneSource.connect(this.microphoneGain);
-            this.microphoneGain.connect(this.outputNodes.PA.masterGain);
+            
+            // If auto-tune is available and enabled, route through it
+            if (this.autoTuneWorkletLoaded && this.mixerState.autotuneSettings.enabled) {
+                await this.enableAutoTune();
+            } else {
+                // Direct connection to PA output
+                this.microphoneGain.connect(this.outputNodes.PA.masterGain);
+            }
             
             console.log('Microphone input connected to PA output');
             
         } catch (error) {
             console.error('Failed to start microphone input:', error);
             this.stopMicrophoneInput();
+        }
+    }
+    
+    async enableAutoTune() {
+        try {
+            if (!this.autoTuneWorkletLoaded || !this.microphoneGain) return;
+            
+            // Create auto-tune node if it doesn't exist
+            if (!this.autoTuneNode) {
+                this.autoTuneNode = new AudioWorkletNode(this.audioContexts.PA, 'auto-tune-processor');
+                console.log('Created new auto-tune node');
+            }
+            
+            // Disconnect current connections
+            this.microphoneGain.disconnect();
+            
+            // Route through auto-tune
+            this.microphoneGain.connect(this.autoTuneNode);
+            this.autoTuneNode.connect(this.outputNodes.PA.masterGain);
+            
+            // Always update all auto-tune settings to ensure they're current
+            this.autoTuneNode.port.postMessage({
+                type: 'setEnabled',
+                value: this.mixerState.autotuneSettings.enabled
+            });
+            this.autoTuneNode.port.postMessage({
+                type: 'setStrength',
+                value: this.mixerState.autotuneSettings.strength
+            });
+            this.autoTuneNode.port.postMessage({
+                type: 'setSpeed',
+                value: this.mixerState.autotuneSettings.speed
+            });
+            
+            console.log('Auto-tune enabled with settings:', {
+                strength: this.mixerState.autotuneSettings.strength,
+                speed: this.mixerState.autotuneSettings.speed
+            });
+        } catch (error) {
+            console.error('Failed to enable auto-tune:', error);
+        }
+    }
+    
+    async disableAutoTune() {
+        try {
+            if (!this.microphoneGain) return;
+            
+            // Disconnect current connections
+            this.microphoneGain.disconnect();
+            if (this.autoTuneNode) {
+                this.autoTuneNode.disconnect();
+                this.autoTuneNode.port.postMessage({
+                    type: 'setEnabled',
+                    value: false
+                });
+            }
+            
+            // Direct connection to PA output
+            this.microphoneGain.connect(this.outputNodes.PA.masterGain);
+            
+            console.log('Auto-tune disabled, direct mic connection restored');
+        } catch (error) {
+            console.error('Failed to disable auto-tune:', error);
+        }
+    }
+    
+    async setAutoTuneSettings(settings) {
+        this.mixerState.autotuneSettings = { ...this.mixerState.autotuneSettings, ...settings };
+        
+        // Handle enable/disable
+        if (settings.hasOwnProperty('enabled')) {
+            if (settings.enabled) {
+                await this.enableAutoTune();
+            } else {
+                await this.disableAutoTune();
+            }
+        }
+        
+        // Update parameters if auto-tune node exists
+        // These will apply in real-time to the running audio
+        if (this.autoTuneNode) {
+            if (settings.hasOwnProperty('strength')) {
+                this.autoTuneNode.port.postMessage({
+                    type: 'setStrength',
+                    value: settings.strength
+                });
+                console.log('Updated auto-tune strength in real-time:', settings.strength);
+            }
+            
+            if (settings.hasOwnProperty('speed')) {
+                this.autoTuneNode.port.postMessage({
+                    type: 'setSpeed',
+                    value: settings.speed
+                });
+                console.log('Updated auto-tune speed in real-time:', settings.speed);
+            }
+        } else if (settings.enabled && this.microphoneGain) {
+            // If auto-tune should be enabled but node doesn't exist, create it
+            await this.enableAutoTune();
         }
     }
     
@@ -664,6 +792,11 @@ class RendererAudioEngine {
         if (this.microphoneGain) {
             this.microphoneGain.disconnect();
             this.microphoneGain = null;
+        }
+        
+        if (this.autoTuneNode) {
+            this.autoTuneNode.disconnect();
+            this.autoTuneNode = null;
         }
         
         if (this.microphoneStream) {

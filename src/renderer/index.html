@@ -34,8 +34,7 @@
                 </div>
 
                 <div class="section">
-                    <h3>Audio Devices</h3>
-                    <button id="refreshDevicesBtn" class="preset-btn">Refresh Devices</button>
+                    <h3>Audio Devices <button id="refreshDevicesBtn" class="refresh-btn">↻</button></h3>
                     <div class="device-selector">
                         <label>PA Output:</label>
                         <select id="paDeviceSelect"></select>
@@ -44,9 +43,23 @@
                         <label>IEM Output:</label>
                         <select id="iemDeviceSelect"></select>
                     </div>
+                </div>
+
+                <div class="section">
+                    <h3>Mic Options</h3>
                     <div class="device-selector">
                         <label>Mic Input:</label>
                         <select id="inputDeviceSelect"></select>
+                    </div>
+                    <div class="waveform-controls">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="micToSpeakers" checked>
+                            <span>Mic to Speakers</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="enableMic" checked>
+                            <span>Enable Mic</span>
+                        </label>
                     </div>
                 </div>
 
@@ -56,14 +69,6 @@
                         <label class="checkbox-label">
                             <input type="checkbox" id="enableWaveforms" checked>
                             <span>Enable Waveforms</span>
-                        </label>
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="micToSpeakers" checked>
-                            <span>Mic to Speakers</span>
-                        </label>
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="enableMic" checked>
-                            <span>Enable Mic</span>
                         </label>
                         <label class="checkbox-label">
                             <input type="checkbox" id="enableEffects" checked>
@@ -138,22 +143,24 @@
                                 </div>
                             </div>
 
-                            <div class="transport-extended" id="transportControls">
-                                <button id="seekBackBtn">⏪</button>
-                                <button id="playPauseBtn">▶</button>
-                                <button id="seekForwardBtn">⏩</button>
-                                
-                                <div class="progress-container">
-                                    <div class="progress-bar">
-                                        <div class="progress-fill" id="progressFill"></div>
-                                        <div class="progress-handle" id="progressHandle"></div>
+                            <div class="transport-extended">
+                                <div id="playControls">
+                                    <button id="seekBackBtn">⏪</button>
+                                    <button id="playPauseBtn">▶</button>
+                                    <button id="seekForwardBtn">⏩</button>
+                                    
+                                    <div class="progress-container">
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" id="progressFill"></div>
+                                            <div class="progress-handle" id="progressHandle"></div>
+                                        </div>
                                     </div>
-                                </div>
-                                
-                                <div class="time-display">
-                                    <span id="currentTime">0:00</span>
-                                    <span>/</span>
-                                    <span id="totalTime">0:00</span>
+                                    
+                                    <div class="time-display">
+                                        <span id="currentTime">0:00</span>
+                                        <span>/</span>
+                                        <span id="totalTime">0:00</span>
+                                    </div>
                                 </div>
                                 
                                 <div class="effects-controls">
@@ -301,6 +308,88 @@
         } catch(e) {
             console.error('WebGL test error:', e);
         }
+
+        // Song data listener and save functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Setting up song data listener and save functionality...');
+            
+            // Listen for song data from main process
+            if (window.kaiAPI) {
+                window.kaiAPI.song.onData((event, songData) => {
+                    console.log('Received song data for save:', songData);
+                    window.currentSongData = songData;
+                });
+            }
+            
+            // Set up save button handler since renderer scripts don't execute
+            const saveBtn = document.getElementById('editorSaveBtn');
+            if (saveBtn) {
+                saveBtn.addEventListener('click', async function() {
+                    console.log('Save button clicked');
+                    
+                    if (!window.currentSongData) {
+                        alert('No song data available to save');
+                        return;
+                    }
+                    
+                    if (!window.currentSongData.originalFilePath) {
+                        alert('No original file path available for saving');
+                        return;
+                    }
+                    
+                    try {
+                        // Extract edited lyrics from the DOM using correct selectors
+                        const lyricsLines = document.querySelectorAll('.lyric-line-editor');
+                        const editedLyrics = [];
+                        
+                        lyricsLines.forEach((lineElement, index) => {
+                            const textElement = lineElement.querySelector('.text-input');
+                            const startTimeElement = lineElement.querySelector('.start-time');
+                            const endTimeElement = lineElement.querySelector('.end-time');
+                            const toggleBtn = lineElement.querySelector('.toggle-btn');
+                            
+                            if (textElement && startTimeElement && endTimeElement) {
+                                const originalLine = window.currentSongData.lyrics[index] || {};
+                                const isDisabled = toggleBtn ? toggleBtn.classList.contains('toggle-disabled') : false;
+                                
+                                editedLyrics.push({
+                                    ...originalLine,
+                                    text: textElement.value || textElement.textContent || '',
+                                    start: parseFloat(startTimeElement.value) || originalLine.start || 0,
+                                    end: parseFloat(endTimeElement.value) || originalLine.end || 0,
+                                    disabled: isDisabled
+                                });
+                            }
+                        });
+                        
+                        console.log('Extracted', editedLyrics.length, 'edited lyrics lines');
+                        
+                        // Update the song data with edited lyrics
+                        const updatedSongData = {
+                            ...window.currentSongData,
+                            lyrics: editedLyrics
+                        };
+                        
+                        console.log('Attempting to save KAI file:', window.currentSongData.originalFilePath);
+                        const result = await window.kaiAPI.editor.saveKai(updatedSongData, window.currentSongData.originalFilePath);
+                        
+                        if (result.success) {
+                            console.log('Save successful');
+                            // Update the current song data cache
+                            window.currentSongData = updatedSongData;
+                        } else {
+                            alert('Failed to save changes: ' + (result.error || 'Unknown error'));
+                            console.error('Save failed:', result.error);
+                        }
+                    } catch (error) {
+                        alert('Error saving changes: ' + error.message);
+                        console.error('Save error:', error);
+                    }
+                });
+            } else {
+                console.warn('Save button not found');
+            }
+        });
     </script>
     
     <!-- App Scripts -->

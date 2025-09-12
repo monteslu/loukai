@@ -26,19 +26,35 @@ class KaiPlayerApp {
             overlayOpacity: 0.5
         };
         
+        this.autoTunePreferences = {
+            enabled: false,
+            strength: 50,
+            speed: 20
+        };
+        
         this.init();
     }
 
     async init() {
-        await this.setupEventListeners();
-        await this.loadAudioDevices();
-        this.setupTabs();
-        this.setupKeyboardShortcuts();
-        this.setupWaveformControls();
-        this.loadWaveformPreferences(); // Load after controls are set up
+        try {
+            await this.setupEventListeners();
+            await this.loadAudioDevices();
+            this.setupTabs();
+            this.setupKeyboardShortcuts();
+            this.setupWaveformControls();
+            this.loadWaveformPreferences(); // Load after controls are set up
+            this.loadAutoTunePreferences(); // Load auto-tune preferences
+            
+            this.audioEngine = new RendererAudioEngine();
+            await this.audioEngine.initialize();
+        } catch (error) {
+            console.error('Error during KaiPlayerApp init:', error);
+        }
         
-        this.audioEngine = new RendererAudioEngine();
-        await this.audioEngine.initialize();
+        // Apply auto-tune settings after audio engine is initialized
+        if (this.autoTunePreferences) {
+            this.audioEngine.setAutoTuneSettings(this.autoTunePreferences);
+        }
         
         // Set up callback for when songs end
         this.audioEngine.setOnSongEndedCallback(() => {
@@ -60,6 +76,9 @@ class KaiPlayerApp {
         }
         
         this.updateStatus('Ready');
+        
+        // Set initial UI state (no song loaded)
+        this.updateUIForSongState();
         
         const version = await kaiAPI.app.getVersion();
         console.log(`KAI Player v${version} initialized`);
@@ -160,7 +179,19 @@ class KaiPlayerApp {
 
 
         document.getElementById('autotuneEnabled').addEventListener('change', (e) => {
-            kaiAPI.autotune.setEnabled(e.target.checked);
+            const enabled = e.target.checked;
+            
+            // Update preferences
+            this.autoTunePreferences.enabled = enabled;
+            this.saveAutoTunePreferences();
+            
+            // Update audio engine directly
+            if (this.audioEngine) {
+                this.audioEngine.setAutoTuneSettings({ enabled: enabled });
+            }
+            
+            // Also update via API
+            kaiAPI.autotune.setEnabled(enabled);
         });
 
         document.getElementById('autotuneStrength').addEventListener('input', (e) => {
@@ -197,6 +228,9 @@ class KaiPlayerApp {
             console.log('🎵 Received song data in renderer - performing full initialization');
             
             this.currentSong = songData;
+            
+            // Show loading state immediately
+            this.showLoadingState();
             
             // Use pending metadata if available, otherwise use data from songData
             const metadata = this._pendingMetadata || songData.metadata || {};
@@ -242,6 +276,15 @@ class KaiPlayerApp {
                 // Apply waveform preferences to player
                 if (this.player.karaokeRenderer) {
                     this.player.karaokeRenderer.waveformPreferences = { ...this.waveformPreferences };
+                    
+                    // Restart microphone capture if it was enabled
+                    if (this.waveformPreferences.enableMic) {
+                        console.log('Restarting microphone capture after song load...');
+                        setTimeout(() => {
+                            this.player.karaokeRenderer.startMicrophoneCapture();
+                        }, 100);
+                    }
+                    
                     // Update effect display with current preset
                     setTimeout(() => this.updateEffectDisplay(), 100);
                 }
@@ -263,7 +306,9 @@ class KaiPlayerApp {
             }
             
             document.getElementById('loadingMessage').style.display = 'none';
-            document.getElementById('transportControls').style.display = 'flex';
+            
+            // Now that everything is fully loaded, update the UI
+            this.updateUIForSongState();
             
             // Clear pending metadata
             this._pendingMetadata = null;
@@ -782,9 +827,24 @@ class KaiPlayerApp {
     }
 
     updateAutotuneSettings() {
+        const enabled = document.getElementById('autotuneEnabled').checked;
         const strength = document.getElementById('autotuneStrength').value;
         const speed = document.getElementById('autotuneSpeed').value;
         
+        // Update preferences
+        this.autoTunePreferences = {
+            enabled: enabled,
+            strength: parseInt(strength),
+            speed: parseInt(speed)
+        };
+        this.saveAutoTunePreferences();
+        
+        // Update audio engine directly
+        if (this.audioEngine) {
+            this.audioEngine.setAutoTuneSettings(this.autoTunePreferences);
+        }
+        
+        // Also update via API if needed
         kaiAPI.autotune.setSettings({
             strength: parseInt(strength),
             speed: parseInt(speed)
@@ -848,6 +908,47 @@ class KaiPlayerApp {
             console.log('Saved waveform preferences:', this.waveformPreferences);
         } catch (error) {
             console.warn('Failed to save waveform preferences:', error);
+        }
+    }
+    
+    loadAutoTunePreferences() {
+        try {
+            const saved = localStorage.getItem('kaiPlayerAutoTunePrefs');
+            if (saved) {
+                this.autoTunePreferences = { ...this.autoTunePreferences, ...JSON.parse(saved) };
+                console.log('Loaded auto-tune preferences:', this.autoTunePreferences);
+                
+                // Apply saved preferences to controls
+                const autotuneEnabled = document.getElementById('autotuneEnabled');
+                const autotuneStrength = document.getElementById('autotuneStrength');
+                const autotuneSpeed = document.getElementById('autotuneSpeed');
+                
+                if (autotuneEnabled) autotuneEnabled.checked = this.autoTunePreferences.enabled;
+                if (autotuneStrength) {
+                    autotuneStrength.value = this.autoTunePreferences.strength;
+                    document.querySelector('#autotuneStrength + .slider-value').textContent = `${this.autoTunePreferences.strength}%`;
+                }
+                if (autotuneSpeed) {
+                    autotuneSpeed.value = this.autoTunePreferences.speed;
+                    document.querySelector('#autotuneSpeed + .slider-value').textContent = this.autoTunePreferences.speed;
+                }
+                
+                // Apply settings to audio engine if it exists
+                if (this.audioEngine) {
+                    this.audioEngine.setAutoTuneSettings(this.autoTunePreferences);
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to load auto-tune preferences:', error);
+        }
+    }
+    
+    saveAutoTunePreferences() {
+        try {
+            localStorage.setItem('kaiPlayerAutoTunePrefs', JSON.stringify(this.autoTunePreferences));
+            console.log('Saved auto-tune preferences:', this.autoTunePreferences);
+        } catch (error) {
+            console.warn('Failed to save auto-tune preferences:', error);
         }
     }
     
@@ -942,6 +1043,77 @@ class KaiPlayerApp {
             }
             
             effectNameElement.textContent = displayName;
+        }
+    }
+    
+    showLoadingState() {
+        const playControls = document.getElementById('playControls');
+        const transportContainer = playControls.parentElement;
+        
+        // Hide play controls
+        playControls.style.display = 'none';
+        
+        // Create or update the loading message
+        let noSongMessage = document.getElementById('noSongMessage');
+        if (!noSongMessage) {
+            noSongMessage = document.createElement('div');
+            noSongMessage.id = 'noSongMessage';
+            noSongMessage.style.cssText = `
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 18px;
+                color: #ccc;
+                text-align: center;
+                padding: 10px;
+            `;
+            // Insert before the effects controls
+            transportContainer.insertBefore(noSongMessage, transportContainer.querySelector('.effects-controls'));
+        }
+        noSongMessage.innerHTML = '⏳ Loading...';
+        noSongMessage.style.display = 'flex';
+    }
+    
+    updateUIForSongState() {
+        const playControls = document.getElementById('playControls');
+        const transportContainer = playControls.parentElement;
+        
+        if (!this.currentSong) {
+            // No song loaded - hide play controls and show "Load a Song" message
+            playControls.style.display = 'none';
+            
+            // Create or update the no-song message in the transport controls area
+            let noSongMessage = document.getElementById('noSongMessage');
+            if (!noSongMessage) {
+                noSongMessage = document.createElement('div');
+                noSongMessage.id = 'noSongMessage';
+                noSongMessage.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 18px;
+                    color: #ccc;
+                    text-align: center;
+                    padding: 10px;
+                `;
+                // Insert before the effects controls
+                transportContainer.insertBefore(noSongMessage, transportContainer.querySelector('.effects-controls'));
+            }
+            noSongMessage.innerHTML = '🎵 Load a Song to Begin';
+            noSongMessage.style.display = 'flex';
+        } else {
+            // Song loaded - show normal controls
+            playControls.style.display = 'flex';
+            
+            // Reset play button state when new song loads
+            this.isPlaying = false;
+            this.updatePlayButton('▶');
+            
+            // Hide the no-song message if it exists
+            const noSongMessage = document.getElementById('noSongMessage');
+            if (noSongMessage) {
+                noSongMessage.style.display = 'none';
+            }
         }
     }
 }

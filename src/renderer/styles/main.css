@@ -550,6 +550,35 @@ body {
     border-radius: 8px;
 }
 
+#playControls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex: 1;
+    min-width: 0;
+}
+
+.refresh-btn {
+    background: #3a3a3a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    color: #ccc;
+    padding: 4px 8px;
+    font-size: 14px;
+    cursor: pointer;
+    margin-left: 8px;
+    min-width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.refresh-btn:hover {
+    background: #4a4a4a;
+    color: #fff;
+}
+
 .transport-extended button {
     width: 48px;
     height: 48px;
@@ -628,15 +657,16 @@ body {
 .progress-container {
     flex: 1;
     max-width: 300px;
-    margin: 0 16px;
+    margin: 0;
 }
 
 .progress-bar {
     position: relative;
     width: 100%;
-    height: 6px;
-    background: #3a3a3a;
-    border-radius: 3px;
+    height: 12px;
+    background: #555555;
+    border: 1px solid #666666;
+    border-radius: 6px;
     cursor: pointer;
     overflow: hidden;
 }
