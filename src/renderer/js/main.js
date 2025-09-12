@@ -17,6 +17,15 @@ class KaiPlayerApp {
             input: null
         };
         
+        // Waveform preferences
+        this.waveformPreferences = {
+            enableWaveforms: true,
+            micToSpeakers: true,
+            enableMic: true,
+            enableEffects: true,
+            overlayOpacity: 0.5
+        };
+        
         this.init();
     }
 
@@ -25,6 +34,8 @@ class KaiPlayerApp {
         await this.loadAudioDevices();
         this.setupTabs();
         this.setupKeyboardShortcuts();
+        this.setupWaveformControls();
+        this.loadWaveformPreferences(); // Load after controls are set up
         
         this.audioEngine = new RendererAudioEngine();
         await this.audioEngine.initialize();
@@ -42,6 +53,12 @@ class KaiPlayerApp {
         this.coaching = new CoachingController();
         this.editor = new LyricsEditorController();
         
+        // Apply loaded waveform preferences immediately after player creation
+        if (this.player.karaokeRenderer) {
+            this.player.karaokeRenderer.waveformPreferences = { ...this.waveformPreferences };
+            console.log('Applied waveform preferences on init:', this.waveformPreferences);
+        }
+        
         this.updateStatus('Ready');
         
         const version = await kaiAPI.app.getVersion();
@@ -53,8 +70,10 @@ class KaiPlayerApp {
             this.loadKaiFile();
         });
 
-        document.getElementById('refreshDevicesBtn').addEventListener('click', () => {
-            this.loadAudioDevices();
+        document.getElementById('refreshDevicesBtn').addEventListener('click', async () => {
+            console.log('Refresh devices button clicked');
+            await this.loadAudioDevices();
+            console.log('Device refresh completed');
         });
 
         document.getElementById('songInfoBtn').addEventListener('click', () => {
@@ -83,6 +102,21 @@ class KaiPlayerApp {
 
         document.getElementById('seekForwardBtn').addEventListener('click', () => {
             this.seekRelative(10);
+        });
+        
+        // Effect switching controls
+        document.getElementById('prevEffectBtn').addEventListener('click', () => {
+            if (this.player && this.player.karaokeRenderer) {
+                this.player.karaokeRenderer.switchToPreviousPreset();
+                this.updateEffectDisplay();
+            }
+        });
+        
+        document.getElementById('nextEffectBtn').addEventListener('click', () => {
+            if (this.player && this.player.karaokeRenderer) {
+                this.player.karaokeRenderer.switchToNextPreset();
+                this.updateEffectDisplay();
+            }
         });
 
         document.getElementById('paDeviceSelect').addEventListener('change', async (e) => {
@@ -124,17 +158,6 @@ class KaiPlayerApp {
             this.saveDevicePreference('input', deviceId);
         });
 
-        document.getElementById('sceneABtn').addEventListener('click', () => {
-            this.recallScene('A');
-        });
-
-        document.getElementById('sceneBBtn').addEventListener('click', () => {
-            this.recallScene('B');
-        });
-
-        document.getElementById('saveSceneBtn').addEventListener('click', () => {
-            this.saveCurrentScene();
-        });
 
         document.getElementById('autotuneEnabled').addEventListener('change', (e) => {
             kaiAPI.autotune.setEnabled(e.target.checked);
@@ -174,13 +197,14 @@ class KaiPlayerApp {
             console.log('Received song data in renderer');
             this.currentSong = songData;
             
-            // Immediately pass lyrics to player if available
+            // Immediately pass full song data to player if available
             if (this.player && songData.lyrics) {
                 const fullMetadata = {
                     title: songData.metadata?.title || 'Unknown',
                     artist: songData.metadata?.artist || 'Unknown',
                     lyrics: songData.lyrics,
-                    duration: songData.metadata?.duration || 0
+                    duration: songData.metadata?.duration || 0,
+                    audio: songData.audio // Include audio sources for vocals waveform
                 };
                 this.player.onSongLoaded(fullMetadata);
             }
@@ -203,7 +227,9 @@ class KaiPlayerApp {
 
     async loadAudioDevices() {
         try {
-            // Load saved device preferences
+            console.log('Loading audio devices...');
+            
+            // Load saved device preferences first
             this.loadDevicePreferences();
             
             // First try to enumerate real devices from renderer process
@@ -216,7 +242,10 @@ class KaiPlayerApp {
             }
             this.populateDeviceSelectors();
             
-            // Don't restore device selections here - wait for audio engine to be ready
+            // Restore device selections after populating the selectors
+            await this.restoreDeviceSelections();
+            console.log('Device selections restored after refresh');
+            
         } catch (error) {
             console.error('Failed to load audio devices:', error);
             this.updateStatus('Error loading audio devices');
@@ -344,20 +373,17 @@ class KaiPlayerApp {
                     if (e.ctrlKey || e.metaKey) {
                         e.preventDefault();
                     } else {
-                        this.recallScene('A');
                     }
                     break;
                 
                 case 'b':
                 case 'B':
-                    this.recallScene('B');
                     break;
                 
                 case 's':
                 case 'S':
                     if (e.ctrlKey || e.metaKey) {
                         e.preventDefault();
-                        this.saveCurrentScene();
                     }
                     break;
                 
@@ -374,6 +400,77 @@ class KaiPlayerApp {
             }
         });
     }
+    
+    setupWaveformControls() {
+        const enableWaveforms = document.getElementById('enableWaveforms');
+        const micToSpeakers = document.getElementById('micToSpeakers');
+        const enableMic = document.getElementById('enableMic');
+        const enableEffects = document.getElementById('enableEffects');
+        
+        enableWaveforms?.addEventListener('change', (e) => {
+            this.waveformPreferences.enableWaveforms = e.target.checked;
+            this.saveWaveformPreferences();
+            
+            // Update player if it exists
+            if (this.player && this.player.karaokeRenderer) {
+                this.player.karaokeRenderer.setWaveformsEnabled(e.target.checked);
+            }
+        });
+        
+        micToSpeakers?.addEventListener('change', (e) => {
+            this.waveformPreferences.micToSpeakers = e.target.checked;
+            this.saveWaveformPreferences();
+            
+            // Update audio routing through renderer
+            if (this.player && this.player.karaokeRenderer) {
+                this.player.karaokeRenderer.setMicToSpeakers(e.target.checked);
+            }
+        });
+        
+        enableMic?.addEventListener('change', (e) => {
+            this.waveformPreferences.enableMic = e.target.checked;
+            this.saveWaveformPreferences();
+            
+            // Update player if it exists
+            if (this.player && this.player.karaokeRenderer) {
+                if (e.target.checked) {
+                    this.player.karaokeRenderer.startMicrophoneCapture();
+                } else {
+                    this.player.karaokeRenderer.stopMicrophoneCapture();
+                }
+            }
+        });
+        
+        enableEffects?.addEventListener('change', (e) => {
+            this.waveformPreferences.enableEffects = e.target.checked;
+            this.saveWaveformPreferences();
+            
+            // Update player if it exists
+            if (this.player && this.player.karaokeRenderer) {
+                this.player.karaokeRenderer.setEffectsEnabled(e.target.checked);
+            }
+        });
+        
+        // Overlay opacity slider
+        const overlayOpacity = document.getElementById('overlayOpacity');
+        const overlayOpacityValue = document.getElementById('overlayOpacityValue');
+        
+        overlayOpacity?.addEventListener('input', (e) => {
+            const opacity = parseFloat(e.target.value);
+            this.waveformPreferences.overlayOpacity = opacity;
+            this.saveWaveformPreferences();
+            
+            // Update display value
+            if (overlayOpacityValue) {
+                overlayOpacityValue.textContent = opacity.toFixed(2);
+            }
+            
+            // Update player if it exists - real-time update
+            if (this.player && this.player.karaokeRenderer) {
+                this.player.karaokeRenderer.waveformPreferences.overlayOpacity = opacity;
+            }
+        });
+    }
 
     async loadKaiFile() {
         try {
@@ -382,7 +479,6 @@ class KaiPlayerApp {
             
             if (result && result.success) {
                 this.currentSong = result;
-                this.setupPresets(result.stems);
                 this.enableControls();
                 this.updateStatus(`Loaded: ${result.metadata?.title || 'Unknown Song'}`);
             } else if (result) {
@@ -395,7 +491,50 @@ class KaiPlayerApp {
     }
 
     async onSongLoaded(metadata) {
+        console.log('🔄 Loading song with clean slate approach...');
         console.log('Frontend received metadata:', metadata);
+        
+        // IMMEDIATELY stop current playback
+        if (this.audioEngine) {
+            console.log('🛑 Stopping current playback...');
+            await this.audioEngine.pause();
+        }
+        if (this.player) {
+            await this.player.pause();
+        }
+        
+        // Show loading state - hide transport controls, show loading message
+        document.getElementById('transportControls').style.display = 'none';
+        document.getElementById('loadingMessage').style.display = 'flex';
+        
+        // UPDATE currentSong with fresh metadata that contains audio sources
+        // This ensures we use the latest data with audio sources for reinitialization
+        if (this.currentSong && metadata) {
+            console.log('🔄 Updating currentSong with fresh metadata...');
+            console.log('Old currentSong audio info:', {
+                hasAudio: !!this.currentSong.audio,
+                hasSources: !!this.currentSong.audio?.sources,
+                sourcesLength: this.currentSong.audio?.sources?.length || 0
+            });
+            
+            // Merge fresh metadata into currentSong, preserving existing data but updating with fresh info
+            this.currentSong = {
+                ...this.currentSong,
+                ...metadata,
+                // Ensure we keep the existing structure but update metadata
+                metadata: {
+                    ...this.currentSong.metadata,
+                    ...metadata
+                }
+            };
+            
+            console.log('Updated currentSong audio info:', {
+                hasAudio: !!this.currentSong.audio,
+                hasSources: !!this.currentSong.audio?.sources,
+                sourcesLength: this.currentSong.audio?.sources?.length || 0,
+                sourceNames: this.currentSong.audio?.sources?.map(s => s.name) || []
+            });
+        }
         
         const title = metadata?.title || 'Unknown Song';
         const artist = metadata?.artist || 'Unknown Artist';
@@ -406,20 +545,51 @@ class KaiPlayerApp {
         // Enable song info button
         document.getElementById('songInfoBtn').disabled = false;
         
+        // CLEAN SLATE APPROACH: Reinitialize audio engine
+        // IMPORTANT: Now using the UPDATED currentSong with fresh audio sources
         if (this.audioEngine && this.currentSong) {
+            console.log('🔄 Reinitializing audio engine...');
+            console.log('Fresh currentSong being used for reinit:', {
+                hasAudio: !!this.currentSong.audio,
+                hasSources: !!this.currentSong.audio?.sources,
+                sourcesLength: this.currentSong.audio?.sources?.length || 0,
+                sourceNames: this.currentSong.audio?.sources?.map(s => s.name) || []
+            });
+            await this.audioEngine.reinitialize();
+            console.log('🔄 Loading song into audio engine...');
             await this.audioEngine.loadSong(this.currentSong);
+            console.log('✅ Audio engine fully loaded');
         }
         
+        // CLEAN SLATE APPROACH: Reinitialize karaoke renderer  
         if (this.player && this.currentSong) {
-            // Pass full song data which includes lyrics and updated duration from audio engine
+            console.log('🔄 Reinitializing karaoke renderer...');
+            if (this.player.karaokeRenderer) {
+                this.player.karaokeRenderer.reinitialize();
+            }
+            
+            // Pass full song data which includes lyrics, audio sources, and updated duration from audio engine
             const fullMetadata = {
                 ...metadata,
                 lyrics: this.currentSong.lyrics,
-                duration: this.audioEngine ? this.audioEngine.getDuration() : (this.currentSong.metadata?.duration || 0)
+                duration: this.audioEngine ? this.audioEngine.getDuration() : (this.currentSong.metadata?.duration || 0),
+                audio: this.currentSong.audio // Include audio sources for vocals waveform
             };
-            console.log('Main.js passing duration to player:', fullMetadata.duration);
+            console.log('Main.js passing full metadata to player:', { hasAudio: !!fullMetadata.audio, hasSources: !!fullMetadata.audio?.sources });
             this.player.onSongLoaded(fullMetadata);
+            
+            // Apply waveform preferences to player
+            if (this.player.karaokeRenderer) {
+                this.player.karaokeRenderer.waveformPreferences = { ...this.waveformPreferences };
+                // Update effect display with current preset
+                setTimeout(() => this.updateEffectDisplay(), 100);
+            }
+            console.log('✅ Karaoke renderer fully loaded');
         }
+        
+        // Wait a moment for all contexts and buffers to be fully ready
+        console.log('⏳ Waiting for all audio contexts to be ready...');
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         if (this.coaching) {
             this.coaching.onSongLoaded(metadata || {});
@@ -435,6 +605,12 @@ class KaiPlayerApp {
         if (this.mixer && this.audioEngine) {
             this.mixer.updateFromAudioEngine();
         }
+        
+        // Re-enable UI controls now that loading is complete
+        console.log('✅ Song loading complete - showing transport controls');
+        document.getElementById('loadingMessage').style.display = 'none';
+        document.getElementById('transportControls').style.display = 'flex';
+        this.updatePlayButton('▶');
     }
 
     showSongInfo() {
@@ -540,29 +716,6 @@ class KaiPlayerApp {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
 
-    setupPresets(stems) {
-        const presetContainer = document.getElementById('presetButtons');
-        presetContainer.innerHTML = '';
-        
-        const presets = [
-            { id: 'original', name: 'Original' },
-            { id: 'karaoke', name: 'Karaoke' },
-            { id: 'band_only', name: 'Band Only' },
-            { id: 'acoustic', name: 'Acoustic' }
-        ];
-        
-        presets.forEach(preset => {
-            const btn = document.createElement('button');
-            btn.className = 'preset-btn';
-            btn.textContent = preset.name;
-            btn.addEventListener('click', () => {
-                this.applyPreset(preset.id);
-                document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-            });
-            presetContainer.appendChild(btn);
-        });
-    }
 
     enableControls() {
         document.getElementById('playPauseBtn').disabled = false;
@@ -658,30 +811,6 @@ class KaiPlayerApp {
         }, 100);
     }
 
-    async applyPreset(presetId) {
-        if (this.audioEngine) {
-            this.audioEngine.applyPreset(presetId);
-            if (this.mixer) {
-                this.mixer.updateFromAudioEngine();
-            }
-        }
-    }
-
-    async recallScene(sceneId) {
-        await kaiAPI.mixer.recallScene(sceneId);
-        
-        document.querySelectorAll('.scene-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.textContent === sceneId);
-        });
-    }
-
-    async saveCurrentScene() {
-        const activeScene = document.querySelector('.scene-btn.active');
-        if (activeScene) {
-            const sceneId = activeScene.textContent;
-            console.log(`Saving current mix to scene ${sceneId}`);
-        }
-    }
 
     async toggleVocalsGlobal() {
         await kaiAPI.mixer.toggleMute('vocals', 'PA');
@@ -728,6 +857,49 @@ class KaiPlayerApp {
             }
         } catch (error) {
             console.warn('Failed to load device preferences:', error);
+        }
+    }
+    
+    // Waveform preferences methods
+    loadWaveformPreferences() {
+        try {
+            const saved = localStorage.getItem('kaiPlayerWaveformPrefs');
+            if (saved) {
+                this.waveformPreferences = { ...this.waveformPreferences, ...JSON.parse(saved) };
+                console.log('Loaded waveform preferences:', this.waveformPreferences);
+                
+                // Apply saved preferences to checkboxes
+                const enableWaveforms = document.getElementById('enableWaveforms');
+                const micToSpeakers = document.getElementById('micToSpeakers');
+                const enableMic = document.getElementById('enableMic');
+                const enableEffects = document.getElementById('enableEffects');
+                
+                if (enableWaveforms) enableWaveforms.checked = this.waveformPreferences.enableWaveforms;
+                if (micToSpeakers) micToSpeakers.checked = this.waveformPreferences.micToSpeakers;
+                if (enableMic) enableMic.checked = this.waveformPreferences.enableMic;
+                if (enableEffects) enableEffects.checked = this.waveformPreferences.enableEffects;
+                
+                // Apply saved overlay opacity
+                const overlayOpacity = document.getElementById('overlayOpacity');
+                const overlayOpacityValue = document.getElementById('overlayOpacityValue');
+                if (overlayOpacity && this.waveformPreferences.overlayOpacity !== undefined) {
+                    overlayOpacity.value = this.waveformPreferences.overlayOpacity;
+                    if (overlayOpacityValue) {
+                        overlayOpacityValue.textContent = this.waveformPreferences.overlayOpacity.toFixed(2);
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to load waveform preferences:', error);
+        }
+    }
+    
+    saveWaveformPreferences() {
+        try {
+            localStorage.setItem('kaiPlayerWaveformPrefs', JSON.stringify(this.waveformPreferences));
+            console.log('Saved waveform preferences:', this.waveformPreferences);
+        } catch (error) {
+            console.warn('Failed to save waveform preferences:', error);
         }
     }
     
@@ -803,6 +975,25 @@ class KaiPlayerApp {
                 this.devicePreferences[type] = null;
                 localStorage.setItem('kaiPlayerDevicePrefs', JSON.stringify(this.devicePreferences));
             }
+        }
+    }
+    
+    updateEffectDisplay() {
+        const effectNameElement = document.getElementById('currentEffectName');
+        if (effectNameElement && this.player && this.player.karaokeRenderer) {
+            const renderer = this.player.karaokeRenderer;
+            let displayName = 'Effect';
+            
+            if (renderer.effectType === 'butterchurn' && renderer.currentPreset) {
+                // Truncate long preset names for display
+                displayName = renderer.currentPreset.length > 15 ? 
+                    renderer.currentPreset.substring(0, 15) + '...' : 
+                    renderer.currentPreset;
+            } else if (renderer.effectType === 'custom') {
+                displayName = 'Custom Shader';
+            }
+            
+            effectNameElement.textContent = displayName;
         }
     }
 }

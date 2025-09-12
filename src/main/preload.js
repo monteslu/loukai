@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { ipcRenderer } = require('electron');
 
 const api = {
   app: {
@@ -56,4 +56,5 @@ const api = {
   }
 };
 
-contextBridge.exposeInMainWorld('kaiAPI', api);
+// Since contextIsolation is disabled, directly assign to window
+window.kaiAPI = api;

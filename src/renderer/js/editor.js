@@ -25,10 +25,6 @@ class LyricsEditorController {
 
     setupEventListeners() {
         // Editor controls
-        document.getElementById('editorPlayBtn').addEventListener('click', () => {
-            this.togglePlayback();
-        });
-
         document.getElementById('editorSaveBtn').addEventListener('click', () => {
             this.saveChanges();
         });
@@ -37,8 +33,13 @@ class LyricsEditorController {
             this.exportLyrics();
         });
 
-        document.getElementById('resetLyricsBtn').addEventListener('click', () => {
+        document.getElementById('resetLyrics').addEventListener('click', () => {
             this.resetToOriginal();
+        });
+        
+        // Listen for IEM device changes
+        document.getElementById('iemDeviceSelect').addEventListener('change', () => {
+            this.applyAudioDeviceSelection();
         });
 
         // Textarea changes - now handled by LyricsEditor
@@ -61,6 +62,28 @@ class LyricsEditorController {
         this.updateSaveButton();
         
         this.enableControls();
+        
+        // Load vocals.mp3 into the audio element
+        const audioElement = document.getElementById('editorAudio');
+        if (audioElement && songData?.audio?.sources) {
+            // Find the vocals source
+            const vocalsSource = songData.audio.sources.find(source => 
+                source.name === 'vocals' || 
+                source.filename?.includes('vocals')
+            );
+            
+            if (vocalsSource && vocalsSource.audioData) {
+                const vocalsBlob = new Blob([vocalsSource.audioData], { type: 'audio/mp3' });
+                const vocalsUrl = URL.createObjectURL(vocalsBlob);
+                audioElement.src = vocalsUrl;
+                console.log('Loaded vocals audio into editor audio player');
+                
+                // Apply IEM device selection if available
+                this.applyAudioDeviceSelection();
+            } else {
+                console.log('No vocals track found in KAI file');
+            }
+        }
         
         // Load lyrics directly into the line-by-line editor
         if (this.lyricsEditor && songData?.lyrics) {
@@ -100,48 +123,32 @@ class LyricsEditorController {
 
 
 
-    togglePlayback() {
-        if (!this.currentSong) return;
-        
-        this.isPlaying = !this.isPlaying;
-        const btn = document.getElementById('editorPlayBtn');
-        
-        if (this.isPlaying) {
-            btn.innerHTML = '<span>⏸ Pause</span>';
-            this.startPlayback();
-        } else {
-            btn.innerHTML = '<span>▶ Play</span>';
-            this.stopPlayback();
-        }
-    }
-
-    startPlayback() {
-        this.updateTimer = setInterval(() => {
-            this.currentPosition += 0.1;
-            
-            if (this.currentPosition > this.songDuration) {
-                this.currentPosition = this.songDuration;
-                this.stopPlayback();
-            }
-            
-            this.timeDisplay.textContent = this.formatTime(this.currentPosition);
-            this.updateActiveLyrics();
-        }, 100);
-    }
-
-    stopPlayback() {
-        if (this.updateTimer) {
-            clearInterval(this.updateTimer);
-            this.updateTimer = null;
-        }
-        
-        this.isPlaying = false;
-        document.getElementById('editorPlayBtn').innerHTML = '<span>▶ Play</span>';
-    }
 
 
     updateActiveLyrics() {
         // No longer needed - original lyrics display removed
+    }
+    
+    async applyAudioDeviceSelection() {
+        const audioElement = document.getElementById('editorAudio');
+        const iemSelect = document.getElementById('iemDeviceSelect');
+        
+        if (!audioElement || !iemSelect) return;
+        
+        const selectedDevice = iemSelect.options[iemSelect.selectedIndex];
+        if (selectedDevice && selectedDevice.dataset.deviceId) {
+            try {
+                // Use setSinkId to route audio to the selected IEM device
+                if (typeof audioElement.setSinkId === 'function') {
+                    await audioElement.setSinkId(selectedDevice.dataset.deviceId);
+                    console.log('Editor audio routed to IEM device:', selectedDevice.text);
+                } else {
+                    console.warn('setSinkId not supported in this browser');
+                }
+            } catch (error) {
+                console.error('Failed to set audio output device:', error);
+            }
+        }
     }
 
 
@@ -242,10 +249,10 @@ class LyricsEditorController {
     }
 
     enableControls() {
-        document.getElementById('editorPlayBtn').disabled = false;
         document.getElementById('editorSaveBtn').disabled = false;
         document.getElementById('exportLyricsBtn').disabled = false;
-        document.getElementById('resetLyricsBtn').disabled = false;
+        document.getElementById('resetLyrics').disabled = false;
+        document.getElementById('addNewLine').disabled = false;
         // Enable controls - line-by-line editor is always enabled when song is loaded
     }
 

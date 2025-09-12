@@ -269,6 +269,45 @@ body {
     color: #ccc;
 }
 
+.slider-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+}
+
+.slider-control label {
+    min-width: 100px;
+    font-size: 12px;
+    color: #ccc;
+}
+
+.slider-control input[type="range"] {
+    flex: 1;
+    height: 4px;
+    background: #3a3a3a;
+    outline: none;
+    border-radius: 2px;
+}
+
+.slider-control input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    background: #0084ff;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.slider-control input[type="range"]::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: #0084ff;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
 /* Center Content */
 .center-content {
     flex: 1;
@@ -533,6 +572,57 @@ body {
     color: #ccc;
 }
 
+/* Loading Message */
+.loading-message {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    background: #2a2a2a;
+    border-radius: 8px;
+    min-height: 80px;
+}
+
+.loading-text {
+    font-size: 18px;
+    color: #ccc;
+    animation: loadingPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes loadingPulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+
+/* Effects Controls */
+.effects-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.effects-controls button {
+    width: auto !important;
+    height: 32px !important;
+    padding: 0 12px;
+    font-size: 12px !important;
+    background: #007acc;
+}
+
+.effects-controls button:hover {
+    background: #0088dd;
+}
+
+#currentEffectName {
+    font-size: 12px;
+    color: #ccc;
+    min-width: 100px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 
 /* Progress Bar */
 .progress-container {
@@ -785,10 +875,10 @@ body {
 
 /* Lyrics Editor Tab */
 .editor-container {
-    padding: 16px;
     display: flex;
     flex-direction: column;
     height: 100%;
+    padding: 16px;
     gap: 16px;
 }
 
@@ -799,6 +889,8 @@ body {
     padding: 12px 16px;
     background: #2a2a2a;
     border-radius: 6px;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .editor-controls {
@@ -837,7 +929,34 @@ body {
     display: flex;
     gap: 16px;
     flex: 1;
-    min-height: 300px;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.editor-player {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 12px;
+    background: #2a2a2a;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
+.audio-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #007acc;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    min-width: 30px;
+}
+
+.editor-player audio {
+    flex: 1;
+    max-width: 600px;
+    height: 40px;
 }
 
 .editor-column {
@@ -934,6 +1053,12 @@ body {
     color: #888;
     min-width: 30px;
     text-align: right;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.line-number:hover {
+    color: #007acc;
 }
 
 .time-inputs {

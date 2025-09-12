@@ -13,8 +13,12 @@ class LyricsEditor {
     }
     
     init() {
-        this.addNewLineBtn.addEventListener('click', () => this.addNewLine());
-        this.resetLyricsBtn.addEventListener('click', () => this.resetToOriginal());
+        if (this.addNewLineBtn) {
+            this.addNewLineBtn.addEventListener('click', () => this.addNewLine());
+        }
+        if (this.resetLyricsBtn) {
+            this.resetLyricsBtn.addEventListener('click', () => this.resetToOriginal());
+        }
     }
     
     loadLyrics(lyrics, rejections = []) {
@@ -144,6 +148,7 @@ class LyricsEditor {
     }
     
     setupLineEventListeners(container, index) {
+        const lineNumber = container.querySelector('.line-number');
         const startTimeInput = container.querySelector('.start-time');
         const endTimeInput = container.querySelector('.end-time');
         const textInput = container.querySelector('.text-input');
@@ -151,6 +156,18 @@ class LyricsEditor {
         const toggleBtn = container.querySelector('.toggle-btn');
         const deleteBtn = container.querySelector('.delete-btn');
         const addAfterBtn = container.querySelector('.add-after-btn');
+        
+        // Line number click - jump to time in audio player
+        lineNumber.addEventListener('click', () => {
+            const audioElement = document.getElementById('editorAudio');
+            if (audioElement && audioElement.src) {
+                const startTime = parseFloat(startTimeInput.value) || 0;
+                audioElement.currentTime = startTime;
+                if (audioElement.paused) {
+                    audioElement.play();
+                }
+            }
+        });
         
         // Time inputs
         startTimeInput.addEventListener('change', (e) => {

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const AudioEngine = require('./audioEngine');
@@ -16,6 +16,7 @@ class KaiPlayerApp {
   async initialize() {
     await app.whenReady();
     this.createMainWindow();
+    this.createApplicationMenu();
     this.setupIPC();
     this.initializeAudioEngine();
   }
@@ -27,8 +28,8 @@ class KaiPlayerApp {
       minWidth: 800,
       minHeight: 600,
       webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
+        nodeIntegration: true,
+        contextIsolation: false,
         preload: path.join(__dirname, 'preload.js')
       },
       titleBarStyle: 'hidden',
@@ -51,6 +52,155 @@ class KaiPlayerApp {
         this.audioEngine.stop();
       }
     });
+  }
+
+  createApplicationMenu() {
+    const template = [
+      {
+        label: 'File',
+        submenu: [
+          {
+            label: 'Open KAI File...',
+            accelerator: 'CmdOrCtrl+O',
+            click: async () => {
+              const result = await dialog.showOpenDialog(this.mainWindow, {
+                filters: [
+                  { name: 'KAI Files', extensions: ['kai'] }
+                ],
+                properties: ['openFile']
+              });
+
+              if (!result.canceled && result.filePaths.length > 0) {
+                await this.loadKaiFile(result.filePaths[0]);
+              }
+            }
+          },
+          { type: 'separator' },
+          {
+            label: 'Quit',
+            accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
+            click: () => {
+              app.quit();
+            }
+          }
+        ]
+      },
+      {
+        label: 'View',
+        submenu: [
+          {
+            label: 'Reload',
+            accelerator: 'CmdOrCtrl+R',
+            click: (item, focusedWindow) => {
+              if (focusedWindow) {
+                focusedWindow.reload();
+              }
+            }
+          },
+          {
+            label: 'Toggle Developer Tools',
+            accelerator: process.platform === 'darwin' ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
+            click: (item, focusedWindow) => {
+              if (focusedWindow) {
+                focusedWindow.webContents.toggleDevTools();
+              }
+            }
+          },
+          { type: 'separator' },
+          {
+            label: 'Actual Size',
+            accelerator: 'CmdOrCtrl+0',
+            click: (item, focusedWindow) => {
+              if (focusedWindow) {
+                focusedWindow.webContents.setZoomLevel(0);
+              }
+            }
+          },
+          {
+            label: 'Zoom In',
+            accelerator: 'CmdOrCtrl+Plus',
+            click: (item, focusedWindow) => {
+              if (focusedWindow) {
+                const currentZoom = focusedWindow.webContents.getZoomLevel();
+                focusedWindow.webContents.setZoomLevel(currentZoom + 0.5);
+              }
+            }
+          },
+          {
+            label: 'Zoom Out',
+            accelerator: 'CmdOrCtrl+-',
+            click: (item, focusedWindow) => {
+              if (focusedWindow) {
+                const currentZoom = focusedWindow.webContents.getZoomLevel();
+                focusedWindow.webContents.setZoomLevel(currentZoom - 0.5);
+              }
+            }
+          }
+        ]
+      }
+    ];
+
+    // macOS specific menu adjustments
+    if (process.platform === 'darwin') {
+      template.unshift({
+        label: app.getName(),
+        submenu: [
+          {
+            label: 'About ' + app.getName(),
+            role: 'about'
+          },
+          { type: 'separator' },
+          {
+            label: 'Services',
+            role: 'services',
+            submenu: []
+          },
+          { type: 'separator' },
+          {
+            label: 'Hide ' + app.getName(),
+            accelerator: 'Command+H',
+            role: 'hide'
+          },
+          {
+            label: 'Hide Others',
+            accelerator: 'Command+Shift+H',
+            role: 'hideothers'
+          },
+          {
+            label: 'Show All',
+            role: 'unhide'
+          },
+          { type: 'separator' },
+          {
+            label: 'Quit',
+            accelerator: 'Command+Q',
+            click: () => {
+              app.quit();
+            }
+          }
+        ]
+      });
+
+      // Window menu for macOS
+      template.push({
+        label: 'Window',
+        submenu: [
+          {
+            label: 'Minimize',
+            accelerator: 'CmdOrCtrl+M',
+            role: 'minimize'
+          },
+          {
+            label: 'Close',
+            accelerator: 'CmdOrCtrl+W',
+            role: 'close'
+          }
+        ]
+      });
+    }
+
+    const menu = Menu.buildFromTemplate(template);
+    Menu.setApplicationMenu(menu);
   }
 
   initializeAudioEngine() {

@@ -324,25 +324,35 @@ class RendererAudioEngine {
     }
 
     stopAllSources() {
+        console.log('🛑 Stopping all audio sources...');
+        let totalSources = this.outputNodes.PA.sourceNodes.size + this.outputNodes.IEM.sourceNodes.size;
+        console.log(`Found ${totalSources} sources to stop`);
+        
         // Stop PA sources
-        this.outputNodes.PA.sourceNodes.forEach(source => {
+        this.outputNodes.PA.sourceNodes.forEach((source, index) => {
             try {
+                console.log(`Stopping PA source ${index}`);
                 source.stop();
+                source.disconnect(); // Disconnect all connections
             } catch (e) {
-                // Source might already be stopped
+                console.log(`PA source ${index} already stopped:`, e.message);
             }
         });
         this.outputNodes.PA.sourceNodes.clear();
         
         // Stop IEM sources  
-        this.outputNodes.IEM.sourceNodes.forEach(source => {
+        this.outputNodes.IEM.sourceNodes.forEach((source, index) => {
             try {
+                console.log(`Stopping IEM source ${index}`);
                 source.stop();
+                source.disconnect(); // Disconnect all connections
             } catch (e) {
-                // Source might already be stopped
+                console.log(`IEM source ${index} already stopped:`, e.message);
             }
         });
         this.outputNodes.IEM.sourceNodes.clear();
+        
+        console.log('✅ All sources stopped and disconnected');
     }
 
     createAudioGraph() {
@@ -427,6 +437,14 @@ class RendererAudioEngine {
         });
         
         console.log(`Started stems with proper karaoke routing - vocals to IEM only, backing tracks to PA only`);
+        
+        // Debug PA output routing
+        console.log('🔊 PA Output Debug:');
+        console.log('PA gain nodes:', Array.from(this.outputNodes.PA.gainNodes.keys()));
+        this.outputNodes.PA.gainNodes.forEach((gainNode, stemName) => {
+            console.log(`PA ${stemName} gain: ${gainNode.gain.value}`);
+        });
+        console.log('PA master gain:', this.outputNodes.PA.masterGain.gain.value);
     }
     
     isVocalStem(stemName) {
@@ -675,6 +693,18 @@ class RendererAudioEngine {
         this.outputNodes.IEM.gainNodes.clear();
         
         console.log('Renderer audio engine stopped');
+    }
+
+    async reinitialize() {
+        console.log('🔄 Reinitializing audio engine with clean slate...');
+        this.stop();
+        
+        // Wait for audio sources to fully stop and contexts to close
+        console.log('⏳ Waiting for audio cleanup to complete...');
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        await this.initialize();
+        console.log('✅ Audio engine reinitialized successfully');
     }
 
     setOnSongEndedCallback(callback) {

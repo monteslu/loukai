@@ -72,8 +72,13 @@ class PlayerController {
         console.log('PlayerController received metadata:', {
             duration: metadata?.duration,
             hasAudioEngine: !!this.audioEngine,
-            audioEngineDuration: this.audioEngine ? this.audioEngine.getDuration() : 'N/A'
+            audioEngineDuration: this.audioEngine ? this.audioEngine.getDuration() : 'N/A',
+            hasAudio: !!metadata?.audio,
+            hasSources: !!metadata?.audio?.sources,
+            sourcesLength: metadata?.audio?.sources?.length || 0
         });
+        
+        console.log('Full metadata structure:', metadata);
         
         // Get real duration from audio engine if available, otherwise from metadata
         if (this.audioEngine && this.audioEngine.getDuration) {
@@ -100,6 +105,51 @@ class PlayerController {
         // Load lyrics into karaoke renderer with song duration
         if (this.lyrics) {
             this.karaokeRenderer.loadLyrics(this.lyrics, this.songDuration);
+        }
+        
+        // Load vocals audio data for waveform visualization
+        if (metadata?.audio?.sources) {
+            console.log('Available audio sources:', metadata.audio.sources.map(s => ({ name: s.name, filename: s.filename, hasAudioData: !!s.audioData })));
+            
+            const vocalsSource = metadata.audio.sources.find(source => 
+                source.name === 'vocals' || 
+                source.filename?.includes('vocals')
+            );
+            
+            if (vocalsSource && vocalsSource.audioData) {
+                console.log('Loading vocals audio data for waveform visualization, data size:', vocalsSource.audioData.length);
+                this.karaokeRenderer.setVocalsAudio(vocalsSource.audioData);
+            } else {
+                console.log('No vocals source found or no audio data available');
+            }
+            
+            // Load music audio data for background effects analysis
+            const musicSource = metadata.audio.sources.find(source => 
+                source.name === 'music' || 
+                source.name === 'instrumental' ||
+                source.name === 'backing' ||
+                source.filename?.includes('music') ||
+                source.filename?.includes('instrumental')
+            );
+            
+            if (musicSource && musicSource.audioData) {
+                console.log('Loading music audio data for background effects analysis, data size:', musicSource.audioData.length);
+                this.karaokeRenderer.setMusicAudio(musicSource.audioData);
+            } else {
+                console.log('No music source found, trying first available source for effects');
+                // Fallback to any available source that's not vocals
+                const fallbackSource = metadata.audio.sources.find(source => 
+                    source.name !== 'vocals' && 
+                    !source.filename?.includes('vocals') &&
+                    source.audioData
+                );
+                if (fallbackSource && fallbackSource.audioData) {
+                    console.log('Using fallback source for music analysis:', fallbackSource.name || fallbackSource.filename);
+                    this.karaokeRenderer.setMusicAudio(fallbackSource.audioData);
+                }
+            }
+        } else {
+            console.log('No audio sources available in metadata');
         }
         
         console.log('PlayerController song loaded - timer reset to 0, final duration:', this.songDuration + 's');
@@ -185,7 +235,7 @@ class PlayerController {
         if (this.karaokeRenderer) {
             this.karaokeRenderer.setCurrentTime(this.currentPosition);
             if (Math.random() < 0.05) { // Debug occasionally
-                console.log('PlayerController updating karaoke time:', this.currentPosition.toFixed(2) + 's');
+                // console.log('PlayerController updating karaoke time:', this.currentPosition.toFixed(2) + 's');
             }
         }
     }
@@ -269,7 +319,10 @@ class PlayerController {
         this.isPlaying = true;
         
         if (this.karaokeRenderer) {
+            console.log('🎵 Player calling karaokeRenderer.setPlaying(true)');
             this.karaokeRenderer.setPlaying(true);
+        } else {
+            console.log('🎵 Player: karaokeRenderer is null/undefined!');
         }
         
         if (this.audioEngine) {
@@ -335,6 +388,46 @@ class PlayerController {
         }
         
         return resampled;
+    }
+
+    // Debug method to manually try loading vocals from current song data
+    async debugLoadVocals() {
+        console.log('Debug: Checking audioEngine and currentSong...');
+        console.log('audioEngine exists:', !!this.audioEngine);
+        
+        if (this.audioEngine) {
+            console.log('audioEngine.currentSong exists:', !!this.audioEngine.currentSong);
+            console.log('audioEngine properties:', Object.keys(this.audioEngine));
+            
+            // Try different possible properties where song data might be stored
+            const possibleSongData = this.audioEngine.currentSong || this.audioEngine.songData || this.audioEngine.loadedSong;
+            
+            if (possibleSongData) {
+                console.log('Found song data:', possibleSongData);
+                
+                if (possibleSongData.audio && possibleSongData.audio.sources) {
+                    console.log('Available sources:', possibleSongData.audio.sources.map(s => ({ name: s.name, filename: s.filename, hasAudioData: !!s.audioData })));
+                    
+                    const vocalsSource = possibleSongData.audio.sources.find(source => 
+                        source.name === 'vocals' || 
+                        source.filename?.includes('vocals')
+                    );
+                    
+                    if (vocalsSource && vocalsSource.audioData) {
+                        console.log('Found vocals source, attempting to load...');
+                        await this.karaokeRenderer.setVocalsAudio(vocalsSource.audioData);
+                    } else {
+                        console.log('No vocals source found or no audioData');
+                    }
+                } else {
+                    console.log('No audio.sources found in song data');
+                }
+            } else {
+                console.log('No song data found in audioEngine');
+            }
+        } else {
+            console.log('No audioEngine available');
+        }
     }
 
     destroy() {

@@ -69,10 +69,6 @@
                             <input type="checkbox" id="enableEffects" checked>
                             <span>Enable Background Effects</span>
                         </label>
-                        <div class="slider-control">
-                            <label>Overlay Opacity: <span id="overlayOpacityValue">0.50</span></label>
-                            <input type="range" id="overlayOpacity" min="0" max="1" step="0.01" value="0.5">
-                        </div>
                     </div>
                 </div>
 
@@ -138,7 +134,7 @@
                                 </div>
                             </div>
 
-                            <div class="transport-extended" id="transportControls">
+                            <div class="transport-extended">
                                 <button id="seekBackBtn">⏪</button>
                                 <button id="playPauseBtn">▶</button>
                                 <button id="seekForwardBtn">⏩</button>
@@ -161,10 +157,6 @@
                                     <span>/</span>
                                     <span id="totalTime">0:00</span>
                                 </div>
-                            </div>
-                            
-                            <div class="loading-message" id="loadingMessage" style="display: none;">
-                                <div class="loading-text">Loading song...</div>
                             </div>
                         </div>
                     </div>
@@ -274,22 +266,86 @@
     </div>
 
     <!-- Visualization Libraries -->
-    <script src="lib/butterchurn.min.js"></script>
-    <script src="lib/butterchurnPresets.min.js"></script>
     <script>
-        console.log('Butterchurn libraries loaded:', {
-            butterchurn: typeof window.butterchurn,
-            presets: typeof window.butterchurnPresets
-        });
+        console.log('Loading Butterchurn with dynamic require...');
         
-        // Verify presets are available and debug butterchurn structure
-        if (window.butterchurnPresets && typeof window.butterchurnPresets.getPresets === 'function') {
-            const presets = window.butterchurnPresets.getPresets();
-            console.log('SUCCESS: Butterchurn loaded with', Object.keys(presets).length, 'presets available');
+        // Use dynamic require for Butterchurn libraries
+        let butterchurnLibs = null;
+        
+        try {
+            // Try to load butterchurn via require (works in Electron)
+            const { ipcRenderer } = require('electron');
+            const path = require('path');
+            
+            // Get the app's root directory from main process
+            const appPath = process.cwd();
+            console.log('App path:', appPath);
+            
+            // Load butterchurn directly from node_modules
+            try {
+                const butterchurnPath = path.join(appPath, 'node_modules', 'butterchurn', 'lib', 'butterchurn.js');
+                const presetsPath = path.join(appPath, 'node_modules', 'butterchurn-presets', 'lib', 'butterchurnPresets.min.js');
+                
+                console.log('Attempting to load from:', butterchurnPath);
+                console.log('Presets from:', presetsPath);
+                
+                // Use dynamic require
+                const butterchurn = require(butterchurnPath);
+                const butterchurnPresets = require(presetsPath);
+                
+                console.log('Direct require succeeded!');
+                console.log('Butterchurn:', typeof butterchurn, butterchurn);
+                console.log('Presets:', typeof butterchurnPresets, butterchurnPresets);
+                
+                // Make available globally
+                window.butterchurn = butterchurn.default || butterchurn;
+                window.butterchurnPresets = butterchurnPresets.default || butterchurnPresets;
+                
+                console.log('Global assignment:', {
+                    butterchurn: typeof window.butterchurn,
+                    presets: typeof window.butterchurnPresets
+                });
+                
+                if (window.butterchurnPresets && typeof window.butterchurnPresets.getPresets === 'function') {
+                    try {
+                        const presets = window.butterchurnPresets.getPresets();
+                        console.log('Available presets:', Object.keys(presets).length, 'total');
+                        console.log('First 10 presets:', Object.keys(presets).slice(0, 10));
+                    } catch(e) {
+                        console.error('Error accessing presets:', e);
+                    }
+                }
+                
+            } catch(requireError) {
+                console.error('Dynamic require failed:', requireError);
+                
+                // Fallback to script loading
+                console.log('Falling back to script loading...');
+                const script1 = document.createElement('script');
+                script1.src = path.join(appPath, 'node_modules', 'butterchurn', 'lib', 'butterchurn.min.js');
+                script1.onload = () => {
+                    console.log('Butterchurn script loaded');
+                    const script2 = document.createElement('script');
+                    script2.src = path.join(appPath, 'node_modules', 'butterchurn-presets', 'lib', 'butterchurnPresets.min.js');
+                    script2.onload = () => {
+                        console.log('Butterchurn presets script loaded');
+                        console.log('Final availability:', {
+                            butterchurn: typeof window.butterchurn,
+                            presets: typeof window.butterchurnPresets
+                        });
+                    };
+                    script2.onerror = (e) => console.error('Presets script load error:', e);
+                    document.head.appendChild(script2);
+                };
+                script1.onerror = (e) => console.error('Butterchurn script load error:', e);
+                document.head.appendChild(script1);
+            }
+            
+        } catch(e) {
+            console.error('Failed to load Butterchurn libraries:', e);
         }
         
-        
-        // WebGL compatibility test
+        // Force create a test WebGL context to check compatibility
         try {
             const testCanvas = document.createElement('canvas');
             const testGL = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');
