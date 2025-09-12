@@ -906,9 +906,9 @@ class KaraokeRenderer {
         const gl = this.effectsGL;
         const analysis = this.analyzeMusicFrequencies();
         
-        if (Math.random() < 0.01) { // Debug occasionally
-            console.log('Rendering effects:', { type: this.effectType, analysis: analysis, hasButterchurn: !!this.butterchurn });
-        }
+        // if (Math.random() < 0.01) { // Debug occasionally
+        //     console.log('Rendering effects:', { type: this.effectType, analysis: analysis, hasButterchurn: !!this.butterchurn });
+        // }
         
         // Use Butterchurn if available, otherwise fall back to custom shaders
         if (this.effectType === 'butterchurn' && this.butterchurn) {
@@ -1193,8 +1193,8 @@ class KaraokeRenderer {
             const average = sum / this.butterchurnFrequencyData.length;
             const max = Math.max(...this.butterchurnFrequencyData);
             
-            console.log(`🎵 Butterchurn Audio Debug - Avg: ${average.toFixed(1)}, Max: ${max}, Context: ${this.butterchurnAudioContext ? this.butterchurnAudioContext.state : 'none'}`, 
-                       `Source: ${this.butterchurnSourceNode ? 'active' : 'none'}`);
+            // console.log(`🎵 Butterchurn Audio Debug - Avg: ${average.toFixed(1)}, Max: ${max}, Context: ${this.butterchurnAudioContext ? this.butterchurnAudioContext.state : 'none'}`, 
+            //            `Source: ${this.butterchurnSourceNode ? 'active' : 'none'}`);
                        
             // Also update status bar for visual feedback
             const statusText = document.getElementById('statusText');

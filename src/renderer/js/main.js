@@ -193,35 +193,129 @@ class KaiPlayerApp {
             }
         });
 
-        kaiAPI.song.onData((event, songData) => {
-            console.log('Received song data in renderer');
+        kaiAPI.song.onData(async (event, songData) => {
+            console.log('🎵 Received song data in renderer - performing full initialization');
+            console.log('Song data audio info:', {
+                hasAudio: !!songData.audio,
+                hasSources: !!songData.audio?.sources,
+                sourcesLength: songData.audio?.sources?.length || 0,
+                sourceNames: songData.audio?.sources?.map(s => s.name) || []
+            });
+            
             this.currentSong = songData;
             
-            // Immediately pass full song data to player if available
-            if (this.player && songData.lyrics) {
-                const fullMetadata = {
-                    title: songData.metadata?.title || 'Unknown',
-                    artist: songData.metadata?.artist || 'Unknown',
-                    lyrics: songData.lyrics,
-                    duration: songData.metadata?.duration || 0,
-                    audio: songData.audio // Include audio sources for vocals waveform
+            // Use pending metadata if available, otherwise use data from songData
+            const metadata = this._pendingMetadata || songData.metadata || {};
+            
+            // CLEAN SLATE APPROACH: Reinitialize audio engine
+            if (this.audioEngine && this.currentSong) {
+                console.log('🔄 Reinitializing audio engine with fresh song data...');
+                console.log('Before reinitialize - currentSong audio info:', {
+                    hasAudio: !!this.currentSong.audio,
+                    hasSources: !!this.currentSong.audio?.sources,
+                    sourcesLength: this.currentSong.audio?.sources?.length || 0,
+                    sourceNames: this.currentSong.audio?.sources?.map(s => s.name) || []
+                });
+                
+                // Create a backup copy of the song data BEFORE reinitialize
+                const songDataBackup = {
+                    ...this.currentSong,
+                    audio: this.currentSong.audio ? {
+                        ...this.currentSong.audio,
+                        sources: this.currentSong.audio.sources ? [...this.currentSong.audio.sources] : []
+                    } : null
                 };
-                this.player.onSongLoaded(fullMetadata);
+                
+                await this.audioEngine.reinitialize();
+                
+                console.log('After reinitialize - currentSong audio info:', {
+                    hasAudio: !!this.currentSong.audio,
+                    hasSources: !!this.currentSong.audio?.sources,
+                    sourcesLength: this.currentSong.audio?.sources?.length || 0,
+                    sourceNames: this.currentSong.audio?.sources?.map(s => s.name) || []
+                });
+                
+                console.log('🔄 Loading song into audio engine...');
+                console.log('Using songDataBackup with audio info:', {
+                    hasAudio: !!songDataBackup.audio,
+                    hasSources: !!songDataBackup.audio?.sources,
+                    sourcesLength: songDataBackup.audio?.sources?.length || 0
+                });
+                
+                await this.audioEngine.loadSong(songDataBackup);
+                
+                // Restore the original song data if it was corrupted
+                if (!this.currentSong.audio && songDataBackup.audio) {
+                    console.log('🔧 Restoring corrupted currentSong.audio from backup');
+                    this.currentSong.audio = songDataBackup.audio;
+                }
+                if (!this.currentSong.lyrics && songDataBackup.lyrics) {
+                    console.log('🔧 Restoring corrupted currentSong.lyrics from backup');
+                    this.currentSong.lyrics = songDataBackup.lyrics;
+                }
+                
+                console.log('✅ Audio engine fully loaded');
             }
             
-            // Load song data into editor
+            // CLEAN SLATE APPROACH: Reinitialize karaoke renderer  
+            if (this.player && this.currentSong) {
+                console.log('🔄 Reinitializing karaoke renderer with fresh song data...');
+                if (this.player.karaokeRenderer) {
+                    this.player.karaokeRenderer.reinitialize();
+                }
+                
+                // Pass full song data which includes lyrics, audio sources, and updated duration from audio engine
+                const fullMetadata = {
+                    ...metadata,
+                    lyrics: this.currentSong.lyrics,
+                    duration: this.audioEngine ? this.audioEngine.getDuration() : (this.currentSong.metadata?.duration || 0),
+                    audio: this.currentSong.audio // Include audio sources for vocals waveform
+                };
+                console.log('Main.js passing full metadata to player:', { 
+                    hasAudio: !!fullMetadata.audio, 
+                    hasSources: !!fullMetadata.audio?.sources,
+                    sourcesLength: fullMetadata.audio?.sources?.length || 0,
+                    sourceNames: fullMetadata.audio?.sources?.map(s => s.name) || [],
+                    hasLyrics: !!fullMetadata.lyrics,
+                    lyricsLength: Array.isArray(fullMetadata.lyrics) ? fullMetadata.lyrics.length : 0,
+                    lyricsType: typeof fullMetadata.lyrics
+                });
+                this.player.onSongLoaded(fullMetadata);
+                
+                // Apply waveform preferences to player
+                if (this.player.karaokeRenderer) {
+                    this.player.karaokeRenderer.waveformPreferences = { ...this.waveformPreferences };
+                    // Update effect display with current preset
+                    setTimeout(() => this.updateEffectDisplay(), 100);
+                }
+                console.log('✅ Karaoke renderer fully loaded');
+            }
+            
+            // Wait a moment for all contexts and buffers to be fully ready
+            console.log('⏳ Waiting for all audio contexts to be ready...');
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            if (this.coaching) {
+                this.coaching.onSongLoaded(metadata || {});
+            }
+            
             if (this.editor && this.currentSong) {
                 console.log('Main calling editor.onSongLoaded with currentSong:', this.currentSong);
                 this.editor.onSongLoaded(this.currentSong);
+            } else {
+                console.log('Editor or currentSong missing:', !!this.editor, !!this.currentSong);
             }
             
-            if (this.audioEngine) {
-                this.audioEngine.loadSong(songData).then(() => {
-                    console.log('Audio engine loaded song successfully');
-                }).catch(error => {
-                    console.error('Failed to load song in audio engine:', error);
-                });
+            if (this.mixer && this.audioEngine) {
+                this.mixer.updateFromAudioEngine();
             }
+            
+            console.log('✅ Song loading complete - showing transport controls');
+            document.getElementById('loadingMessage').style.display = 'none';
+            document.getElementById('transportControls').style.display = 'flex';
+            
+            // Clear pending metadata
+            this._pendingMetadata = null;
         });
     }
 
@@ -507,34 +601,8 @@ class KaiPlayerApp {
         document.getElementById('transportControls').style.display = 'none';
         document.getElementById('loadingMessage').style.display = 'flex';
         
-        // UPDATE currentSong with fresh metadata that contains audio sources
-        // This ensures we use the latest data with audio sources for reinitialization
-        if (this.currentSong && metadata) {
-            console.log('🔄 Updating currentSong with fresh metadata...');
-            console.log('Old currentSong audio info:', {
-                hasAudio: !!this.currentSong.audio,
-                hasSources: !!this.currentSong.audio?.sources,
-                sourcesLength: this.currentSong.audio?.sources?.length || 0
-            });
-            
-            // Merge fresh metadata into currentSong, preserving existing data but updating with fresh info
-            this.currentSong = {
-                ...this.currentSong,
-                ...metadata,
-                // Ensure we keep the existing structure but update metadata
-                metadata: {
-                    ...this.currentSong.metadata,
-                    ...metadata
-                }
-            };
-            
-            console.log('Updated currentSong audio info:', {
-                hasAudio: !!this.currentSong.audio,
-                hasSources: !!this.currentSong.audio?.sources,
-                sourcesLength: this.currentSong.audio?.sources?.length || 0,
-                sourceNames: this.currentSong.audio?.sources?.map(s => s.name) || []
-            });
-        }
+        // Store metadata for later use when song data arrives
+        this._pendingMetadata = metadata;
         
         const title = metadata?.title || 'Unknown Song';
         const artist = metadata?.artist || 'Unknown Artist';
@@ -545,72 +613,9 @@ class KaiPlayerApp {
         // Enable song info button
         document.getElementById('songInfoBtn').disabled = false;
         
-        // CLEAN SLATE APPROACH: Reinitialize audio engine
-        // IMPORTANT: Now using the UPDATED currentSong with fresh audio sources
-        if (this.audioEngine && this.currentSong) {
-            console.log('🔄 Reinitializing audio engine...');
-            console.log('Fresh currentSong being used for reinit:', {
-                hasAudio: !!this.currentSong.audio,
-                hasSources: !!this.currentSong.audio?.sources,
-                sourcesLength: this.currentSong.audio?.sources?.length || 0,
-                sourceNames: this.currentSong.audio?.sources?.map(s => s.name) || []
-            });
-            await this.audioEngine.reinitialize();
-            console.log('🔄 Loading song into audio engine...');
-            await this.audioEngine.loadSong(this.currentSong);
-            console.log('✅ Audio engine fully loaded');
-        }
-        
-        // CLEAN SLATE APPROACH: Reinitialize karaoke renderer  
-        if (this.player && this.currentSong) {
-            console.log('🔄 Reinitializing karaoke renderer...');
-            if (this.player.karaokeRenderer) {
-                this.player.karaokeRenderer.reinitialize();
-            }
-            
-            // Pass full song data which includes lyrics, audio sources, and updated duration from audio engine
-            const fullMetadata = {
-                ...metadata,
-                lyrics: this.currentSong.lyrics,
-                duration: this.audioEngine ? this.audioEngine.getDuration() : (this.currentSong.metadata?.duration || 0),
-                audio: this.currentSong.audio // Include audio sources for vocals waveform
-            };
-            console.log('Main.js passing full metadata to player:', { hasAudio: !!fullMetadata.audio, hasSources: !!fullMetadata.audio?.sources });
-            this.player.onSongLoaded(fullMetadata);
-            
-            // Apply waveform preferences to player
-            if (this.player.karaokeRenderer) {
-                this.player.karaokeRenderer.waveformPreferences = { ...this.waveformPreferences };
-                // Update effect display with current preset
-                setTimeout(() => this.updateEffectDisplay(), 100);
-            }
-            console.log('✅ Karaoke renderer fully loaded');
-        }
-        
-        // Wait a moment for all contexts and buffers to be fully ready
-        console.log('⏳ Waiting for all audio contexts to be ready...');
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        if (this.coaching) {
-            this.coaching.onSongLoaded(metadata || {});
-        }
-        
-        if (this.editor && this.currentSong) {
-            console.log('Main calling editor.onSongLoaded with currentSong:', this.currentSong);
-            this.editor.onSongLoaded(this.currentSong);
-        } else {
-            console.log('Editor or currentSong missing:', !!this.editor, !!this.currentSong);
-        }
-        
-        if (this.mixer && this.audioEngine) {
-            this.mixer.updateFromAudioEngine();
-        }
-        
-        // Re-enable UI controls now that loading is complete
-        console.log('✅ Song loading complete - showing transport controls');
-        document.getElementById('loadingMessage').style.display = 'none';
-        document.getElementById('transportControls').style.display = 'flex';
-        this.updatePlayButton('▶');
+        // Wait for song:data event to provide full song data
+        // The actual initialization will happen in the song:data handler
+        console.log('🔄 Waiting for song:data with full audio sources...');
     }
 
     showSongInfo() {

@@ -162,6 +162,13 @@ class RendererAudioEngine {
 
     async loadSong(songData) {
         console.log('Loading song into renderer audio engine:', songData.metadata?.title);
+        console.log('AudioEngine.loadSong received songData audio info:', {
+            hasAudio: !!songData.audio,
+            hasSources: !!songData.audio?.sources,
+            sourcesLength: songData.audio?.sources?.length || 0,
+            sourceNames: songData.audio?.sources?.map(s => s.name) || [],
+            audioPointer: songData.audio
+        });
         this.songData = songData;
         
         this.mixerState.stems = (songData.audio?.sources || []).map((source, index) => ({
