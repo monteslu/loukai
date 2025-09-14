@@ -80,7 +80,6 @@ class RendererAudioEngine {
             this.outputNodes.IEM.masterGain = this.audioContexts.IEM.createGain();
             this.outputNodes.IEM.masterGain.connect(this.audioContexts.IEM.destination);
             
-            console.log('Dual audio engine initialized - PA:', this.audioContexts.PA.sampleRate, 'Hz (device:', this.outputDevices.PA + '), IEM:', this.audioContexts.IEM.sampleRate, 'Hz (device:', this.outputDevices.IEM + ')');
             
             // Load auto-tune worklet
             await this.loadAutoTuneWorklet();
@@ -98,11 +97,9 @@ class RendererAudioEngine {
                 const prefs = JSON.parse(saved);
                 if (prefs.PA?.id) {
                     this.outputDevices.PA = prefs.PA.id;
-                    console.log('Loaded saved PA device preference:', this.outputDevices.PA);
                 }
                 if (prefs.IEM?.id) {
                     this.outputDevices.IEM = prefs.IEM.id;
-                    console.log('Loaded saved IEM device preference:', this.outputDevices.IEM);
                 }
             }
         } catch (error) {
@@ -147,7 +144,6 @@ class RendererAudioEngine {
             this.outputNodes[busType].sourceNodes.clear();
             this.outputNodes[busType].gainNodes.clear();
             
-            console.log(`${busType} audio context recreated for device:`, deviceId);
             
             // Reload audio buffers for the new context (audio buffers are context-specific)
             if (this.songData) {
@@ -168,15 +164,17 @@ class RendererAudioEngine {
     }
 
     async loadSong(songData) {
-        console.log('Loading song into renderer audio engine:', songData.metadata?.title);
-        console.log('AudioEngine.loadSong received songData audio info:', {
-            hasAudio: !!songData.audio,
-            hasSources: !!songData.audio?.sources,
-            sourcesLength: songData.audio?.sources?.length || 0,
-            sourceNames: songData.audio?.sources?.map(s => s.name) || [],
-            audioPointer: songData.audio
-        });
         this.songData = songData;
+        
+        // Reset all timing state for new song
+        this.currentPosition = 0;
+        this.startTime = 0;
+        this.pauseTime = 0;
+        this.monitoringStartTime = null;
+        
+        // Stop any existing song end monitoring
+        this.stopSongEndMonitoring();
+        
         
         this.mixerState.stems = (songData.audio?.sources || []).map((source, index) => ({
             id: source.name || source.filename,
@@ -187,7 +185,6 @@ class RendererAudioEngine {
             index
         }));
         
-        console.log(`Loading ${this.mixerState.stems.length} stems:`, this.mixerState.stems.map(s => s.name));
         
         await this.loadAudioBuffers(songData);
         
@@ -204,12 +201,10 @@ class RendererAudioEngine {
             await this.initialize();
         }
         
-        console.log('Loading audio buffers for stems...');
         
         for (const source of songData.audio.sources) {
             try {
                 if (source.audioData && source.audioData.length > 0) {
-                    console.log(`Decoding audio: ${source.name}, size: ${source.audioData.length} bytes`);
                     
                     const arrayBuffer = source.audioData.buffer.slice(
                         source.audioData.byteOffset, 
@@ -219,7 +214,6 @@ class RendererAudioEngine {
                     const decodedBuffer = await this.audioContexts.PA.decodeAudioData(arrayBuffer);
                     this.audioBuffers.set(source.name, decodedBuffer);
                     
-                    console.log(`Successfully decoded ${source.name}: ${decodedBuffer.duration.toFixed(2)}s, ${decodedBuffer.numberOfChannels} channels`);
                 } else {
                     console.warn(`No audio data for source: ${source.name}`);
                 }
@@ -228,12 +222,10 @@ class RendererAudioEngine {
             }
         }
         
-        console.log(`Loaded ${this.audioBuffers.size} audio buffers`);
         
         // Calculate the actual duration from the longest audio buffer
         let maxDuration = 0;
         for (const [name, buffer] of this.audioBuffers) {
-            console.log(`Audio buffer ${name}: ${buffer.duration.toFixed(2)}s`);
             if (buffer.duration > maxDuration) {
                 maxDuration = buffer.duration;
             }
@@ -245,7 +237,6 @@ class RendererAudioEngine {
                 this.songData.metadata = {};
             }
             this.songData.metadata.duration = maxDuration;
-            console.log(`Updated song duration to ${maxDuration.toFixed(2)}s from audio buffers`);
         } else {
             console.warn('No audio buffers loaded, duration remains 0');
         }
@@ -256,7 +247,6 @@ class RendererAudioEngine {
             return;
         }
         
-        console.log(`Reloading audio buffers for ${busType} bus...`);
         
         // Audio buffers are shared between contexts, but we need to re-decode for new context
         // The existing buffers in this.audioBuffers should still work, but let's make sure
@@ -267,7 +257,6 @@ class RendererAudioEngine {
                 try {
                     // Check if we already have this buffer
                     if (!this.audioBuffers.has(source.name)) {
-                        console.log(`Re-decoding missing buffer for ${busType}: ${source.name}`);
                         const arrayBuffer = source.audioData.buffer.slice(
                             source.audioData.byteOffset, 
                             source.audioData.byteOffset + source.audioData.byteLength
@@ -282,7 +271,6 @@ class RendererAudioEngine {
             }
         }
         
-        console.log(`Reloaded audio buffers for ${busType} bus`);
     }
 
     async play() {
@@ -303,18 +291,19 @@ class RendererAudioEngine {
             await this.audioContexts.IEM.resume();
         }
         
-        console.log('Starting real audio playback...');
         this.isPlaying = true;
         
         this.stopAllSources();
         this.createAudioGraph();
         this.startAudioSources();
         
+        // Start song end monitoring
+        this.startSongEndMonitoring();
+        
         return true;
     }
 
     async pause() {
-        console.log('Pausing audio playback...');
         this.isPlaying = false;
         
         if (this.audioContexts.PA) {
@@ -322,11 +311,14 @@ class RendererAudioEngine {
         }
         
         this.stopAllSources();
+        
+        // Stop song end monitoring
+        this.stopSongEndMonitoring();
+        
         return true;
     }
 
     async seek(positionSec) {
-        console.log(`Seeking to ${positionSec}s`);
         this.currentPosition = positionSec;
         
         if (this.isPlaying) {
@@ -338,18 +330,14 @@ class RendererAudioEngine {
     }
 
     stopAllSources() {
-        console.log('🛑 Stopping all audio sources...');
         let totalSources = this.outputNodes.PA.sourceNodes.size + this.outputNodes.IEM.sourceNodes.size;
-        console.log(`Found ${totalSources} sources to stop`);
         
         // Stop PA sources
         this.outputNodes.PA.sourceNodes.forEach((source, index) => {
             try {
-                console.log(`Stopping PA source ${index}`);
                 source.stop();
                 source.disconnect(); // Disconnect all connections
             } catch (e) {
-                console.log(`PA source ${index} already stopped:`, e.message);
             }
         });
         this.outputNodes.PA.sourceNodes.clear();
@@ -357,16 +345,13 @@ class RendererAudioEngine {
         // Stop IEM sources  
         this.outputNodes.IEM.sourceNodes.forEach((source, index) => {
             try {
-                console.log(`Stopping IEM source ${index}`);
                 source.stop();
                 source.disconnect(); // Disconnect all connections
             } catch (e) {
-                console.log(`IEM source ${index} already stopped:`, e.message);
             }
         });
         this.outputNodes.IEM.sourceNodes.clear();
         
-        console.log('✅ All sources stopped and disconnected');
     }
 
     createAudioGraph() {
@@ -390,7 +375,6 @@ class RendererAudioEngine {
             this.updateStemGain(stem);
         });
         
-        console.log(`Created dual audio graph for ${this.mixerState.stems.length} stems`);
     }
 
     startAudioSources() {
@@ -419,7 +403,6 @@ class RendererAudioEngine {
                         iemSource.start(scheduleTime, offset);
                         this.outputNodes.IEM.sourceNodes.set(stem.name, iemSource);
                         
-                        console.log(`Routed vocals "${stem.name}" to IEM only`);
                     } else {
                         // Backing tracks go to PA only (audience)
                         const paSource = this.audioContexts.PA.createBufferSource();
@@ -428,19 +411,15 @@ class RendererAudioEngine {
                         paSource.start(scheduleTime, offset);
                         this.outputNodes.PA.sourceNodes.set(stem.name, paSource);
                         
-                        // Use backing track source for end detection
+                        // Add onended handler as backup to position monitoring
                         paSource.onended = () => {
-                            if (this.isPlaying && this.currentPosition >= audioBuffer.duration) {
-                                console.log('Playback ended');
-                                this.pause();
-                                // Notify the main app that the song has ended
-                                if (this.onSongEndedCallback) {
-                                    this.onSongEndedCallback();
-                                }
+                            if (this.isPlaying) {
+                                // Let the position monitoring handle the cleanup
+                                // This serves as a backup in case position monitoring misses it
+                                setTimeout(() => this.checkForSongEnd(), 10);
                             }
                         };
                         
-                        console.log(`Routed backing track "${stem.name}" to PA only`);
                     }
                 } catch (error) {
                     console.error(`Failed to start source for ${stem.name}:`, error);
@@ -450,15 +429,10 @@ class RendererAudioEngine {
             }
         });
         
-        console.log(`Started stems with proper karaoke routing - vocals to IEM only, backing tracks to PA only`);
         
         // Debug PA output routing
-        console.log('🔊 PA Output Debug:');
-        console.log('PA gain nodes:', Array.from(this.outputNodes.PA.gainNodes.keys()));
         this.outputNodes.PA.gainNodes.forEach((gainNode, stemName) => {
-            console.log(`PA ${stemName} gain: ${gainNode.gain.value}`);
         });
-        console.log('PA master gain:', this.outputNodes.PA.masterGain.gain.value);
     }
     
     isVocalStem(stemName) {
@@ -487,7 +461,6 @@ class RendererAudioEngine {
             iemGainNode.gain.setValueAtTime(iemGain, this.audioContexts.IEM.currentTime);
             
             if (Math.random() < 0.1) {
-                console.log(`${stem.name} (vocals): IEM=${iemGain.toFixed(2)} (muted: ${stem.muted.IEM})`);
             }
         } else if (!isVocals && paGainNode) {
             // Backing track stem - only exists on PA
@@ -498,7 +471,6 @@ class RendererAudioEngine {
             paGainNode.gain.setValueAtTime(paGain, this.audioContexts.PA.currentTime);
             
             if (Math.random() < 0.1) {
-                console.log(`${stem.name} (backing): PA=${paGain.toFixed(2)} (muted: ${stem.muted.PA})`);
             }
         }
     }
@@ -507,7 +479,6 @@ class RendererAudioEngine {
         const stem = this.mixerState.stems.find(s => s.name === stemId || s.id === stemId);
         if (stem) {
             stem.muted[bus] = !stem.muted[bus];
-            console.log(`${stem.name} ${bus} mute: ${stem.muted[bus]}`);
             this.updateStemGain(stem);
             return true;
         }
@@ -518,7 +489,6 @@ class RendererAudioEngine {
         const stem = this.mixerState.stems.find(s => s.name === stemId || s.id === stemId);
         if (stem) {
             stem.solo = !stem.solo;
-            console.log(`${stem.name} solo: ${stem.solo}`);
             
             this.mixerState.stems.forEach(s => this.updateStemGain(s));
             return true;
@@ -530,7 +500,6 @@ class RendererAudioEngine {
         const stem = this.mixerState.stems.find(s => s.name === stemId || s.id === stemId);
         if (stem) {
             stem.gain = gainDb;
-            console.log(`${stem.name} gain: ${gainDb}dB`);
             this.updateStemGain(stem);
             return true;
         }
@@ -538,7 +507,6 @@ class RendererAudioEngine {
     }
 
     applyPreset(presetId) {
-        console.log(`Applying preset: ${presetId}`);
         
         const presets = {
             original: () => {
@@ -584,7 +552,7 @@ class RendererAudioEngine {
     }
 
     getCurrentPosition() {
-        if (this.isPlaying && this.audioContexts.PA) {
+        if (this.isPlaying && this.audioContexts.PA && this.startTime > 0) {
             const elapsed = this.audioContexts.PA.currentTime - this.startTime;
             const calculatedPosition = this.currentPosition + elapsed;
             
@@ -592,14 +560,6 @@ class RendererAudioEngine {
             const duration = this.getDuration();
             const clampedPosition = duration > 0 ? Math.min(calculatedPosition, duration) : calculatedPosition;
             
-            // if (Math.random() < 0.01) { // Debug occasionally
-            //     console.log('AudioEngine timing - startTime:', this.startTime.toFixed(2), 
-            //                'currentTime:', this.audioContexts.PA.currentTime.toFixed(2),
-            //                'elapsed:', elapsed.toFixed(2), 
-            //                'basePosition:', this.currentPosition.toFixed(2),
-            //                'calculated:', calculatedPosition.toFixed(2),
-            //                'clamped:', clampedPosition.toFixed(2));
-            // }
             return clampedPosition;
         }
         return this.currentPosition;
@@ -630,7 +590,6 @@ class RendererAudioEngine {
             
             await this.audioContexts.PA.audioWorklet.addModule('js/autoTuneWorklet.js');
             this.autoTuneWorkletLoaded = true;
-            console.log('Auto-tune worklet loaded successfully');
         } catch (error) {
             console.error('Failed to load auto-tune worklet:', error);
             this.autoTuneWorkletLoaded = false;
@@ -639,7 +598,6 @@ class RendererAudioEngine {
     
     async startMicrophoneInput(deviceId = 'default') {
         try {
-            console.log('Starting microphone input with device:', deviceId);
             
             // Stop existing microphone if running
             this.stopMicrophoneInput();
@@ -676,7 +634,6 @@ class RendererAudioEngine {
                 this.microphoneGain.connect(this.outputNodes.PA.masterGain);
             }
             
-            console.log('Microphone input connected to PA output');
             
         } catch (error) {
             console.error('Failed to start microphone input:', error);
@@ -691,7 +648,6 @@ class RendererAudioEngine {
             // Create auto-tune node if it doesn't exist
             if (!this.autoTuneNode) {
                 this.autoTuneNode = new AudioWorkletNode(this.audioContexts.PA, 'auto-tune-processor');
-                console.log('Created new auto-tune node');
             }
             
             // Disconnect current connections
@@ -715,10 +671,6 @@ class RendererAudioEngine {
                 value: this.mixerState.autotuneSettings.speed
             });
             
-            console.log('Auto-tune enabled with settings:', {
-                strength: this.mixerState.autotuneSettings.strength,
-                speed: this.mixerState.autotuneSettings.speed
-            });
         } catch (error) {
             console.error('Failed to enable auto-tune:', error);
         }
@@ -741,7 +693,6 @@ class RendererAudioEngine {
             // Direct connection to PA output
             this.microphoneGain.connect(this.outputNodes.PA.masterGain);
             
-            console.log('Auto-tune disabled, direct mic connection restored');
         } catch (error) {
             console.error('Failed to disable auto-tune:', error);
         }
@@ -767,7 +718,6 @@ class RendererAudioEngine {
                     type: 'setStrength',
                     value: settings.strength
                 });
-                console.log('Updated auto-tune strength in real-time:', settings.strength);
             }
             
             if (settings.hasOwnProperty('speed')) {
@@ -775,7 +725,6 @@ class RendererAudioEngine {
                     type: 'setSpeed',
                     value: settings.speed
                 });
-                console.log('Updated auto-tune speed in real-time:', settings.speed);
             }
         } else if (settings.enabled && this.microphoneGain) {
             // If auto-tune should be enabled but node doesn't exist, create it
@@ -804,13 +753,11 @@ class RendererAudioEngine {
             this.microphoneStream = null;
         }
         
-        console.log('Microphone input stopped');
     }
     
     setMicrophoneGain(gainValue) {
         if (this.microphoneGain) {
             this.microphoneGain.gain.value = gainValue;
-            console.log('Microphone gain set to:', gainValue);
         }
     }
 
@@ -818,6 +765,7 @@ class RendererAudioEngine {
         this.isPlaying = false;
         this.stopAllSources();
         this.stopMicrophoneInput();
+        this.stopSongEndMonitoring();
         
         if (this.audioContexts.PA) {
             this.audioContexts.PA.close();
@@ -832,23 +780,68 @@ class RendererAudioEngine {
         this.outputNodes.PA.gainNodes.clear();
         this.outputNodes.IEM.gainNodes.clear();
         
-        console.log('Renderer audio engine stopped');
     }
 
     async reinitialize() {
-        console.log('🔄 Reinitializing audio engine with clean slate...');
         this.stop();
         
         // Wait for audio sources to fully stop and contexts to close
-        console.log('⏳ Waiting for audio cleanup to complete...');
         await new Promise(resolve => setTimeout(resolve, 200));
         
         await this.initialize();
-        console.log('✅ Audio engine reinitialized successfully');
     }
 
     setOnSongEndedCallback(callback) {
         this.onSongEndedCallback = callback;
+    }
+
+    // Check if song has ended based on position
+    checkForSongEnd() {
+        const duration = this.getDuration();
+        const currentPos = this.getCurrentPosition();
+        const timeSinceMonitoringStarted = this.monitoringStartTime ? 
+            (this.audioContexts.PA.currentTime - this.monitoringStartTime) : 0;
+        
+        // Only trigger if:
+        // 1. We've been monitoring for at least 2 seconds (prevents seek issues)
+        // 2. Song duration > 3 seconds 
+        // 3. Current position is near the end
+        if (this.isPlaying && 
+            timeSinceMonitoringStarted > 2.0 && 
+            duration > 3 && 
+            currentPos >= duration - 0.2) {
+            
+            console.log('🎵 Song ended - position monitoring detected end');
+            this.isPlaying = false;
+            this.stopAllSources();
+            this.stopSongEndMonitoring();
+            
+            if (this.onSongEndedCallback) {
+                this.onSongEndedCallback();
+            }
+        }
+    }
+
+    // Start monitoring for song end
+    startSongEndMonitoring() {
+        if (this.songEndMonitor) {
+            clearInterval(this.songEndMonitor);
+        }
+        
+        // Track when monitoring actually started to prevent false positives
+        this.monitoringStartTime = this.audioContexts.PA.currentTime;
+        
+        this.songEndMonitor = setInterval(() => {
+            this.checkForSongEnd();
+        }, 250); // Check every 250ms for more responsive detection
+    }
+
+    // Stop monitoring for song end
+    stopSongEndMonitoring() {
+        if (this.songEndMonitor) {
+            clearInterval(this.songEndMonitor);
+            this.songEndMonitor = null;
+        }
     }
 }
 

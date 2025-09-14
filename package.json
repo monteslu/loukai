@@ -1,7 +1,7 @@
 {
-  "name": "kai-player",
+  "name": "loukai",
   "version": "1.0.0",
-  "description": "KAI-Play Player/Coach App - Real-time karaoke player with stem control and coaching",
+  "description": "Loukai - Real-time karaoke player with stem control and coaching",
   "main": "src/main/main.js",
   "homepage": "./",
   "scripts": {
@@ -22,7 +22,7 @@
     "coaching",
     "autotune"
   ],
-  "author": "KAI-Player Team",
+  "author": "Loukai Team",
   "license": "AGPL-3.0",
   "devDependencies": {
     "electron": "^25.0.0",
@@ -38,23 +38,28 @@
     "yazl": "^3.3.1"
   },
   "build": {
-    "appId": "com.kaiplayer.app",
-    "productName": "KAI Player",
+    "appId": "com.loukai.app",
+    "productName": "Loukai",
     "directories": {
       "output": "dist"
     },
     "files": [
       "src/**/*",
+      "static/**/*",
       "node_modules/**/*"
     ],
+    "icon": "static/images/logo.png",
     "linux": {
-      "target": "AppImage"
+      "target": "AppImage",
+      "icon": "static/images/logo.png"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "static/images/logo.png"
     },
     "mac": {
-      "target": "dmg"
+      "target": "dmg",
+      "icon": "static/images/logo.png"
     }
   }
 }

@@ -4,9 +4,7 @@ class PlayerController {
         this.lyricsContainer = document.getElementById('lyricsContainer');
         
         // Initialize karaoke renderer
-        console.log('PlayerController initializing karaoke renderer...');
         this.karaokeRenderer = new KaraokeRenderer('karaokeCanvas');
-        console.log('PlayerController karaoke renderer:', this.karaokeRenderer);
         
         this.currentTime = document.getElementById('currentTime');
         this.totalTime = document.getElementById('totalTime');
@@ -33,7 +31,6 @@ class PlayerController {
             if (this.isPlaying) {
                 this.updatePosition();
                 // if (Math.random() < 0.05) { // Debug occasionally
-                //     console.log('PlayerController timer tick - isPlaying:', this.isPlaying, 'position:', this.currentPosition.toFixed(2));
                 // }
             }
         }, 100);
@@ -49,36 +46,15 @@ class PlayerController {
         }
         
         // Transport controls
-        const seekBackBtn = document.getElementById('seekBackBtn');
-        const seekForwardBtn = document.getElementById('seekForwardBtn');
+        const restartBtn = document.getElementById('restartBtn');
+        const nextTrackBtn = document.getElementById('nextTrackBtn');
         
-        if (seekBackBtn) {
-            seekBackBtn.addEventListener('click', () => {
-                this.setPosition(Math.max(0, this.currentPosition - 10));
-            });
-        }
-        
-        if (seekForwardBtn) {
-            seekForwardBtn.addEventListener('click', () => {
-                this.setPosition(Math.min(this.songDuration, this.currentPosition + 10));
-            });
-        }
+        // Restart and next track buttons are handled by main.js
     }
 
     onSongLoaded(metadata) {
         // Always reset timer to 0 first
         this.currentPosition = 0;
-        
-        console.log('PlayerController received metadata:', {
-            duration: metadata?.duration,
-            hasAudioEngine: !!this.audioEngine,
-            audioEngineDuration: this.audioEngine ? this.audioEngine.getDuration() : 'N/A',
-            hasAudio: !!metadata?.audio,
-            hasSources: !!metadata?.audio?.sources,
-            sourcesLength: metadata?.audio?.sources?.length || 0
-        });
-        
-        console.log('Full metadata structure:', metadata);
         
         // Get real duration from audio engine if available, otherwise from metadata
         if (this.audioEngine && this.audioEngine.getDuration) {
@@ -96,7 +72,6 @@ class PlayerController {
             }
             if (maxLyricTime > 0) {
                 this.songDuration = maxLyricTime + 10; // Add some padding
-                console.log('PlayerController estimated duration from lyrics:', this.songDuration + 's');
             }
         }
         
@@ -109,7 +84,6 @@ class PlayerController {
         
         // Load vocals audio data for waveform visualization
         if (metadata?.audio?.sources) {
-            console.log('Available audio sources:', metadata.audio.sources.map(s => ({ name: s.name, filename: s.filename, hasAudioData: !!s.audioData })));
             
             const vocalsSource = metadata.audio.sources.find(source => 
                 source.name === 'vocals' || 
@@ -117,10 +91,8 @@ class PlayerController {
             );
             
             if (vocalsSource && vocalsSource.audioData) {
-                console.log('Loading vocals audio data for waveform visualization, data size:', vocalsSource.audioData.length);
                 this.karaokeRenderer.setVocalsAudio(vocalsSource.audioData);
             } else {
-                console.log('No vocals source found or no audio data available');
             }
             
             // Load music audio data for background effects analysis
@@ -133,10 +105,8 @@ class PlayerController {
             );
             
             if (musicSource && musicSource.audioData) {
-                console.log('Loading music audio data for background effects analysis, data size:', musicSource.audioData.length);
                 this.karaokeRenderer.setMusicAudio(musicSource.audioData);
             } else {
-                console.log('No music source found, trying first available source for effects');
                 // Fallback to any available source that's not vocals
                 const fallbackSource = metadata.audio.sources.find(source => 
                     source.name !== 'vocals' && 
@@ -144,15 +114,12 @@ class PlayerController {
                     source.audioData
                 );
                 if (fallbackSource && fallbackSource.audioData) {
-                    console.log('Using fallback source for music analysis:', fallbackSource.name || fallbackSource.filename);
                     this.karaokeRenderer.setMusicAudio(fallbackSource.audioData);
                 }
             }
         } else {
-            console.log('No audio sources available in metadata');
         }
         
-        console.log('PlayerController song loaded - timer reset to 0, final duration:', this.songDuration + 's');
         
         // Update displays immediately to show reset timer and new duration
         this.updateTimeDisplay();
@@ -209,13 +176,11 @@ class PlayerController {
             const engineTime = this.audioEngine.getCurrentTime();
             this.currentPosition = engineTime;
             // if (Math.random() < 0.02) { // Debug occasionally
-            //     console.log('PlayerController position from engine:', engineTime.toFixed(2) + 's');
             // }
         } else {
             // Fallback to increment
             this.currentPosition += 0.1;
             if (Math.random() < 0.02) {
-                console.log('PlayerController position fallback:', this.currentPosition.toFixed(2) + 's');
             }
         }
         
@@ -223,7 +188,6 @@ class PlayerController {
         if (this.songDuration > 0 && this.currentPosition >= this.songDuration) {
             this.currentPosition = this.songDuration;
             this.pause();
-            console.log('Song ended - timer stopped at duration:', this.songDuration + 's');
         }
         
         this.updateTimeDisplay();
@@ -235,7 +199,6 @@ class PlayerController {
         if (this.karaokeRenderer) {
             this.karaokeRenderer.setCurrentTime(this.currentPosition);
             if (Math.random() < 0.05) { // Debug occasionally
-                // console.log('PlayerController updating karaoke time:', this.currentPosition.toFixed(2) + 's');
             }
         }
     }
@@ -315,27 +278,13 @@ class PlayerController {
     }
 
     async play() {
-        console.log('PlayerController play() called');
         this.isPlaying = true;
         
         if (this.karaokeRenderer) {
-            console.log('🎵 Player calling karaokeRenderer.setPlaying(true)');
             this.karaokeRenderer.setPlaying(true);
-        } else {
-            console.log('🎵 Player: karaokeRenderer is null/undefined!');
         }
         
-        if (this.audioEngine) {
-            try {
-                await this.audioEngine.play();
-            } catch (error) {
-                console.error('Play error:', error);
-                this.isPlaying = false;
-                if (this.karaokeRenderer) {
-                    this.karaokeRenderer.setPlaying(false);
-                }
-            }
-        }
+        // Audio engine is already handled by main.js - don't call it again
     }
 
     async pause() {
@@ -345,13 +294,7 @@ class PlayerController {
             this.karaokeRenderer.setPlaying(false);
         }
         
-        if (this.audioEngine) {
-            try {
-                await this.audioEngine.pause();
-            } catch (error) {
-                console.error('Pause error:', error);
-            }
-        }
+        // Audio engine is already handled by main.js - don't call it again
     }
 
     formatTime(seconds) {
@@ -392,21 +335,15 @@ class PlayerController {
 
     // Debug method to manually try loading vocals from current song data
     async debugLoadVocals() {
-        console.log('Debug: Checking audioEngine and currentSong...');
-        console.log('audioEngine exists:', !!this.audioEngine);
         
         if (this.audioEngine) {
-            console.log('audioEngine.currentSong exists:', !!this.audioEngine.currentSong);
-            console.log('audioEngine properties:', Object.keys(this.audioEngine));
             
             // Try different possible properties where song data might be stored
             const possibleSongData = this.audioEngine.currentSong || this.audioEngine.songData || this.audioEngine.loadedSong;
             
             if (possibleSongData) {
-                console.log('Found song data:', possibleSongData);
                 
                 if (possibleSongData.audio && possibleSongData.audio.sources) {
-                    console.log('Available sources:', possibleSongData.audio.sources.map(s => ({ name: s.name, filename: s.filename, hasAudioData: !!s.audioData })));
                     
                     const vocalsSource = possibleSongData.audio.sources.find(source => 
                         source.name === 'vocals' || 
@@ -414,19 +351,14 @@ class PlayerController {
                     );
                     
                     if (vocalsSource && vocalsSource.audioData) {
-                        console.log('Found vocals source, attempting to load...');
                         await this.karaokeRenderer.setVocalsAudio(vocalsSource.audioData);
                     } else {
-                        console.log('No vocals source found or no audioData');
                     }
                 } else {
-                    console.log('No audio.sources found in song data');
                 }
             } else {
-                console.log('No song data found in audioEngine');
             }
         } else {
-            console.log('No audioEngine available');
         }
     }
 

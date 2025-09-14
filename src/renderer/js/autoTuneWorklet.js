@@ -66,16 +66,12 @@ class AutoTuneProcessor extends AudioWorkletProcessor {
         this.port.onmessage = (event) => {
             if (event.data.type === 'setEnabled') {
                 this.enabled = event.data.value;
-                console.log('Auto-tune enabled:', this.enabled);
             } else if (event.data.type === 'setStrength') {
                 this.strength = event.data.value / 100; // Convert from 0-100 to 0-1
-                console.log('Auto-tune strength:', this.strength);
             } else if (event.data.type === 'setSpeed') {
                 this.speed = event.data.value / 100; // Convert from 1-100 to 0.01-1
-                console.log('Auto-tune speed:', this.speed);
             } else if (event.data.type === 'setKey') {
                 this.currentKey = event.data.value;
-                console.log('Auto-tune key:', this.currentKey);
             }
         };
     }
@@ -192,12 +188,6 @@ class AutoTuneProcessor extends AudioWorkletProcessor {
                         this.frameCount++;
                         const now = Date.now();
                         if (now - this.lastLogTime > 1000) {
-                            console.log('Auto-tune pitch detection:', {
-                                detected: detectedPitch.toFixed(2) + ' Hz',
-                                nearest: nearest.note + ' (' + nearest.frequency.toFixed(2) + ' Hz)',
-                                shiftFactor: shiftFactor.toFixed(3),
-                                strength: (this.strength * 100).toFixed(0) + '%'
-                            });
                             this.lastLogTime = now;
                         }
                         
@@ -224,7 +214,6 @@ class AutoTuneProcessor extends AudioWorkletProcessor {
         
         // Log that we're processing
         if (this.frameCount % 1000 === 0) {
-            console.log('Auto-tune processing active, strength:', (this.strength * 100).toFixed(0) + '%');
         }
         
         return true;

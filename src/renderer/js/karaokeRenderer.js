@@ -146,7 +146,6 @@ class KaraokeRenderer {
     }
     
     async setupAdvancedVisualizations() {
-        console.log('Setting up advanced visualizations...');
         
         // Create offscreen canvas for effects
         this.effectsCanvas = document.createElement('canvas');
@@ -158,8 +157,6 @@ class KaraokeRenderer {
             if (typeof window !== 'undefined' && window.butterchurn && window.butterchurnPresets) {
                 this.effectsGL = this.effectsCanvas.getContext('webgl2') || this.effectsCanvas.getContext('webgl');
                 if (this.effectsGL) {
-                    console.log('Initializing Butterchurn with WebGL context');
-                    console.log('Butterchurn object keys:', Object.keys(window.butterchurn));
                     
                     // Try different API patterns for Butterchurn
                     let butterchurnAPI = null;
@@ -179,7 +176,6 @@ class KaraokeRenderer {
                     
                     // Create audio context for Butterchurn (it needs AudioContext, not WebGL context)
                     this.butterchurnAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    console.log('Created Butterchurn AudioContext:', this.butterchurnAudioContext.state);
                     
                     // Initialize Butterchurn with the correct API: createVisualizer(audioContext, canvas, options)
                     this.butterchurn = butterchurnAPI.createVisualizer(this.butterchurnAudioContext, this.effectsCanvas, {
@@ -194,14 +190,12 @@ class KaraokeRenderer {
                     this.butterchurnAnalyser = this.butterchurnAudioContext.createAnalyser();
                     this.butterchurnAnalyser.fftSize = 256;
                     this.butterchurnFrequencyData = new Uint8Array(this.butterchurnAnalyser.frequencyBinCount);
-                    console.log('Butterchurn analyser created for audio debugging');
                     
                     // If we already have music loaded, decode it for Butterchurn
                     this.tryDecodeStoredAudioForButterchurn();
                     
                     // Get available presets
                     this.presetList = Object.keys(window.butterchurnPresets.getPresets());
-                    console.log(`Loaded ${this.presetList.length} Butterchurn presets`);
                     
                     // Load highly reactive presets that respond strongly to audio
                     const defaultPresets = [
@@ -220,14 +214,12 @@ class KaraokeRenderer {
                         const presetData = window.butterchurnPresets.getPresets()[startPreset];
                         this.butterchurn.loadPreset(presetData, 0.0); // 0 second transition
                         this.currentPreset = startPreset;
-                        console.log('Loaded Butterchurn preset:', startPreset);
                     }
                     
                     this.effectType = 'butterchurn';
                     
                     // Check if we have music loaded but no Butterchurn buffer yet
                     if (this.musicAudioBuffer && !this.butterchurnAudioBuffer) {
-                        console.log('🎵 Butterchurn initialized after music - need to decode audio');
                         // We need to get the original audio data, but AudioBuffer doesn't give us access
                         // This is a complex issue that requires storing the original ArrayBuffer
                         // For now, let's add a flag to trigger re-loading
@@ -244,7 +236,6 @@ class KaraokeRenderer {
             // Fallback to our custom WebGL effects
             this.effectsGL = this.effectsCanvas.getContext('webgl2') || this.effectsCanvas.getContext('webgl');
             if (this.effectsGL) {
-                console.log('WebGL context created, setting up custom shaders');
                 this.setupCustomShaders();
                 this.effectType = 'custom';
             }
@@ -394,7 +385,6 @@ class KaraokeRenderer {
         // Compile first effect initially
         this.switchToCustomEffect(0);
         
-        console.log(`Loaded ${this.customEffects.length} custom effects`);
     }
     
     switchToCustomEffect(index) {
@@ -458,7 +448,6 @@ class KaraokeRenderer {
         
         this.currentCustomEffectIndex = index;
         this.currentPreset = effect.name;
-        console.log('Switched to custom effect:', effect.name);
     }
     
     compileShader(gl, type, source) {
@@ -617,21 +606,17 @@ class KaraokeRenderer {
     async setMusicAudio(audioData) {
         // Set up music analysis for WebGL effects
         try {
-            console.log('🎵 setMusicAudio: Creating FRESH audio contexts and buffers...');
             
             // Create contexts only if they don't exist (don't recreate constantly)
             if (!this.waveformAudioContext) {
-                console.log('🎵 Creating waveform AudioContext...');
                 this.waveformAudioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
             
             if (!this.butterchurnAudioContext) {
-                console.log('🎵 Creating Butterchurn AudioContext...');
                 this.butterchurnAudioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
             
             // Reset buffer references for fresh decoding
-            console.log('🎵 Clearing old audio buffers for fresh decode...');
             this.butterchurnAudioBuffer = null;
             this.originalAudioArrayBuffer = null;
             
@@ -650,19 +635,15 @@ class KaraokeRenderer {
             this.originalAudioArrayBuffer = arrayBuffer.slice(0);
             
             // Decode audio for waveform visualization using fresh context
-            console.log('🎵 Decoding audio for waveform visualization...');
             const waveformBuffer = await this.waveformAudioContext.decodeAudioData(arrayBuffer.slice(0));
             
             // ALWAYS decode fresh audio for Butterchurn context 
             if (this.butterchurn && this.butterchurnAudioContext) {
-                console.log('🎵 Decoding FRESH audio for Butterchurn context...');
                 this.butterchurnAudioBuffer = await this.butterchurnAudioContext.decodeAudioData(arrayBuffer.slice(0));
-                console.log('🎵 Fresh Butterchurn audio buffer created!');
             }
             
             // Create debug analyser if we don't have one
             if (this.butterchurnAudioContext && !this.butterchurnAnalyser) {
-                console.log('🎵 Creating debug analyser...');
                 this.butterchurnAnalyser = this.butterchurnAudioContext.createAnalyser();
                 this.butterchurnAnalyser.fftSize = 256;
                 this.butterchurnFrequencyData = new Uint8Array(this.butterchurnAnalyser.frequencyBinCount);
@@ -677,7 +658,6 @@ class KaraokeRenderer {
 
     async reinitializeButterchurn() {
         try {
-            console.log('🎵 Destroying old Butterchurn instance...');
             
             // Destroy the old Butterchurn instance if it exists
             if (this.butterchurn && this.butterchurn.destroy) {
@@ -687,7 +667,6 @@ class KaraokeRenderer {
             // Clear old references
             this.butterchurn = null;
             
-            console.log('🎵 Creating new Butterchurn with fresh AudioContext...');
             
             // Get the Butterchurn API
             let butterchurnAPI = null;
@@ -716,7 +695,6 @@ class KaraokeRenderer {
             // Reload presets
             if (window.butterchurnPresets && window.butterchurnPresets.getPresets) {
                 this.presetList = Object.keys(window.butterchurnPresets.getPresets());
-                console.log(`🎵 Reloaded ${this.presetList.length} Butterchurn presets for fresh instance`);
                 
                 // Load a reactive preset
                 const reactivePresets = [
@@ -728,13 +706,11 @@ class KaraokeRenderer {
                 for (const preset of reactivePresets) {
                     if (this.presetList.includes(preset)) {
                         this.butterchurn.loadPreset(window.butterchurnPresets.getPresets()[preset], 0.0);
-                        console.log('🎵 Loaded reactive preset for fresh Butterchurn:', preset);
                         break;
                     }
                 }
             }
             
-            console.log('🎵 Butterchurn SUCCESSFULLY reinitialized with fresh AudioContext!');
             
         } catch (error) {
             console.error('Failed to reinitialize Butterchurn:', error);
@@ -785,7 +761,6 @@ class KaraokeRenderer {
             if (this.butterchurnAudioContext && !this.butterchurnAudioBuffer && arrayBuffer) {
                 try {
                     this.butterchurnAudioBuffer = await this.butterchurnAudioContext.decodeAudioData(arrayBuffer.slice(0));
-                    console.log('Audio decoded for shared playback/Butterchurn context in setupMusicAnalysis');
                 } catch (error) {
                     console.warn('Failed to decode audio for Butterchurn context:', error);
                 }
@@ -818,7 +793,6 @@ class KaraokeRenderer {
                 this.musicFrequencyData = new Uint8Array(this.musicAnalyser.frequencyBinCount);
             }
             
-            console.log('Music analysis prepared, will connect to live audio when playback starts');
             
         } catch (error) {
             console.warn('Failed to setup music analysis:', error);
@@ -829,15 +803,12 @@ class KaraokeRenderer {
         // If we already have music loaded but Butterchurn doesn't have the audio buffer
         if (this.butterchurn && this.butterchurnAudioContext && this.originalAudioArrayBuffer && !this.butterchurnAudioBuffer) {
             try {
-                console.log('Attempting to decode stored audio for shared playback/Butterchurn context...');
                 this.butterchurnAudioBuffer = await this.butterchurnAudioContext.decodeAudioData(this.originalAudioArrayBuffer.slice(0));
-                console.log('Successfully decoded stored audio for shared playback/Butterchurn context');
                 
                 // Also update the music buffer reference for UI if we don't have it yet
                 if (!this.musicAudioBuffer && this.waveformAudioContext) {
                     try {
                         this.musicAudioBuffer = await this.waveformAudioContext.decodeAudioData(this.originalAudioArrayBuffer.slice(0));
-                        console.log('Also decoded audio for waveform visualization');
                     } catch (error) {
                         console.warn('Failed to decode audio for waveform:', error);
                     }
@@ -905,7 +876,6 @@ class KaraokeRenderer {
     renderWebGLEffects() {
         if (!this.effectsGL || !this.waveformPreferences.enableEffects) {
             if (Math.random() < 0.01) { // Debug occasionally
-                console.log('Effects disabled or no WebGL:', { hasGL: !!this.effectsGL, enabled: this.waveformPreferences.enableEffects });
             }
             return;
         }
@@ -915,7 +885,6 @@ class KaraokeRenderer {
         const analysis = this.analyzeMusicFrequencies();
         
         // if (Math.random() < 0.01) { // Debug occasionally
-        //     console.log('Rendering effects:', { type: this.effectType, analysis: analysis, hasButterchurn: !!this.butterchurn });
         // }
         
         // Use Butterchurn if available, otherwise fall back to custom shaders
@@ -955,16 +924,13 @@ class KaraokeRenderer {
                 
                 // Ensure Butterchurn source is running if we're playing but source is missing
                 if (this.isPlaying && this.butterchurnAnalyser && !this.butterchurnSourceNode && this.butterchurnAudioBuffer) {
-                    console.log('🎵 FIXING: Playing but no Butterchurn source - starting analysis');
                     this.startMusicAnalysis();
                 } else if (this.isPlaying && !this.butterchurnSourceNode && this.musicAudioBuffer && !this.butterchurnAudioBuffer) {
                     // Fix missing Butterchurn audio buffer - decode the music for Butterchurn
-                    console.log('🎵 FIXING: Decoding music for Butterchurn AudioContext');
                     try {
                         // Get the original audio data from musicAudioBuffer
                         // We need to re-decode since AudioBuffer can't be transferred between contexts
                         // This is a limitation - we'd need the original ArrayBuffer, but for now let's skip this complex case
-                        console.log('🎵 Need to re-decode audio - this requires original file data');
                     } catch (error) {
                         console.warn('Failed to decode audio for Butterchurn:', error);
                     }
@@ -973,13 +939,6 @@ class KaraokeRenderer {
                     const now = performance.now();
                     if (now - this.lastConditionsDebugTime > 2000) {
                         this.lastConditionsDebugTime = now;
-                        console.log('🎵 DEBUG Auto-fix conditions:', {
-                            isPlaying: this.isPlaying,
-                            hasAnalyser: !!this.butterchurnAnalyser,
-                            hasSourceNode: !!this.butterchurnSourceNode,
-                            hasAudioBuffer: !!this.butterchurnAudioBuffer,
-                            hasMusicBuffer: !!this.musicAudioBuffer
-                        });
                     }
                 }
                 
@@ -1053,7 +1012,6 @@ class KaraokeRenderer {
             const presetData = window.butterchurnPresets.getPresets()[presetName];
             this.butterchurn.loadPreset(presetData, transitionTime);
             this.currentPreset = presetName;
-            console.log('Switched to Butterchurn preset:', presetName);
         } catch (error) {
             console.error('Failed to switch preset:', error);
         }
@@ -1070,12 +1028,10 @@ class KaraokeRenderer {
     switchEffectType(type) {
         if (['butterchurn', 'custom'].includes(type)) {
             this.effectType = type;
-            console.log('Switched effect type to:', type);
         }
     }
     
     setPlaying(playing) {
-        console.log(`🎵 KaraokeRenderer setPlaying(${playing})`);
         this.isPlaying = playing;
         
         // Start/stop microphone capture based on playing state
@@ -1090,11 +1046,9 @@ class KaraokeRenderer {
     
     startMusicAnalysis() {
         if (!this.musicAudioBuffer) {
-            console.log('🎵 StartMusicAnalysis: No musicAudioBuffer available');
             return;
         }
         if (!this.effectsGL && !this.butterchurn) {
-            console.log('🎵 StartMusicAnalysis: No effectsGL or Butterchurn available');
             return;
         }
         
@@ -1124,13 +1078,11 @@ class KaraokeRenderer {
                     // Connect to debug analyser for monitoring
                     if (this.butterchurnAnalyser) {
                         this.butterchurnSourceNode.connect(this.butterchurnAnalyser);
-                        console.log('Connected Butterchurn source to debug analyser');
                     }
                     
                     // Connect to Butterchurn's internal audio processing
                     // Butterchurn should have its own analyser that we can connect to
                     if (this.butterchurn && this.butterchurn.connectAudio) {
-                        console.log('🎵 Creating NEW visual analyser for Butterchurn...');
                         
                         // Create dedicated analyser for Butterchurn visualization
                         this.butterchurnVisualAnalyser = this.butterchurnAudioContext.createAnalyser();
@@ -1139,18 +1091,15 @@ class KaraokeRenderer {
                         
                         // Connect audio source to Butterchurn's analyser
                         this.butterchurnSourceNode.connect(this.butterchurnVisualAnalyser);
-                        console.log('🎵 Connected source to NEW visual analyser');
                         
                         // Give Butterchurn the analyser for visualization
                         this.butterchurn.connectAudio(this.butterchurnVisualAnalyser);
-                        console.log('🎵 Connected Butterchurn to NEW visual analyser - should have fresh data!');
                     }
                     
                     // Start from current time position (analysis only, no audio output)
                     // Ensure offset is never negative to avoid RangeError
                     const startOffset = Math.max(0, this.currentTime);
                     this.butterchurnSourceNode.start(0, startOffset);
-                    console.log('Started Butterchurn OFFLINE audio analysis from position:', startOffset);
                     
                 } catch (error) {
                     console.warn('Failed to start Butterchurn offline analysis:', error);
@@ -1162,7 +1111,6 @@ class KaraokeRenderer {
     }
     
     stopMusicAnalysis() {
-        console.log('🎵 STOPPING music analysis...');
         
         // Note: We no longer create musicSourceNode from waveform context.
         // Only Butterchurn context is used for analysis.
@@ -1170,24 +1118,20 @@ class KaraokeRenderer {
         // Stop Butterchurn source (AudioBufferSourceNode can only be used once)
         if (this.butterchurnSourceNode) {
             try {
-                console.log('🎵 Stopping and disconnecting Butterchurn source node');
                 this.butterchurnSourceNode.stop();
                 this.butterchurnSourceNode.disconnect();
             } catch (e) {
-                console.log('🎵 Error stopping Butterchurn source (already stopped):', e.message);
             }
             this.butterchurnSourceNode = null;
         }
         
         // Clear any stored analyser references that Butterchurn might be holding
         if (this.butterchurnVisualAnalyser) {
-            console.log('🎵 Clearing Butterchurn visual analyser reference');
             this.butterchurnVisualAnalyser = null;
         }
         
         // Clear cached analysis when stopped
         this.cachedAnalysis = { energy: 0, bass: 0, mid: 0, treble: 0, centroid: 0 };
-        console.log('🎵 Music analysis STOPPED and cleared');
     }
     
     debugAudioLevels() {
@@ -1201,7 +1145,6 @@ class KaraokeRenderer {
             const average = sum / this.butterchurnFrequencyData.length;
             const max = Math.max(...this.butterchurnFrequencyData);
             
-            // console.log(`🎵 Butterchurn Audio Debug - Avg: ${average.toFixed(1)}, Max: ${max}, Context: ${this.butterchurnAudioContext ? this.butterchurnAudioContext.state : 'none'}`, 
             //            `Source: ${this.butterchurnSourceNode ? 'active' : 'none'}`);
                        
             // Also update status bar for visual feedback
@@ -1250,7 +1193,6 @@ class KaraokeRenderer {
             this.micDataArray = new Uint8Array(this.analyser.frequencyBinCount);
             
             // Give the microphone a moment to stabilize before processing
-            console.log('Microphone initialized, waiting 150ms for stabilization...');
             await new Promise(resolve => setTimeout(resolve, 150));
             
             // Microphone capture started
@@ -1697,9 +1639,6 @@ class KaraokeRenderer {
             const budgetUsed = (this.frameUpdateTime / targetFrameTime) * 100;
             
             // Log as separate lines to avoid console truncation
-            // console.log(`Frame ${this.frameCount} Performance:`);
-            // console.log(`  Render: ${renderTime.toFixed(2)}ms (clear:${clearTime.toFixed(1)} effects:${effectsTime.toFixed(1)} vocals:${vocalsTime.toFixed(1)} mic:${micTime.toFixed(1)} lyrics:${lyricsTime.toFixed(1)})`);
-            // console.log(`  FULL FRAME: ${this.frameUpdateTime.toFixed(2)}ms | Budget: ${budgetUsed.toFixed(1)}% | Actual FPS: ${avgFPS.toFixed(1)} ${avgFPS < 55 ? '🔴' : avgFPS < 58 ? '🟡' : '🟢'}`);
         }
         
     }
@@ -2491,7 +2430,6 @@ class KaraokeRenderer {
     }
     
     destroy() {
-        console.log('🎵 Destroying KaraokeRenderer...');
         
         if (this.animationFrame) {
             cancelAnimationFrame(this.animationFrame);
@@ -2541,11 +2479,9 @@ class KaraokeRenderer {
             this.gl = null;
         }
         
-        console.log('✅ KaraokeRenderer completely destroyed');
     }
 
     reinitialize() {
-        console.log('🔄 Reinitializing KaraokeRenderer with clean slate...');
         
         // Store current preferences
         const currentPreferences = { ...this.waveformPreferences };
@@ -2573,7 +2509,6 @@ class KaraokeRenderer {
         
         // Restart microphone if it was enabled (with delay to prevent issues)
         if (this.waveformPreferences.enableMic) {
-            console.log('Restarting microphone after reinitialize...');
             setTimeout(() => {
                 // Ensure the input device selection is properly restored before starting
                 this.ensureInputDeviceSelection();
@@ -2581,7 +2516,6 @@ class KaraokeRenderer {
             }, 200); // Extra delay after reinitialize to let everything settle
         }
         
-        console.log('✅ KaraokeRenderer reinitialized successfully');
     }
     
     ensureInputDeviceSelection() {
@@ -2593,7 +2527,6 @@ class KaraokeRenderer {
                 if (prefs.input) {
                     const inputSelect = document.getElementById('inputDeviceSelect');
                     if (inputSelect && prefs.input !== inputSelect.value) {
-                        console.log('Restoring input device selection:', prefs.input);
                         inputSelect.value = prefs.input;
                     }
                 }
@@ -2605,7 +2538,6 @@ class KaraokeRenderer {
     
     setShowUpcomingLyrics(enabled) {
         this.waveformPreferences.showUpcomingLyrics = enabled;
-        console.log('Show upcoming lyrics:', enabled);
     }
     
     drawUpcomingLyrics(canvasWidth, canvasHeight, startY) {
@@ -2741,11 +2673,9 @@ class KaraokeRenderer {
                 let upcomingPosition;
                 if (this.lastUpcomingDisplayY !== null && this.lastUpcomingLineIndex === upcomingLine.index) {
                     upcomingPosition = this.lastUpcomingDisplayY;
-                    console.log(`🎯 Using EXACT upcoming position: ${upcomingPosition} for line ${upcomingLine.index}`);
                 } else {
                     // Fallback calculation
                     upcomingPosition = currentActiveEndY + 50;
-                    console.log(`🎯 Using FALLBACK upcoming position: ${upcomingPosition} for line ${upcomingLine.index}`);
                 }
                 
                 const activePosition = (this.canvas.height / 2) - 60;  // Where active is shown (center)
@@ -2770,7 +2700,6 @@ class KaraokeRenderer {
             
             if (isNowActive) {
                 // Line became active - complete transition immediately
-                console.log(`🏁 Line ${lineIndex} became active - completing transition immediately`);
                 this.lyricTransitions.delete(lineIndex);
             } else {
                 // Normal progress update
@@ -2811,7 +2740,6 @@ class KaraokeRenderer {
                             endY: activeY
                         });
                         
-                        console.log(`Starting animation: ${upcomingY - 10} -> ${activeY} for line ${this.lockedUpcomingIndex}`);
                     }
                 }
             }

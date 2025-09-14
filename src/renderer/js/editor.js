@@ -51,9 +51,6 @@ class LyricsEditorController {
     }
 
     onSongLoaded(songData) {
-        console.log('Editor onSongLoaded called with:', songData);
-        console.log('Song metadata structure:', songData?.song);
-        console.log('Looking for rejections at:', songData?.song?.lyric_update_rejections);
         this.currentSong = songData;
         this.songDuration = songData?.metadata?.duration || 0;
         
@@ -76,22 +73,18 @@ class LyricsEditorController {
                 const vocalsBlob = new Blob([vocalsSource.audioData], { type: 'audio/mp3' });
                 const vocalsUrl = URL.createObjectURL(vocalsBlob);
                 audioElement.src = vocalsUrl;
-                console.log('Loaded vocals audio into editor audio player');
                 
                 // Apply IEM device selection if available
                 this.applyAudioDeviceSelection();
             } else {
-                console.log('No vocals track found in KAI file');
             }
         }
         
         // Load lyrics directly into the line-by-line editor
         if (this.lyricsEditor && songData?.lyrics) {
-            console.log('Loading lyrics into editor:', songData.lyrics.length, 'lines', songData.lyrics);
             
             // Get rejections from song metadata
             const rejections = songData?.song?.lyric_update_rejections || [];
-            console.log('Found lyric rejections:', rejections.length, rejections);
             
             this.lyricsEditor.loadLyrics(songData.lyrics, rejections);
             
@@ -103,16 +96,8 @@ class LyricsEditorController {
                 });
                 this.callbackSetup = true;
             }
-        } else {
-            console.log('Editor or lyrics missing:', {
-                hasEditor: !!this.lyricsEditor,
-                hasLyrics: !!songData?.lyrics,
-                lyricsType: typeof songData?.lyrics,
-                lyricsValue: songData?.lyrics
-            });
         }
         
-        console.log('Lyrics editor loaded song:', songData.metadata.title);
     }
 
 
@@ -141,7 +126,6 @@ class LyricsEditorController {
                 // Use setSinkId to route audio to the selected IEM device
                 if (typeof audioElement.setSinkId === 'function') {
                     await audioElement.setSinkId(selectedDevice.dataset.deviceId);
-                    console.log('Editor audio routed to IEM device:', selectedDevice.text);
                 } else {
                     console.warn('setSinkId not supported in this browser');
                 }
@@ -183,14 +167,12 @@ class LyricsEditorController {
             
             // Save to file using the kaiAPI
             if (this.currentSong.originalFilePath) {
-                console.log('Saving changes to KAI file:', this.currentSong.originalFilePath);
                 const result = await kaiAPI.editor.saveKai(this.currentSong, this.currentSong.originalFilePath);
                 
                 if (result.success) {
                     this.hasChanges = false;
                     this.updateSaveButton();
                     this.showStatus('Changes saved successfully!', 'saved');
-                    console.log('Lyrics changes saved to file');
                     
                     // Reload the song after successful save to refresh all components
                     this.reloadSong();
@@ -245,7 +227,6 @@ class LyricsEditorController {
 
     showStatus(message, type = '') {
         // Could show in a status area if we add one
-        console.log(`Editor status: ${message}`);
     }
 
     enableControls() {
@@ -258,7 +239,6 @@ class LyricsEditorController {
 
     onLyricsEdited(editedLyrics, editedRejections = []) {
         // Update the karaoke renderer with edited lyrics
-        console.log('Lyrics edited:', editedLyrics, 'rejections:', editedRejections);
         
         // Update the current song data with edited lyrics and rejections
         this.currentSong.lyrics = editedLyrics;
@@ -270,7 +250,6 @@ class LyricsEditorController {
         // Find the player instance through the main app and update karaoke renderer
         if (window.appInstance && window.appInstance.player && window.appInstance.player.karaokeRenderer) {
             window.appInstance.player.karaokeRenderer.loadLyrics(editedLyrics, this.songDuration);
-            console.log('Updated karaoke renderer with edited lyrics');
         }
         
         this.hasChanges = true;
@@ -291,13 +270,11 @@ class LyricsEditorController {
         }
         
         try {
-            console.log('Reloading song from file:', this.currentSong.originalFilePath);
             
             // Use the new reload API to reload the song
             const result = await kaiAPI.editor.reloadKai(this.currentSong.originalFilePath);
             
             if (result.success) {
-                console.log('Song reloaded successfully after save');
                 // Note: The actual data refresh happens automatically via the song:data event
                 // which calls onSongLoaded and resets the editor state
                 this.showStatus('Saved and reloaded successfully!', 'saved');

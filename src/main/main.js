@@ -4,6 +4,7 @@ const fs = require('fs');
 const AudioEngine = require('./audioEngine');
 const KaiLoader = require('../utils/kaiLoader');
 const KaiWriter = require('../utils/kaiWriter');
+const SettingsManager = require('./settingsManager');
 
 class KaiPlayerApp {
   constructor() {
@@ -12,6 +13,7 @@ class KaiPlayerApp {
     this.audioEngine = null;
     this.currentSong = null;
     this.isDev = process.argv.includes('--dev');
+    this.settings = new SettingsManager();
     this.canvasStreaming = {
       isStreaming: false,
       stream: null,
@@ -24,10 +26,14 @@ class KaiPlayerApp {
 
   async initialize() {
     await app.whenReady();
+    await this.settings.load();
     this.createMainWindow();
     this.createApplicationMenu();
     this.setupIPC();
     this.initializeAudioEngine();
+    
+    // Check if songs folder is set, prompt if not
+    await this.checkSongsFolder();
   }
 
   createMainWindow() {
@@ -36,20 +42,23 @@ class KaiPlayerApp {
       height: 800,
       minWidth: 800,
       minHeight: 600,
+      icon: path.join(process.cwd(), 'static', 'images', 'logo.png'),
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
         preload: path.join(__dirname, 'preload.js')
       },
-      titleBarStyle: 'hidden',
-      titleBarOverlay: {
-        color: '#1a1a1a',
-        symbolColor: '#ffffff'
-      }
+      title: 'Loukai'
     });
 
     const rendererPath = path.join(__dirname, '../renderer/index.html');
     this.mainWindow.loadFile(rendererPath);
+    
+    // Set dock icon on macOS
+    if (process.platform === 'darwin') {
+      const iconPath = path.join(process.cwd(), 'static', 'images', 'logo.png');
+      app.dock?.setIcon(iconPath);
+    }
 
     if (this.isDev) {
       this.mainWindow.webContents.openDevTools();
@@ -1019,6 +1028,10 @@ class KaiPlayerApp {
       return null;
     });
 
+    ipcMain.handle('file:loadKaiFromPath', async (event, filePath) => {
+      return await this.loadKaiFile(filePath);
+    });
+
     ipcMain.handle('audio:getDevices', () => {
       return this.audioEngine ? this.audioEngine.getDevices() : [];
     });
@@ -1216,6 +1229,215 @@ class KaiPlayerApp {
         this.canvasWindow.webContents.send('canvas:receiveFrame', dataUrl);
       }
     });
+
+    // Library management
+    ipcMain.handle('library:getSongsFolder', () => {
+      return this.settings.getSongsFolder();
+    });
+
+    ipcMain.handle('library:setSongsFolder', async () => {
+      await this.promptForSongsFolder();
+      return this.settings.getSongsFolder();
+    });
+
+    ipcMain.handle('library:scanFolder', async () => {
+      const songsFolder = this.settings.getSongsFolder();
+      if (!songsFolder) {
+        return { error: 'No songs folder set' };
+      }
+
+      try {
+        const files = await this.scanForKaiFiles(songsFolder);
+        return { files };
+      } catch (error) {
+        console.error('❌ Failed to scan library:', error);
+        return { error: error.message };
+      }
+    });
+
+    ipcMain.handle('library:getSongInfo', async (event, filePath) => {
+      try {
+        console.log('📖 Reading song info from:', filePath);
+        
+        // Read full song.json from KAI file
+        const songInfo = await this.readKaiSongJson(filePath);
+        
+        if (songInfo) {
+          // Add file path for reference
+          songInfo.filePath = filePath;
+          return songInfo;
+        } else {
+          return { error: 'Failed to read song information from file' };
+        }
+      } catch (error) {
+        console.error('❌ Failed to get song info:', error);
+        return { error: error.message };
+      }
+    });
+  }
+
+  async scanForKaiFiles(folderPath) {
+    const fs = require('fs').promises;
+    const files = [];
+
+    try {
+      const entries = await fs.readdir(folderPath, { withFileTypes: true });
+      
+      for (const entry of entries) {
+        const fullPath = path.join(folderPath, entry.name);
+        
+        if (entry.isDirectory()) {
+          // Recursively scan subdirectories
+          const subFiles = await this.scanForKaiFiles(fullPath);
+          files.push(...subFiles);
+        } else if (entry.name.toLowerCase().endsWith('.kai')) {
+          // Get file stats and metadata
+          const stats = await fs.stat(fullPath);
+          console.log('📖 Extracting metadata from:', entry.name);
+          const metadata = await this.extractKaiMetadata(fullPath);
+          console.log('📖 Extracted metadata:', metadata);
+          
+          files.push({
+            name: entry.name,
+            path: fullPath,
+            size: stats.size,
+            modified: stats.mtime,
+            folder: path.relative(this.settings.getSongsFolder(), folderPath) || '.',
+            ...metadata // Include extracted metadata
+          });
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error scanning folder:', folderPath, error);
+    }
+
+    return files;
+  }
+
+  async extractKaiMetadata(kaiFilePath) {
+    const yauzl = require('yauzl');
+    
+    return new Promise((resolve) => {
+      const metadata = {
+        title: null,
+        artist: null,
+        duration: null,
+        stems: [],
+        stemCount: 0
+      };
+
+      yauzl.open(kaiFilePath, { lazyEntries: true }, (err, zipfile) => {
+        if (err) {
+          console.warn('❌ Could not read KAI metadata from:', kaiFilePath, err.message);
+          return resolve(metadata);
+        }
+
+        zipfile.readEntry();
+        
+        zipfile.on('entry', (entry) => {
+          if (entry.fileName === 'song.json') {
+            zipfile.openReadStream(entry, (err, readStream) => {
+              if (err) {
+                zipfile.readEntry();
+                return;
+              }
+
+              let jsonData = '';
+              readStream.on('data', (chunk) => {
+                jsonData += chunk.toString();
+              });
+
+              readStream.on('end', () => {
+                try {
+                  const songData = JSON.parse(jsonData);
+                  
+                  // Extract metadata from song.song object
+                  if (songData.song) {
+                    metadata.title = songData.song.title || null;
+                    metadata.artist = songData.song.artist || null;
+                    metadata.duration = songData.song.duration_sec || null;
+                  }
+                  
+                  // Extract stems info from audio.sources
+                  if (songData.audio && songData.audio.sources) {
+                    metadata.stems = songData.audio.sources.map(source => source.role || source.id);
+                    metadata.stemCount = metadata.stems.length;
+                  }
+                  
+                } catch (parseErr) {
+                  console.warn('❌ Could not parse song.json from:', kaiFilePath, parseErr.message);
+                }
+                
+                zipfile.close();
+                resolve(metadata);
+              });
+            });
+          } else {
+            zipfile.readEntry();
+          }
+        });
+
+        zipfile.on('end', () => {
+          resolve(metadata);
+        });
+      });
+    });
+  }
+
+  async readKaiSongJson(kaiFilePath) {
+    const yauzl = require('yauzl');
+    
+    return new Promise((resolve) => {
+      yauzl.open(kaiFilePath, { lazyEntries: true }, (err, zipfile) => {
+        if (err) {
+          console.warn('❌ Could not read KAI file:', kaiFilePath, err.message);
+          return resolve(null);
+        }
+
+        zipfile.readEntry();
+        
+        zipfile.on('entry', (entry) => {
+          if (entry.fileName === 'song.json') {
+            zipfile.openReadStream(entry, (err, readStream) => {
+              if (err) {
+                zipfile.close();
+                return resolve(null);
+              }
+
+              let jsonData = '';
+              readStream.on('data', (chunk) => {
+                jsonData += chunk.toString();
+              });
+
+              readStream.on('end', () => {
+                try {
+                  const songData = JSON.parse(jsonData);
+                  zipfile.close();
+                  resolve(songData);
+                } catch (parseError) {
+                  console.warn('❌ Could not parse song.json from:', kaiFilePath, parseError.message);
+                  zipfile.close();
+                  resolve(null);
+                }
+              });
+            });
+          } else {
+            zipfile.readEntry();
+          }
+        });
+
+        zipfile.on('end', () => {
+          zipfile.close();
+          resolve(null);
+        });
+
+        zipfile.on('error', (err) => {
+          console.warn('❌ Error reading KAI file:', kaiFilePath, err.message);
+          zipfile.close();
+          resolve(null);
+        });
+      });
+    });
   }
 
   async loadKaiFile(filePath) {
@@ -1249,6 +1471,49 @@ class KaiPlayerApp {
         success: false,
         error: error.message
       };
+    }
+  }
+
+  async checkSongsFolder() {
+    const songsFolder = this.settings.getSongsFolder();
+    
+    if (!songsFolder) {
+      console.log('📁 No songs folder set, prompting user...');
+      await this.promptForSongsFolder();
+    } else {
+      console.log('📁 Songs folder:', songsFolder);
+      // Verify folder still exists
+      if (!fs.existsSync(songsFolder)) {
+        console.log('⚠️ Songs folder no longer exists, prompting for new one...');
+        await this.promptForSongsFolder();
+      }
+    }
+  }
+
+  async promptForSongsFolder() {
+    const result = await dialog.showMessageBox(this.mainWindow, {
+      type: 'info',
+      title: 'Set Songs Library Folder',
+      message: 'Choose a folder where your KAI music files are stored',
+      detail: 'This will be your songs library that appears in the app.',
+      buttons: ['Choose Folder', 'Skip for Now']
+    });
+
+    if (result.response === 0) {
+      const folderResult = await dialog.showOpenDialog(this.mainWindow, {
+        title: 'Select Songs Library Folder',
+        properties: ['openDirectory'],
+        buttonLabel: 'Select Folder'
+      });
+
+      if (!folderResult.canceled && folderResult.filePaths.length > 0) {
+        const selectedFolder = folderResult.filePaths[0];
+        this.settings.setSongsFolder(selectedFolder);
+        console.log('📁 Songs folder set to:', selectedFolder);
+        
+        // Notify renderer about the new library
+        this.sendToRenderer('library:folderSet', selectedFolder);
+      }
     }
   }
 

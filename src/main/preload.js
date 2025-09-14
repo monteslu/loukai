@@ -6,7 +6,8 @@ const api = {
   },
   
   file: {
-    openKai: () => ipcRenderer.invoke('file:openKai')
+    openKai: () => ipcRenderer.invoke('file:openKai'),
+    loadKaiFromPath: (filePath) => ipcRenderer.invoke('file:loadKaiFromPath', filePath)
   },
   
   audio: {
@@ -66,6 +67,16 @@ const api = {
     sendICECandidate: (source, candidate) => ipcRenderer.invoke('canvas:sendICECandidate', source, candidate),
     toggleFullscreen: (shouldBeFullscreen) => ipcRenderer.invoke('canvas:toggleFullscreen', shouldBeFullscreen),
     sendFrame: (dataUrl) => ipcRenderer.invoke('canvas:sendFrame', dataUrl)
+  },
+  
+  library: {
+    getSongsFolder: () => ipcRenderer.invoke('library:getSongsFolder'),
+    setSongsFolder: () => ipcRenderer.invoke('library:setSongsFolder'),
+    scanFolder: () => ipcRenderer.invoke('library:scanFolder'),
+    getSongInfo: (filePath) => ipcRenderer.invoke('library:getSongInfo', filePath),
+    
+    onFolderSet: (callback) => ipcRenderer.on('library:folderSet', callback),
+    removeFolderSetListener: (callback) => ipcRenderer.removeListener('library:folderSet', callback)
   }
 };
 

@@ -53,7 +53,7 @@ class KaiPlayerApp {
         }
         
         // Apply auto-tune settings after audio engine is initialized
-        if (this.autoTunePreferences) {
+        if (this.autoTunePreferences && this.audioEngine && this.audioEngine.setAutoTuneSettings) {
             this.audioEngine.setAutoTuneSettings(this.autoTunePreferences);
         }
         
@@ -73,7 +73,6 @@ class KaiPlayerApp {
         // Apply loaded waveform preferences immediately after player creation
         if (this.player.karaokeRenderer) {
             this.player.karaokeRenderer.waveformPreferences = { ...this.waveformPreferences };
-            console.log('Applied waveform preferences on init:', this.waveformPreferences);
         }
         
         this.updateStatus('Ready');
@@ -82,29 +81,32 @@ class KaiPlayerApp {
         this.updateUIForSongState();
         
         const version = await kaiAPI.app.getVersion();
-        console.log(`KAI Player v${version} initialized`);
     }
 
     async setupEventListeners() {
-        document.getElementById('loadKaiBtn').addEventListener('click', () => {
-            this.loadKaiFile();
-        });
 
         document.getElementById('refreshDevicesBtn').addEventListener('click', async () => {
-            console.log('Refresh devices button clicked');
             await this.loadAudioDevices();
-            console.log('Device refresh completed');
         });
 
-        document.getElementById('songInfoBtn').addEventListener('click', () => {
-            this.showSongInfo();
-        });
+        // Hamburger menu toggle
+        const hamburgerBtn = document.getElementById('hamburgerBtn');
+        if (hamburgerBtn) {
+            hamburgerBtn.addEventListener('click', () => {
+                this.toggleSidebar();
+            });
+            
+            // Initialize sidebar state from saved preference
+            this.initializeSidebarState();
+        } else {
+            console.error('Hamburger button not found');
+        }
+
 
         document.getElementById('openCanvasWindowBtn').addEventListener('click', async () => {
             try {
                 const result = await kaiAPI.window.openCanvas();
                 if (result && result.success) {
-                    console.log('Canvas window opened successfully');
                 } else {
                     console.error('Failed to open canvas window:', result);
                 }
@@ -124,7 +126,6 @@ class KaiPlayerApp {
         // Fullscreen change events
         document.addEventListener('fullscreenchange', () => {
             const isCanvasFullscreen = !!document.fullscreenElement;
-            console.log('🖥️ Canvas fullscreen changed:', isCanvasFullscreen ? 'ENTERED' : 'EXITED');
         });
         
         document.addEventListener('fullscreenerror', (error) => {
@@ -142,17 +143,17 @@ class KaiPlayerApp {
             }
         });
 
-        document.getElementById('playPauseBtn').addEventListener('click', () => {
+        document.getElementById('playPauseBtn').addEventListener('click', (e) => {
             this.togglePlayback();
         });
 
 
-        document.getElementById('seekBackBtn').addEventListener('click', () => {
-            this.seekRelative(-10);
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            this.restartTrack();
         });
 
-        document.getElementById('seekForwardBtn').addEventListener('click', () => {
-            this.seekRelative(10);
+        document.getElementById('nextTrackBtn').addEventListener('click', () => {
+            this.nextTrack();
         });
         
         // Effect switching controls
@@ -198,7 +199,6 @@ class KaiPlayerApp {
 
         document.getElementById('inputDeviceSelect').addEventListener('change', async (e) => {
             const deviceId = e.target.value;
-            console.log('Input device selected:', deviceId);
             
             // Start microphone input with selected device
             if (this.audioEngine && deviceId !== '') {
@@ -257,12 +257,16 @@ class KaiPlayerApp {
         });
 
         kaiAPI.song.onData(async (event, songData) => {
-            console.log('🎵 Received song data in renderer - performing full initialization');
-            
             this.currentSong = songData;
             
-            // Show loading state immediately
-            this.showLoadingState();
+            // Reset play state when loading a new song - it should be loaded but not playing
+            this.isPlaying = false;
+            this.updatePlayButton('▶');
+            
+            // Notify queue manager that a song started
+            if (window.queueManager && songData.originalFilePath) {
+                window.queueManager.notifySongStarted(songData.originalFilePath);
+            }
             
             // Use pending metadata if available, otherwise use data from songData
             const metadata = this._pendingMetadata || songData.metadata || {};
@@ -311,7 +315,6 @@ class KaiPlayerApp {
                     
                     // Restart microphone capture if it was enabled
                     if (this.waveformPreferences.enableMic) {
-                        console.log('Restarting microphone capture after song load...');
                         setTimeout(() => {
                             this.player.karaokeRenderer.startMicrophoneCapture();
                         }, 100);
@@ -337,8 +340,6 @@ class KaiPlayerApp {
                 this.mixer.updateFromAudioEngine();
             }
             
-            document.getElementById('loadingMessage').style.display = 'none';
-            
             // Now that everything is fully loaded, update the UI
             this.updateUIForSongState();
             
@@ -349,7 +350,6 @@ class KaiPlayerApp {
 
     async loadAudioDevices() {
         try {
-            console.log('Loading audio devices...');
             
             // Load saved device preferences first
             this.loadDevicePreferences();
@@ -366,7 +366,6 @@ class KaiPlayerApp {
             
             // Restore device selections after populating the selectors
             await this.restoreDeviceSelections();
-            console.log('Device selections restored after refresh');
             
         } catch (error) {
             console.error('Failed to load audio devices:', error);
@@ -407,9 +406,6 @@ class KaiPlayerApp {
                     });
                 }
             });
-            
-            console.log(`Found ${audioDevices.length} real audio devices:`, 
-                audioDevices.map(d => `${d.name} (${d.deviceKind})`));
             
             // Also update status to show device count
             this.updateStatus(`Found ${audioDevices.length} audio devices`);
@@ -465,6 +461,13 @@ class KaiPlayerApp {
                 
                 btn.classList.add('active');
                 document.getElementById(`${targetTab}-tab`).classList.add('active');
+                
+                // Handle resize for player tab to update canvas styling
+                if (targetTab === 'player' && this.player && this.player.karaokeRenderer && this.player.karaokeRenderer.resizeHandler) {
+                    setTimeout(() => {
+                        this.player.karaokeRenderer.resizeHandler();
+                    }, 10);
+                }
             });
         });
     }
@@ -476,6 +479,15 @@ class KaiPlayerApp {
             }
 
             switch (e.key) {
+                case 'Escape':
+                    // Close song info modal if open
+                    const modal = document.getElementById('songInfoModal');
+                    if (modal && modal.style.display === 'block') {
+                        modal.style.display = 'none';
+                        e.preventDefault();
+                    }
+                    break;
+                    
                 case ' ':
                     e.preventDefault();
                     this.togglePlayback();
@@ -542,11 +554,9 @@ class KaiPlayerApp {
             if (!document.fullscreenElement) {
                 // Enter fullscreen
                 await karaokeCanvas.requestFullscreen();
-                console.log('✅ Karaoke canvas entered fullscreen');
             } else {
                 // Exit fullscreen
                 await document.exitFullscreen();
-                console.log('✅ Karaoke canvas exited fullscreen');
             }
         } catch (error) {
             console.error('❌ Canvas fullscreen toggle failed:', error);
@@ -662,9 +672,8 @@ class KaiPlayerApp {
             await this.player.pause();
         }
         
-        // Show loading state
-        document.getElementById('transportControls').style.display = 'none';
-        document.getElementById('loadingMessage').style.display = 'flex';
+        // Show loading state immediately
+        this.showLoadingState();
         
         // Store metadata for later use when song data arrives
         this._pendingMetadata = metadata;
@@ -672,114 +681,58 @@ class KaiPlayerApp {
         const title = metadata?.title || 'Unknown Song';
         const artist = metadata?.artist || 'Unknown Artist';
         
-        document.querySelector('.song-title').textContent = title;
-        document.querySelector('.song-artist').textContent = artist;
+        // Display as "Artist - Song" format
+        const displayText = `${artist} - ${title}`;
+        const songDisplay = document.querySelector('.song-display');
+        if (songDisplay) {
+            songDisplay.textContent = displayText;
+        }
         
         // Enable song info button
-        document.getElementById('songInfoBtn').disabled = false;
     }
 
-    showSongInfo() {
-        if (!this.currentSong) return;
-        
-        const modal = document.getElementById('songInfoModal');
-        const content = document.getElementById('songInfoContent');
-        
-        const metadata = this.currentSong.metadata;
-        const meta = this.currentSong.meta || {};
-        
-        // Extract filename from originalFilePath
-        const filePath = this.currentSong.originalFilePath || '';
-        const fileName = filePath ? filePath.split('/').pop().split('\\').pop() : 'Unknown';
-
-        let html = `
-            <div class="info-section">
-                <h3>Song Details</h3>
-                <div class="info-grid">
-                    <div class="info-label">Title:</div>
-                    <div class="info-value">${metadata.title}</div>
-                    <div class="info-label">Artist:</div>
-                    <div class="info-value">${metadata.artist}</div>
-                    <div class="info-label">Album:</div>
-                    <div class="info-value">${metadata.album || 'Unknown'}</div>
-                    <div class="info-label">Duration:</div>
-                    <div class="info-value">${this.formatTime(metadata.duration)}</div>
-                    <div class="info-label">Key:</div>
-                    <div class="info-value">${metadata.key}</div>
-                    <div class="info-label">Tempo:</div>
-                    <div class="info-value">${metadata.tempo} BPM</div>`;
-        
-        // Add comment if it exists
-        if (metadata.comment && metadata.comment.trim()) {
-            html += `
-                    <div class="info-label">Comment:</div>
-                    <div class="info-value" style="white-space: pre-wrap; max-width: 400px; word-wrap: break-word;">${metadata.comment}</div>`;
-        }
-        
-        html += `
-                </div>
-            </div>
-            
-            <div class="info-section">
-                <h3>File Information</h3>
-                <div class="info-grid">
-                    <div class="info-label">Filename:</div>
-                    <div class="info-value">${fileName}</div>
-                    <div class="info-label">Full Path:</div>
-                    <div class="info-value" style="word-break: break-all; font-family: monospace; font-size: 0.9em;">${filePath || 'Unknown'}</div>
-                </div>
-            </div>
-        `;
-        
-        // Add stems info
-        if (this.currentSong.stems && this.currentSong.stems.length > 0) {
-            html += `
-                <div class="info-section">
-                    <h3>Audio Stems</h3>
-                    <div class="info-grid">
-            `;
-            this.currentSong.stems.forEach(stem => {
-                html += `
-                    <div class="info-label">${stem}:</div>
-                    <div class="info-value">Available</div>
-                `;
-            });
-            html += `</div></div>`;
-        }
-        
-        // Add ID3 info if available and not excluded
-        if (meta.id3 && meta.id3.include_raw !== false) {
-            html += `
-                <div class="info-section">
-                    <h3>ID3 Metadata</h3>
-                    <div class="processing-info">
-                        <pre>${JSON.stringify(meta.id3, null, 2)}</pre>
-                    </div>
-                </div>
-            `;
-        }
-        
-        // Add processing info if available
-        if (meta.processing) {
-            html += `
-                <div class="info-section">
-                    <h3>Processing Information</h3>
-                    <div class="processing-info">
-                        <pre>${JSON.stringify(meta.processing, null, 2)}</pre>
-                    </div>
-                </div>
-            `;
-        }
-        
-        content.innerHTML = html;
-        modal.style.display = 'flex';
-    }
 
     formatTime(seconds) {
         if (!seconds || isNaN(seconds)) return '0:00';
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
         return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    initializeSidebarState() {
+        const savedState = localStorage.getItem('sidebarCollapsed');
+        const sidebar = document.querySelector('.sidebar');
+        const hamburgerIcon = document.querySelector('#hamburgerBtn .material-icons');
+        
+        // Default is open (savedState === 'true' means collapsed)
+        if (savedState === 'true') {
+            sidebar?.classList.add('collapsed');
+            if (hamburgerIcon) hamburgerIcon.textContent = 'menu_open';
+        } else {
+            sidebar?.classList.remove('collapsed');
+            if (hamburgerIcon) hamburgerIcon.textContent = 'menu';
+        }
+    }
+
+    toggleSidebar() {
+        const sidebar = document.querySelector('.sidebar');
+        const hamburgerIcon = document.querySelector('#hamburgerBtn .material-icons');
+        
+        if (sidebar) {
+            const isCollapsed = sidebar.classList.contains('collapsed');
+            
+            if (isCollapsed) {
+                // Expand sidebar
+                sidebar.classList.remove('collapsed');
+                if (hamburgerIcon) hamburgerIcon.textContent = 'menu';
+                localStorage.setItem('sidebarCollapsed', 'false');
+            } else {
+                // Collapse sidebar
+                sidebar.classList.add('collapsed');
+                if (hamburgerIcon) hamburgerIcon.textContent = 'menu_open';
+                localStorage.setItem('sidebarCollapsed', 'true');
+            }
+        }
     }
 
 
@@ -825,7 +778,6 @@ class KaiPlayerApp {
     }
 
     handleSongEnded() {
-        console.log('Song ended - updating UI state');
         this.isPlaying = false;
         this.updatePlayButton('▶');
         
@@ -840,6 +792,11 @@ class KaiPlayerApp {
         
         // Update status
         this.updateStatus('Song ended');
+        
+        // Check for queue auto-advance
+        if (window.queueManager) {
+            window.queueManager.handleSongEnded();
+        }
     }
 
     async seekRelative(seconds) {
@@ -847,6 +804,23 @@ class KaiPlayerApp {
         
         const newPosition = Math.max(0, this.audioEngine.getCurrentPosition() + seconds);
         await this.audioEngine.seek(newPosition);
+    }
+
+    async restartTrack() {
+        if (!this.currentSong || !this.audioEngine) return;
+        await this.audioEngine.seek(0);
+    }
+
+    async nextTrack() {
+        // Check if queue manager exists and has next song
+        if (window.queueManager) {
+            const nextSong = window.queueManager.getNextSong();
+            if (nextSong) {
+                await window.queueManager.playNext();
+                return;
+            }
+        }
+        // Could show a toast message here if desired
     }
 
     startPositionUpdater() {
@@ -934,7 +908,6 @@ class KaiPlayerApp {
             const saved = localStorage.getItem('kaiPlayerDevicePrefs');
             if (saved) {
                 this.devicePreferences = { ...this.devicePreferences, ...JSON.parse(saved) };
-                console.log('Loaded device preferences:', this.devicePreferences);
             }
         } catch (error) {
             console.warn('Failed to load device preferences:', error);
@@ -947,7 +920,6 @@ class KaiPlayerApp {
             const saved = localStorage.getItem('kaiPlayerWaveformPrefs');
             if (saved) {
                 this.waveformPreferences = { ...this.waveformPreferences, ...JSON.parse(saved) };
-                console.log('Loaded waveform preferences:', this.waveformPreferences);
                 
                 // Apply saved preferences to checkboxes
                 const enableWaveforms = document.getElementById('enableWaveforms');
@@ -981,7 +953,6 @@ class KaiPlayerApp {
     saveWaveformPreferences() {
         try {
             localStorage.setItem('kaiPlayerWaveformPrefs', JSON.stringify(this.waveformPreferences));
-            console.log('Saved waveform preferences:', this.waveformPreferences);
         } catch (error) {
             console.warn('Failed to save waveform preferences:', error);
         }
@@ -992,7 +963,6 @@ class KaiPlayerApp {
             const saved = localStorage.getItem('kaiPlayerAutoTunePrefs');
             if (saved) {
                 this.autoTunePreferences = { ...this.autoTunePreferences, ...JSON.parse(saved) };
-                console.log('Loaded auto-tune preferences:', this.autoTunePreferences);
                 
                 // Apply saved preferences to controls
                 const autotuneEnabled = document.getElementById('autotuneEnabled');
@@ -1022,7 +992,6 @@ class KaiPlayerApp {
     saveAutoTunePreferences() {
         try {
             localStorage.setItem('kaiPlayerAutoTunePrefs', JSON.stringify(this.autoTunePreferences));
-            console.log('Saved auto-tune preferences:', this.autoTunePreferences);
         } catch (error) {
             console.warn('Failed to save auto-tune preferences:', error);
         }
@@ -1043,7 +1012,6 @@ class KaiPlayerApp {
             }
             
             localStorage.setItem('kaiPlayerDevicePrefs', JSON.stringify(this.devicePreferences));
-            console.log(`Saved ${deviceType} device preference:`, this.devicePreferences[deviceType]);
         } catch (error) {
             console.warn('Failed to save device preference:', error);
         }
@@ -1093,9 +1061,7 @@ class KaiPlayerApp {
                     kaiAPI.audio.setDevice('input', parseInt(deviceId));
                 }
                 
-                console.log(`Restored ${type} device: ${matchedDevice.name || matchedDevice.label}`);
             } else {
-                console.log(`Saved ${type} device not found: ${savedDevice.name || savedDevice.id}`);
                 // Clear invalid preference
                 this.devicePreferences[type] = null;
                 localStorage.setItem('kaiPlayerDevicePrefs', JSON.stringify(this.devicePreferences));

@@ -3,23 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KAI Player</title>
+    <title>Loukai</title>
     <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
     <div class="app-container">
-        <!-- Title Bar -->
-        <div class="title-bar">
-            <div class="title-bar-left">
-                <div class="app-title">KAI Player</div>
+        <!-- Song Info Bar -->
+        <div class="song-info-bar">
+            <div class="song-info-left">
+                <button id="hamburgerBtn" class="hamburger-btn-info">
+                    <span class="material-icons">menu</span>
+                </button>
             </div>
-            <div class="title-bar-center">
+            <div class="song-info-center">
                 <div class="song-info">
-                    <span class="song-title">No song loaded</span>
-                    <span class="song-artist"></span>
+                    <span class="song-display">No song loaded</span>
                 </div>
             </div>
-            <div class="title-bar-right">
+            <div class="song-info-right">
             </div>
         </div>
 
@@ -27,13 +28,6 @@
         <div class="main-content">
             <!-- Sidebar -->
             <div class="sidebar">
-                <div class="section">
-                    <h3>File</h3>
-                    <button id="loadKaiBtn" class="primary-btn">Load KAI File</button>
-                    <button id="songInfoBtn" class="preset-btn" disabled>Song Info</button>
-                    <button id="openCanvasWindowBtn" class="primary-btn">Open Canvas Window</button>
-                </div>
-
                 <div class="section">
                     <h3>Audio Devices <button id="refreshDevicesBtn" class="refresh-btn">↻</button></h3>
                     <div class="device-selector">
@@ -111,14 +105,114 @@
             <div class="center-content">
                 <!-- Tab Navigation -->
                 <div class="tab-nav">
+                    <button class="tab-btn active" data-tab="library">Library</button>
+                    <button class="tab-btn" data-tab="queue">Queue</button>
                     <button class="tab-btn" data-tab="mixer">Mixer</button>
-                    <button class="tab-btn active" data-tab="player">Player</button>
+                    <button class="tab-btn" data-tab="player">Player</button>
                     <button class="tab-btn" data-tab="coaching">Coaching</button>
                     <button class="tab-btn" data-tab="editor">Lyrics Editor</button>
                 </div>
 
                 <!-- Tab Content -->
                 <div class="tab-content">
+                    <!-- Library Tab -->
+                    <div id="library-tab" class="tab-pane active">
+                        <div class="library-container">
+                            <div class="library-header">
+                                <div class="library-controls">
+                                    <button id="setSongsFolderBtn" class="library-btn">
+                                        📁 Set Songs Folder
+                                    </button>
+                                    <button id="refreshLibraryBtn" class="library-btn">
+                                        ↻ Refresh
+                                    </button>
+                                    <div class="library-search">
+                                        <input type="text" id="librarySearch" placeholder="Search songs..." />
+                                    </div>
+                                </div>
+                                <div class="library-info">
+                                    <span id="librarySongsCount">0 songs</span>
+                                    <span id="libraryPath"></span>
+                                </div>
+                            </div>
+                            
+                            <div class="library-content">
+                                <div id="libraryTable" class="library-table">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th class="col-title">Title</th>
+                                                <th class="col-artist">Artist</th>
+                                                <th class="col-duration">Duration</th>
+                                                <th class="col-stems">Stems</th>
+                                                <th class="col-size">Size</th>
+                                                <th class="col-actions">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="libraryTableBody">
+                                            <tr class="library-empty-row">
+                                                <td colspan="6">
+                                                    <div class="library-empty">
+                                                        <div class="empty-icon">🎵</div>
+                                                        <div class="empty-message">No songs library set</div>
+                                                        <div class="empty-detail">Click "Set Songs Folder" to choose your music library</div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Queue Tab -->
+                    <div id="queue-tab" class="tab-pane">
+                        <div class="queue-container">
+                            <div class="queue-header">
+                                <div class="queue-controls">
+                                    <button id="clearQueueBtn" class="queue-btn">
+                                        🗑️ Clear Queue
+                                    </button>
+                                    <button id="shuffleQueueBtn" class="queue-btn">
+                                        🔀 Shuffle
+                                    </button>
+                                </div>
+                                <div class="queue-info">
+                                    <span id="queueCount">0 songs</span>
+                                    <span id="queueDuration"></span>
+                                </div>
+                            </div>
+                            
+                            <div class="queue-content">
+                                <div id="queueTable" class="queue-table">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th class="col-status">Status</th>
+                                                <th class="col-position">#</th>
+                                                <th class="col-title">Title</th>
+                                                <th class="col-artist">Artist</th>
+                                                <th class="col-actions">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="queueTableBody">
+                                            <tr class="queue-empty-row">
+                                                <td colspan="5">
+                                                    <div class="queue-empty">
+                                                        <div class="empty-icon">🎵</div>
+                                                        <div class="empty-message">Queue is empty</div>
+                                                        <div class="empty-detail">Add songs from the library to build your queue</div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Mixer Tab -->
                     <div id="mixer-tab" class="tab-pane">
                         <div class="mixer-container">
@@ -139,7 +233,7 @@
                     </div>
 
                     <!-- Player Tab -->
-                    <div id="player-tab" class="tab-pane active">
+                    <div id="player-tab" class="tab-pane">
                         <div class="player-container">
                             <div class="karaoke-display">
                                 <canvas id="karaokeCanvas" width="1920" height="1080" style="cursor: pointer;"></canvas>
@@ -150,9 +244,13 @@
 
                             <div class="transport-extended">
                                 <div id="playControls">
-                                    <button id="seekBackBtn">⏪</button>
-                                    <button id="playPauseBtn">▶</button>
-                                    <button id="seekForwardBtn">⏩</button>
+                                    <button id="restartBtn" title="Restart Track">
+                                        <span class="material-icons">replay</span>
+                                    </button>
+                                    <button id="playPauseBtn" title="Play/Pause">▶</button>
+                                    <button id="nextTrackBtn" title="Next Track">
+                                        <span class="material-icons">skip_next</span>
+                                    </button>
                                     
                                     <div class="progress-container">
                                         <div class="progress-bar">
@@ -172,12 +270,12 @@
                                     <button id="prevEffectBtn" title="Previous Effect">◀ FX</button>
                                     <span id="currentEffectName">Effect</span>
                                     <button id="nextEffectBtn" title="Next Effect">FX ▶</button>
+                                    <button id="openCanvasWindowBtn" class="icon-btn" title="Open Canvas Window">
+                                        <span class="material-icons">open_in_new</span>
+                                    </button>
                                 </div>
                             </div>
                             
-                            <div class="loading-message" id="loadingMessage" style="display: none;">
-                                <div class="loading-text">Loading song...</div>
-                            </div>
                         </div>
                     </div>
 
@@ -405,6 +503,8 @@
     <script src="js/player.js"></script>
     <script src="js/coaching.js"></script>
     <script src="js/editor.js"></script>
+    <script src="js/library.js"></script>
+    <script src="js/queue.js"></script>
     <script src="js/main.js"></script>
 </body>
 </html>

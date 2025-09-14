@@ -22,11 +22,9 @@ class LyricsEditor {
     }
     
     loadLyrics(lyrics, rejections = []) {
-        console.log('LyricsEditor.loadLyrics called with:', lyrics, 'rejections:', rejections);
         this.originalLyrics = JSON.parse(JSON.stringify(lyrics));
         this.lyricsData = JSON.parse(JSON.stringify(lyrics));
         this.rejections = JSON.parse(JSON.stringify(rejections));
-        console.log('LyricsEditor data loaded, rendering editor...');
         this.renderEditor();
     }
     
@@ -52,9 +50,7 @@ class LyricsEditor {
         });
         
         // Add rejections
-        console.log('Processing rejections:', this.rejections);
         this.rejections.forEach((rejection, rejectionIndex) => {
-            console.log('Adding rejection:', rejection);
             items.push({
                 type: 'rejection',
                 data: rejection,
@@ -78,9 +74,7 @@ class LyricsEditor {
                 const lineElement = this.createLineEditor(item.data, item.index);
                 this.lyricsLinesContainer.appendChild(lineElement);
             } else {
-                console.log('Creating rejection box for:', item.data);
                 const rejectionElement = this.createRejectionBox(item.data, item.rejectionIndex);
-                console.log('Created rejection element:', rejectionElement);
                 this.lyricsLinesContainer.appendChild(rejectionElement);
             }
         });
@@ -97,7 +91,6 @@ class LyricsEditor {
         let disabled = false;
         let backup = false;
         
-        console.log('Processing line:', index, line);
         
         if (typeof line === 'object' && line !== null) {
             // Handle different timing field names - prioritize KAI format (start/end)
@@ -106,12 +99,10 @@ class LyricsEditor {
             text = line.text || line.lyrics || line.content || line.lyric || '';
             disabled = line.disabled === true;
             backup = line.backup === true;
-            console.log('Line timing:', { startTime, endTime, text, disabled, backup });
         } else {
             text = line || '';
             startTime = index * 3;
             endTime = startTime + 3;
-            console.log('Simple line:', { startTime, endTime, text, disabled });
         }
         
         // Update container class now that disabled and backup are set
