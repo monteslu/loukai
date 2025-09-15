@@ -103,10 +103,11 @@ class LibraryManager {
         } else {
             const term = searchTerm.toLowerCase();
             this.filteredSongs = this.songs.filter(song => {
-                // Search in filename, title, artist, and stems
+                // Search in filename, title, artist, genre, and stems
                 return song.name.toLowerCase().includes(term) ||
                        (song.title && song.title.toLowerCase().includes(term)) ||
                        (song.artist && song.artist.toLowerCase().includes(term)) ||
+                       (song.genre && song.genre.toLowerCase().includes(term)) ||
                        (song.stems && song.stems.some(stem => stem.toLowerCase().includes(term)));
             });
         }
@@ -145,17 +146,17 @@ class LibraryManager {
     createSongRowHTML(song) {
         const title = song.title || song.name.replace('.kai', '');
         const artist = song.artist || '-';
+        const genre = song.genre || '-';
         const duration = this.formatDuration(song.duration);
         const stems = this.formatStems(song.stems, song.stemCount);
-        const fileSize = this.formatFileSize(song.size);
-        
+
         return `
             <tr class="song-row" data-path="${song.path}">
                 <td class="col-title" title="${title}">${title}</td>
                 <td class="col-artist" title="${artist}">${artist}</td>
+                <td class="col-genre" title="${genre}">${genre}</td>
                 <td class="col-duration song-duration">${duration}</td>
                 <td class="col-stems song-stems">${stems}</td>
-                <td class="col-size">${fileSize}</td>
                 <td class="col-actions">
                     <div class="song-actions">
                         <button class="action-btn queue-btn" data-path="${song.path}" title="Add to Queue">
@@ -290,17 +291,9 @@ class LibraryManager {
         if (!stemArray || stemArray.length === 0) {
             return stemCount ? `${stemCount} stems` : '-';
         }
-        
-        // Show first few stem names, then count if more
-        const displayStems = stemArray.slice(0, 2);
-        const remaining = stemArray.length - 2;
-        
-        let result = displayStems.join(', ');
-        if (remaining > 0) {
-            result += `, +${remaining}`;
-        }
-        
-        return result || '-';
+
+        // Show all stem names
+        return stemArray.join(', ') || '-';
     }
 
     formatFileSize(bytes) {
@@ -443,6 +436,8 @@ class LibraryManager {
                     <div class="info-value">${songInfo.kai_version || 'Unknown'}</div>
                     <div class="info-label">Source File:</div>
                     <div class="info-value">${song.source_filename || 'Unknown'}</div>
+                    <div class="info-label">File Size:</div>
+                    <div class="info-value">${this.formatFileSize(songInfo.fileSize)}</div>
                 </div>
             </div>
         `;

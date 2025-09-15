@@ -158,17 +158,30 @@ class EffectsManager {
                 effectItem.classList.add('active');
             }
 
+            // Use direct file path for screenshots with proper filename conversion
+            const sanitizedName = this.sanitizeFilename(preset.name);
+            const screenshotPath = `../../static/images/butterchurn-screenshots/${sanitizedName}.png`;
+
             effectItem.innerHTML = `
-                <div class="effect-category">${preset.category}</div>
-                <div class="effect-name">${preset.displayName}</div>
-                <div class="effect-author">by ${preset.author}</div>
-                <div class="effect-actions">
-                    <button class="effect-action-btn primary select-effect-btn" data-effect-name="${preset.name}">
-                        Select
-                    </button>
-                    <button class="effect-action-btn preview-effect-btn" data-effect-name="${preset.name}">
-                        Preview
-                    </button>
+                <div class="effect-preview">
+                    <img src="${screenshotPath}" alt="${preset.displayName}" class="effect-screenshot"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div class="effect-fallback" style="display: none;">
+                        <span class="material-icons">image_not_supported</span>
+                    </div>
+                </div>
+                <div class="effect-info">
+                    <div class="effect-category">${preset.category}</div>
+                    <div class="effect-name">${preset.displayName}</div>
+                    <div class="effect-author">by ${preset.author}</div>
+                    <div class="effect-actions">
+                        <button class="effect-action-btn primary select-effect-btn" data-effect-name="${preset.name}">
+                            Select
+                        </button>
+                        <button class="effect-action-btn preview-effect-btn" data-effect-name="${preset.name}">
+                            Preview
+                        </button>
+                    </div>
                 </div>
             `;
 
@@ -292,6 +305,11 @@ class EffectsManager {
                 </div>
             `;
         }
+    }
+
+    sanitizeFilename(name) {
+        // Match exactly what the screenshot generator uses
+        return name.replace(/[^a-zA-Z0-9-_\s]/g, '_');
     }
 
     // Get current effect info for external use

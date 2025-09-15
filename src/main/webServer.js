@@ -223,6 +223,46 @@ class WebServer {
             res.sendFile(path.join(__dirname, '../web-static/screenshot-generator.html'));
         });
 
+        // Butterchurn screenshot API - case insensitive filename matching
+        this.app.get('/api/butterchurn-screenshot/:presetName', (req, res) => {
+            const fs = require('fs');
+            const presetName = decodeURIComponent(req.params.presetName);
+
+            console.log(`Screenshot API request for: "${presetName}"`);
+
+            // Sanitize preset name same way as screenshot generator
+            const sanitizedName = presetName.replace(/[^a-zA-Z0-9-_\s]/g, '_') + '.png';
+            console.log(`Sanitized filename: "${sanitizedName}"`);
+
+            const screenshotsDir = path.join(__dirname, '../../static/images/butterchurn-screenshots');
+
+            try {
+                // First try exact match
+                const exactPath = path.join(screenshotsDir, sanitizedName);
+                if (fs.existsSync(exactPath)) {
+                    return res.sendFile(exactPath);
+                }
+
+                // If exact match fails, try case-insensitive search
+                const files = fs.readdirSync(screenshotsDir);
+                const matchingFile = files.find(file =>
+                    file.toLowerCase() === sanitizedName.toLowerCase()
+                );
+
+                if (matchingFile) {
+                    const matchedPath = path.join(screenshotsDir, matchingFile);
+                    return res.sendFile(matchedPath);
+                }
+
+                // No match found
+                res.status(404).send('Screenshot not found');
+
+            } catch (error) {
+                console.error('Error serving screenshot:', error);
+                res.status(500).send('Server error');
+            }
+        });
+
         // Server info endpoint
         this.app.get('/api/info', (req, res) => {
             res.json({

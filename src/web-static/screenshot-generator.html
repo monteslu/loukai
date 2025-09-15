@@ -33,6 +33,25 @@
             background: #555;
             cursor: not-allowed;
         }
+
+        #micBtn {
+            background: #d32f2f;
+        }
+
+        #micBtn:hover {
+            background: #f44336;
+        }
+
+        #micBtn.active {
+            background: #4caf50;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
         
         #canvas {
             border: 2px solid #007acc;
@@ -63,8 +82,9 @@
     <div class="controls">
         <button id="generateBtn">Generate All Screenshots</button>
         <button id="downloadZipBtn" disabled>Download ZIP</button>
+        <button id="micBtn">🎤 Use Microphone</button>
         <label>
-            Capture Duration: 
+            Capture Duration:
             <input type="number" id="durationInput" value="3" min="1" max="10" step="0.5"> seconds
         </label>
         <label>
@@ -113,10 +133,13 @@
                 this.ctx = null;
                 this.butterchurn = null;
                 this.audioContext = null;
+                this.microphoneStream = null;
+                this.microphoneSource = null;
+                this.analyser = null;
                 this.presets = [];
                 this.screenshots = new Map();
                 this.currentIndex = 0;
-                
+
                 this.progressDiv = document.getElementById('progress');
                 this.progressText = document.getElementById('progressText');
                 this.currentPresetSpan = document.getElementById('currentPreset');
@@ -168,19 +191,33 @@
                             data: presetData[name],
                             displayName: this.parseDisplayName(name)
                         }));
-                        
+
                         this.log(`Loaded ${this.presets.length} presets`);
                         this.updateProgress();
+
+                        // Load the first preset to initialize Butterchurn systems
+                        if (this.presets.length > 0) {
+                            this.log('Loading initial preset to warm up Butterchurn...');
+                            this.butterchurn.loadPreset(this.presets[0].data, 0.0);
+
+                            // Render a few frames to initialize everything
+                            for (let i = 0; i < 30; i++) {
+                                this.butterchurn.render();
+                                await new Promise(resolve => setTimeout(resolve, 16));
+                            }
+
+                            this.log('Butterchurn warmed up and ready');
+                        }
                     } else {
                         throw new Error('Butterchurn presets not available');
                     }
-                    
+
                     // Start render loop
                     this.startRenderLoop();
-                    
+
                     // Setup event listeners
                     this.setupEventListeners();
-                    
+
                     this.log('Initialization complete!');
                     
                 } catch (error) {
@@ -205,23 +242,15 @@
                 document.getElementById('downloadZipBtn').addEventListener('click', () => {
                     this.downloadZip();
                 });
+
+                document.getElementById('micBtn').addEventListener('click', () => {
+                    this.toggleMicrophone();
+                });
             }
             
             startRenderLoop() {
                 const render = () => {
                     if (this.butterchurn) {
-                        // Create some dummy audio data for visualization
-                        const audioData = new Uint8Array(256);
-                        // Fill with some basic frequency data that changes over time
-                        for (let i = 0; i < audioData.length; i++) {
-                            audioData[i] = Math.sin(Date.now() * 0.002 + i * 0.1) * 64 + 128;
-                        }
-                        
-                        // Connect some dummy audio data to butterchurn
-                        if (this.butterchurn.setAudioData) {
-                            this.butterchurn.setAudioData(audioData);
-                        }
-                        
                         this.butterchurn.render();
                     }
                     requestAnimationFrame(render);
@@ -239,34 +268,51 @@
                 
                 this.screenshots.clear();
                 this.currentIndex = 0;
-                
+
                 try {
                     for (let i = 0; i < this.presets.length; i++) {
                         const preset = this.presets[i];
                         this.currentIndex = i;
                         this.updateProgress();
-                        
+
                         this.log(`Capturing ${i + 1}/${this.presets.length}: ${preset.displayName}`);
                         this.currentPresetSpan.textContent = preset.displayName;
-                        
+
                         try {
                             // Load the preset
                             this.butterchurn.loadPreset(preset.data, 0.0);
-                            
-                            // Wait for preset to stabilize and render a few frames
-                            await this.sleep(duration);
-                            
-                            // Force a few more renders to make sure the preset is fully loaded
-                            for (let j = 0; j < 10; j++) {
+
+                            // First preset needs much more time since it's being reloaded
+                            const actualDuration = i === 0 ? duration * 3 : duration;
+                            this.log(`Rendering preset for ${actualDuration/1000}s...`);
+
+                            // Render continuously for the specified duration
+                            const renderStart = Date.now();
+                            while (Date.now() - renderStart < actualDuration) {
                                 this.butterchurn.render();
-                                await this.sleep(50); // Short delay between renders
+                                await this.sleep(16); // ~60fps
                             }
-                            
+
+                            // One final render to ensure we have the latest frame
+                            this.butterchurn.render();
+                            await this.sleep(50);
+
                             // Capture screenshot using the WebGL-safe method
                             const dataURL = await this.captureWebGLCanvas();
                             if (dataURL && !dataURL.includes('data:,')) {
                                 this.screenshots.set(preset.name, dataURL);
-                                
+
+                                // Debug: Show all screenshots in console
+                                console.log(`Screenshot ${i + 1} (${preset.displayName}):`);
+                                console.log(`%c `, `
+                                    font-size: 1px;
+                                    padding: 100px 150px;
+                                    background-image: url(${dataURL});
+                                    background-size: contain;
+                                    background-repeat: no-repeat;
+                                    background-position: center;
+                                `);
+
                                 // Don't download individual files - we'll do ZIP instead
                                 this.log(`✅ Captured: ${preset.displayName}`);
                             } else {
@@ -402,6 +448,150 @@
                 return new Promise(resolve => setTimeout(resolve, ms));
             }
             
+            async toggleMicrophone() {
+                const micBtn = document.getElementById('micBtn');
+
+                if (this.microphoneStream) {
+                    // Stop microphone
+                    this.stopMicrophone();
+                    micBtn.classList.remove('active');
+                    micBtn.textContent = '🎤 Use Microphone';
+                    this.log('Microphone stopped');
+                } else {
+                    // Start microphone
+                    try {
+                        await this.startMicrophone();
+                        micBtn.classList.add('active');
+                        micBtn.textContent = '🔴 Stop Microphone';
+                        this.log('Microphone started - audio now driving visualizations');
+                    } catch (error) {
+                        this.log(`Failed to start microphone: ${error.message}`, 'error');
+                    }
+                }
+            }
+
+            async startMicrophone() {
+                try {
+                    // First, list all available audio devices
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const audioInputs = devices.filter(device => device.kind === 'audioinput');
+
+                    console.log('Available audio input devices:');
+                    audioInputs.forEach((device, i) => {
+                        console.log(`${i}: ${device.label || 'Unknown Device'} (${device.deviceId})`);
+                    });
+
+                    // Request microphone access
+                    this.microphoneStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+
+                    // Show which device was actually selected
+                    const audioTrack = this.microphoneStream.getAudioTracks()[0];
+                    const settings = audioTrack.getSettings();
+
+                    // Find the matching device from our list
+                    const selectedDevice = audioInputs.find(device => device.deviceId === settings.deviceId);
+                    const deviceName = selectedDevice ? selectedDevice.label : 'Unknown Device';
+
+                    console.log('=== SELECTED AUDIO DEVICE ===');
+                    console.log('Device ID:', settings.deviceId);
+                    console.log('Device Name:', deviceName);
+                    console.log('Track Label:', audioTrack.label);
+                    console.log('Full Settings:', settings);
+                    console.log('============================');
+
+                    // Debug microphone stream
+                    console.log('Microphone stream:', this.microphoneStream);
+                    console.log('Stream tracks:', this.microphoneStream.getTracks());
+                    this.microphoneStream.getTracks().forEach((track, i) => {
+                        console.log(`Track ${i}:`, track.kind, track.enabled, track.readyState, track.getSettings());
+                    });
+
+                    // Create audio nodes
+                    this.microphoneSource = this.audioContext.createMediaStreamSource(this.microphoneStream);
+                    this.analyser = this.audioContext.createAnalyser();
+                    this.analyser.fftSize = 2048;
+                    this.analyser.smoothingTimeConstant = 0.8;
+
+                    console.log('Audio context state:', this.audioContext.state);
+                    console.log('Sample rate:', this.audioContext.sampleRate);
+
+                    // Resume audio context if suspended (required by Chrome)
+                    if (this.audioContext.state === 'suspended') {
+                        console.log('Resuming suspended audio context...');
+                        await this.audioContext.resume();
+                        console.log('Audio context resumed, new state:', this.audioContext.state);
+                    }
+
+                    // Connect the nodes
+                    this.microphoneSource.connect(this.analyser);
+
+                    // Also try connecting to destination to hear the audio (for testing)
+                    // this.microphoneSource.connect(this.audioContext.destination);
+
+                    // Debug what methods are available on butterchurn
+                    console.log('Butterchurn methods:', Object.getOwnPropertyNames(this.butterchurn));
+                    console.log('Butterchurn connectAudio:', typeof this.butterchurn.connectAudio);
+
+                    // Try different ways to connect audio
+                    if (this.butterchurn && this.butterchurn.connectAudio) {
+                        this.butterchurn.connectAudio(this.analyser);
+                        this.log('✅ Microphone connected via connectAudio');
+                    } else if (this.butterchurn && this.butterchurn.audio && this.butterchurn.audio.connectAudio) {
+                        this.butterchurn.audio.connectAudio(this.analyser);
+                        this.log('✅ Microphone connected via audio.connectAudio');
+                    } else {
+                        // Check if we can set the audio context directly
+                        console.log('Butterchurn audio object:', this.butterchurn.audio);
+                        this.log('❌ Could not find connectAudio method - audio may not be reactive');
+                    }
+
+                    // Log audio levels to verify microphone is working
+                    setInterval(() => {
+                        if (this.analyser) {
+                            // Check both frequency and time domain data
+                            const freqData = new Uint8Array(this.analyser.frequencyBinCount);
+                            const timeData = new Uint8Array(this.analyser.frequencyBinCount);
+
+                            this.analyser.getByteFrequencyData(freqData);
+                            this.analyser.getByteTimeDomainData(timeData);
+
+                            const freqAvg = freqData.reduce((a, b) => a + b) / freqData.length;
+                            const timeAvg = timeData.reduce((a, b) => a + b) / timeData.length;
+                            const freqMax = Math.max(...freqData);
+                            const timeMax = Math.max(...timeData);
+
+                            console.log(`Audio - Freq avg: ${freqAvg.toFixed(1)}, max: ${freqMax}, Time avg: ${timeAvg.toFixed(1)}, max: ${timeMax}`);
+                        }
+                    }, 1000);
+                } catch (error) {
+                    console.error('Microphone error:', error);
+                    throw error;
+                }
+            }
+
+            stopMicrophone() {
+                if (this.microphoneSource) {
+                    this.microphoneSource.disconnect();
+                    this.microphoneSource = null;
+                }
+
+                if (this.microphoneStream) {
+                    this.microphoneStream.getTracks().forEach(track => track.stop());
+                    this.microphoneStream = null;
+                }
+
+                if (this.analyser) {
+                    this.analyser = null;
+                }
+            }
+
+
             log(message, type = 'info') {
                 const timestamp = new Date().toLocaleTimeString();
                 const className = type === 'error' ? 'style="color: #ff6b6b"' : '';

@@ -49,10 +49,6 @@
 }
 
 /* Library table action buttons */
-.col-actions {
-    width: 140px;
-    text-align: center;
-}
 
 .song-actions {
     display: flex;
@@ -61,42 +57,42 @@
     align-items: center;
 }
 
-.action-btn {
+.song-actions .action-btn {
     background: #4a4a4a;
     border: 1px solid #666;
     border-radius: 3px;
     color: #ffffff;
-    padding: 6px;
+    padding: 4px;
     cursor: pointer;
     transition: background-color 0.2s;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 32px;
-    min-height: 32px;
+    width: 28px;
+    height: 28px;
 }
 
-.action-btn:hover {
+.song-actions .action-btn:hover {
     background: #5a5a5a;
 }
 
-.action-btn:active {
+.song-actions .action-btn:active {
     background: #3a3a3a;
 }
 
-.action-btn .material-icons {
-    font-size: 18px;
+.song-actions .action-btn .material-icons {
+    font-size: 16px;
 }
 
 .play-btn:hover {
     background: #2e7d32;
 }
 
-.queue-btn:hover {
+.song-actions .queue-btn:hover {
     background: #1976d2;
 }
 
-.info-btn:hover {
+.song-actions .info-btn:hover {
     background: #f57c00;
 }
 
@@ -1050,13 +1046,15 @@ body {
 }
 
 #currentEffectName {
-    font-size: 12px;
+    font-size: 13px;
     color: #ccc;
-    min-width: 100px;
+    min-width: 150px;
+    max-width: 200px;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    margin: 0 8px;
 }
 
 
@@ -1225,10 +1223,12 @@ body {
     border-radius: 8px;
     width: 90%;
     max-width: 600px;
-    max-height: 80%;
+    max-height: 80vh;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    margin: auto;
+    position: relative;
 }
 
 .modal-header {
@@ -1976,10 +1976,10 @@ body {
 /* Column widths */
 .col-title { width: 30%; }
 .col-artist { width: 20%; }
-.col-duration { width: 10%; }
-.col-stems { width: 15%; }
-.col-folder { width: 15%; }
-.col-size { width: 10%; }
+.col-genre { width: 15%; }
+.col-duration { width: 8%; }
+.col-stems { width: 20%; }
+.col-actions { width: 7%; }
 
 .library-empty {
     display: flex;
@@ -2440,9 +2440,12 @@ body {
     background: #2a2a2a;
     border: 1px solid #444;
     border-radius: 6px;
-    padding: 15px;
+    padding: 0;
     cursor: pointer;
     transition: all 0.2s;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .effect-item:hover {
@@ -2466,6 +2469,47 @@ body {
     color: #aaa;
     font-size: 12px;
     margin-bottom: 5px;
+}
+
+.effect-preview {
+    position: relative;
+    width: 100%;
+    height: 150px;
+    background: #1a1a1a;
+    overflow: hidden;
+}
+
+.effect-screenshot {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.2s;
+}
+
+.effect-item:hover .effect-screenshot {
+    transform: scale(1.05);
+}
+
+.effect-fallback {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1a1a1a;
+    color: #666;
+}
+
+.effect-fallback .material-icons {
+    font-size: 48px;
+}
+
+.effect-info {
+    padding: 15px;
+    flex: 1;
 }
 
 .effect-category {

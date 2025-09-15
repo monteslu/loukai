@@ -1074,16 +1074,24 @@ class KaiPlayerApp {
         if (effectNameElement && this.player && this.player.karaokeRenderer) {
             const renderer = this.player.karaokeRenderer;
             let displayName = 'Effect';
-            
+
             if (renderer.effectType === 'butterchurn' && renderer.currentPreset) {
-                // Truncate long preset names for display
-                displayName = renderer.currentPreset.length > 15 ? 
-                    renderer.currentPreset.substring(0, 15) + '...' : 
-                    renderer.currentPreset;
+                // Parse preset name like effects manager does
+                let presetDisplayName = renderer.currentPreset;
+                if (presetDisplayName.includes(' - ')) {
+                    const parts = presetDisplayName.split(' - ');
+                    // Skip the author part (first part) and use the rest
+                    presetDisplayName = parts.slice(1).join(' - ');
+                }
+
+                // Truncate if still too long
+                displayName = presetDisplayName.length > 30 ?
+                    presetDisplayName.substring(0, 30) + '...' :
+                    presetDisplayName;
             } else {
                 displayName = 'No Effect';
             }
-            
+
             effectNameElement.textContent = displayName;
         }
         

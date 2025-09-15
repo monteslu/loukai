@@ -1263,13 +1263,24 @@ class KaiPlayerApp {
     ipcMain.handle('library:getSongInfo', async (event, filePath) => {
       try {
         console.log('📖 Reading song info from:', filePath);
-        
+
         // Read full song.json from KAI file
         const songInfo = await this.readKaiSongJson(filePath);
-        
+
         if (songInfo) {
-          // Add file path for reference
+          // Add file path and size for reference
           songInfo.filePath = filePath;
+
+          // Get file size
+          const fs = require('fs').promises;
+          try {
+            const stats = await fs.stat(filePath);
+            songInfo.fileSize = stats.size;
+          } catch (statError) {
+            console.warn('Could not get file size:', statError.message);
+            songInfo.fileSize = 0;
+          }
+
           return songInfo;
         } else {
           return { error: 'Failed to read song information from file' };
@@ -1366,6 +1377,7 @@ class KaiPlayerApp {
       const metadata = {
         title: null,
         artist: null,
+        genre: null,
         duration: null,
         stems: [],
         stemCount: 0
@@ -1400,6 +1412,7 @@ class KaiPlayerApp {
                   if (songData.song) {
                     metadata.title = songData.song.title || null;
                     metadata.artist = songData.song.artist || null;
+                    metadata.genre = songData.song.genre || null;
                     metadata.duration = songData.song.duration_sec || null;
                   }
                   
