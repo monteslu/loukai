@@ -2,6 +2,10 @@ import { LyricsEditor } from './lyricsEditor.js';
 
 export class LyricsEditorController {
     constructor() {
+        // Waveform configuration
+        this.WAVEFORM_WIDTH = 3800; // Canvas width in pixels for high-res displays
+        this.WAVEFORM_SAMPLES = 1000; // Number of audio samples to analyze (independent of canvas width)
+
         this.currentPosition = 0;
         this.songDuration = 0;
         this.isPlaying = false;
@@ -15,6 +19,11 @@ export class LyricsEditorController {
 
         this.waveformCanvas = document.getElementById('vocalsWaveform');
         this.analyzeVocalsCheckbox = document.getElementById('analyzeVocals');
+
+        // Set canvas width from constant
+        if (this.waveformCanvas) {
+            this.waveformCanvas.width = this.WAVEFORM_WIDTH;
+        }
 
         // Initialize the new line-by-line lyrics editor
         this.lyricsEditor = new LyricsEditor();
@@ -179,21 +188,32 @@ export class LyricsEditorController {
     async applyAudioDeviceSelection() {
         const audioElement = document.getElementById('editorAudio');
         const iemSelect = document.getElementById('iemDeviceSelect');
-        
-        if (!audioElement || !iemSelect) return;
-        
+
+        if (!audioElement || !iemSelect) {
+            console.log('Editor audio: Missing audioElement or iemSelect');
+            return;
+        }
+
         const selectedDevice = iemSelect.options[iemSelect.selectedIndex];
+        console.log('Editor audio: Selected device option:', selectedDevice);
+        console.log('Editor audio: Device ID from dataset:', selectedDevice?.dataset?.deviceId);
+        console.log('Editor audio: Option value:', selectedDevice?.value);
+
         if (selectedDevice && selectedDevice.dataset.deviceId) {
             try {
+                console.log(`Editor audio: Setting sink to device ID: ${selectedDevice.dataset.deviceId}`);
                 // Use setSinkId to route audio to the selected IEM device
                 if (typeof audioElement.setSinkId === 'function') {
                     await audioElement.setSinkId(selectedDevice.dataset.deviceId);
+                    console.log('Editor audio: Successfully set sink ID');
                 } else {
                     console.warn('setSinkId not supported in this browser');
                 }
             } catch (error) {
                 console.error('Failed to set audio output device:', error);
             }
+        } else {
+            console.log('Editor audio: No device ID found in dataset');
         }
     }
 
@@ -386,8 +406,8 @@ export class LyricsEditorController {
             const sampleRate = audioBuffer.sampleRate;
             const duration = audioBuffer.duration;
 
-            // Calculate downsampling factor to get ~1800 samples (canvas width)
-            const targetSamples = 1800;
+            // Calculate downsampling factor based on sample count (not canvas width)
+            const targetSamples = this.WAVEFORM_SAMPLES;
             const downsampleFactor = Math.floor(channelData.length / targetSamples);
 
             // Create Int8Array for efficient storage
@@ -441,8 +461,9 @@ export class LyricsEditorController {
         const centerY = height / 2;
         const scale = height / 256; // Scale from Int8 range to canvas height
 
+        // Scale waveform samples to canvas width
         for (let i = 0; i < this.vocalsWaveform.length; i++) {
-            const x = i;
+            const x = (i / this.vocalsWaveform.length) * width; // Scale x to canvas width
             const value = this.vocalsWaveform[i];
             const y = centerY - (value * scale);
 
@@ -458,7 +479,7 @@ export class LyricsEditorController {
         // Mirror for bottom half
         ctx.beginPath();
         for (let i = 0; i < this.vocalsWaveform.length; i++) {
-            const x = i;
+            const x = (i / this.vocalsWaveform.length) * width; // Scale x to canvas width
             const value = this.vocalsWaveform[i];
             const y = centerY + (value * scale);
 

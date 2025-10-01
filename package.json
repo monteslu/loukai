@@ -26,7 +26,6 @@
   "author": "Loukai Team",
   "license": "AGPL-3.0",
   "devDependencies": {
-    "electron": "^25.0.0",
     "electron-builder": "^24.0.0",
     "electron-rebuild": "^3.2.9"
   },
@@ -37,6 +36,7 @@
     "cdgraphics": "^7.0.0",
     "cookie-session": "^2.1.1",
     "cors": "^2.8.5",
+    "electron": "^38.2.0",
     "express": "^4.18.2",
     "fuse.js": "^7.1.0",
     "music-metadata": "^11.9.0",
@@ -64,11 +64,17 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "flatpak",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "icon": "static/images/logo.png",

@@ -117,27 +117,28 @@ class RendererAudioEngine {
     
     async loadDevicePreferences() {
         try {
-            if (window.kaiAPI?.app) {
-                // Get initial state from AppState (which loads from disk)
-                const appState = await window.kaiAPI.app.getState();
-                console.log('📂 Received AppState:', appState);
+            // Load device preferences from settingsAPI
+            if (window.settingsAPI) {
+                const devicePrefs = await window.settingsAPI.getDevicePreferences();
+                console.log('📂 Loaded device preferences:', devicePrefs);
 
-                // Load device preferences
-                if (appState?.preferences?.audio?.devices) {
-                    const devices = appState.preferences.audio.devices;
-                    if (devices.PA?.id) {
-                        this.outputDevices.PA = devices.PA.id;
-                        console.log('📂 Loaded PA device:', devices.PA.id);
-                    }
-                    if (devices.IEM?.id) {
-                        this.outputDevices.IEM = devices.IEM.id;
-                        console.log('📂 Loaded IEM device:', devices.IEM.id);
-                    }
+                if (devicePrefs?.PA?.id) {
+                    this.outputDevices.PA = devicePrefs.PA.id;
+                    console.log('📂 Set PA device:', devicePrefs.PA.id);
                 }
+                if (devicePrefs?.IEM?.id) {
+                    this.outputDevices.IEM = devicePrefs.IEM.id;
+                    console.log('📂 Set IEM device:', devicePrefs.IEM.id);
+                }
+            }
 
-                // Load mixer state from AppState (source of truth)
+            // Load mixer state from AppState
+            if (window.kaiAPI?.app) {
+                const appState = await window.kaiAPI.app.getState();
+                console.log('📂 Received AppState for mixer:', appState?.mixer ? 'found' : 'not found');
+
+                // Load mixer state from AppState
                 if (appState?.mixer) {
-                    console.log('📂 Loading mixer from AppState:', appState.mixer);
 
                     if (typeof appState.mixer.PA?.gain === 'number') {
                         this.mixerState.PA.gain = appState.mixer.PA.gain;
@@ -164,12 +165,14 @@ class RendererAudioEngine {
                         console.log('📂 Set mic muted to:', appState.mixer.mic.muted);
                     }
                     console.log('✅ Final mixer state after loading:', JSON.stringify(this.mixerState, null, 2));
-                } else {
-                    console.warn('⚠️ No mixer state in AppState');
                 }
-            } else {
-                console.warn('⚠️ window.kaiAPI.app not available');
             }
+
+            // Final summary of loaded devices
+            console.log('🔊 Final device configuration:', {
+                PA: this.outputDevices.PA,
+                IEM: this.outputDevices.IEM
+            });
         } catch (error) {
             console.error('Failed to load device preferences:', error);
         }
@@ -177,21 +180,24 @@ class RendererAudioEngine {
     
     async setOutputDevice(busType, deviceId) {
         try {
+            console.log(`🔊 setOutputDevice called: busType=${busType}, deviceId=${deviceId}`);
+
             if (!['PA', 'IEM'].includes(busType)) {
                 console.error('Invalid bus type:', busType);
                 return false;
             }
-            
+
             const wasPlaying = this.isPlaying;
             const currentPos = this.currentPosition;
-            
+
             // Stop current playback if running
             if (wasPlaying) {
                 this.pause();
             }
-            
+
             // Store the device preference
             this.outputDevices[busType] = deviceId;
+            console.log(`🔊 Stored ${busType} device preference:`, deviceId);
             
             // Close existing context for this bus
             if (this.audioContexts[busType]) {
@@ -202,9 +208,13 @@ class RendererAudioEngine {
             const contextOptions = {};
             if (deviceId !== 'default' && 'sinkId' in AudioContext.prototype) {
                 contextOptions.sinkId = deviceId;
+                console.log(`🔊 Creating ${busType} AudioContext with sinkId:`, deviceId);
+            } else {
+                console.log(`🔊 Creating ${busType} AudioContext with default sink`);
             }
-            
+
             this.audioContexts[busType] = new (window.AudioContext || window.webkitAudioContext)(contextOptions);
+            console.log(`🔊 ${busType} AudioContext created successfully`);
             this.outputNodes[busType].masterGain = this.audioContexts[busType].createGain();
             this.outputNodes[busType].masterGain.connect(this.audioContexts[busType].destination);
             
@@ -544,6 +554,7 @@ class RendererAudioEngine {
                     
                     // Proper karaoke routing: vocals to IEM only, music/backing tracks to PA only
                     if (isVocals) {
+                        console.log(`🎤 Routing VOCALS (${stem.name}) → IEM device (${this.outputDevices.IEM})`);
                         // Vocals go to IEM only (singer's ears)
                         const iemSource = this.audioContexts.IEM.createBufferSource();
                         iemSource.buffer = audioBuffer;
@@ -552,6 +563,7 @@ class RendererAudioEngine {
                         this.outputNodes.IEM.sourceNodes.set(stem.name, iemSource);
                         
                     } else {
+                        console.log(`🎵 Routing MUSIC (${stem.name}) → PA device (${this.outputDevices.PA})`);
                         // Backing tracks go to PA only (audience)
                         const paSource = this.audioContexts.PA.createBufferSource();
                         paSource.buffer = audioBuffer;
