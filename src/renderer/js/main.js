@@ -773,6 +773,9 @@ class KaiPlayerApp {
                     const option = document.createElement('option');
                     option.value = device.id || index;
                     option.textContent = device.name;
+                    const deviceId = device.deviceId || device.id || '';
+                    option.dataset.deviceId = deviceId; // Add data-device-id for setSinkId()
+                    console.log(`Populating ${id}: device=${device.name}, id=${device.id}, deviceId=${device.deviceId}, dataset.deviceId=${deviceId}`);
                     select.appendChild(option);
                 }
             });
