@@ -21,4 +21,44 @@ export function registerMixerHandlers(mainApp) {
   ipcMain.handle(MIXER_CHANNELS.TOGGLE_MASTER_MUTE, (event, bus) => {
     return mixerService.toggleMasterMute(mainApp, bus);
   });
+
+  // Toggle stem mute
+  ipcMain.handle('mixer:toggleMute', (event, stemId, bus) => {
+    if (mainApp.audioEngine) {
+      return mainApp.audioEngine.toggleMute(stemId, bus);
+    }
+    return false;
+  });
+
+  // Toggle stem solo
+  ipcMain.handle('mixer:toggleSolo', (event, stemId) => {
+    if (mainApp.audioEngine) {
+      return mainApp.audioEngine.toggleSolo(stemId);
+    }
+    return false;
+  });
+
+  // Set stem gain
+  ipcMain.handle('mixer:setGain', (event, stemId, gainDb) => {
+    if (mainApp.audioEngine) {
+      return mainApp.audioEngine.setGain(stemId, gainDb);
+    }
+    return false;
+  });
+
+  // Apply mixer preset
+  ipcMain.handle('mixer:applyPreset', (event, presetId) => {
+    if (mainApp.audioEngine) {
+      return mainApp.audioEngine.applyPreset(presetId);
+    }
+    return false;
+  });
+
+  // Recall mixer scene
+  ipcMain.handle('mixer:recallScene', (event, sceneId) => {
+    if (mainApp.audioEngine) {
+      return mainApp.audioEngine.recallScene(sceneId);
+    }
+    return false;
+  });
 }
