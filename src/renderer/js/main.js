@@ -3,8 +3,10 @@ import { verifyButterchurn } from './butterchurnVerify.js';
 import { loadCDGSong, loadKAISong } from './songLoaders.js';
 import { KAIPlayer } from './kaiPlayer.js';
 import { PlayerController } from './player.js';
+import { onDOMReady, dispatchWindowEvent } from './utils/window-events.js';
+import webrtcManager from './webrtcManager.js';
 
-class KaiPlayerApp {
+export class KaiPlayerApp {
     constructor() {
         this.currentSong = null;
         this.isPlaying = false;
@@ -46,6 +48,9 @@ class KaiPlayerApp {
 
         // Effects data - will be populated by React EffectsPanelWrapper
         this.effectsData = null;
+
+        // Register app instance immediately (synchronously) so getAppInstance() works
+        setAppInstance(this);
 
         this.init();
     }
@@ -91,10 +96,8 @@ class KaiPlayerApp {
         // Mixer UI now handled by React components
         this.player = new PlayerController(this.kaiPlayer);
 
-        // Notify bridge that player is ready (no globals)
-        window.dispatchEvent(new CustomEvent('player:initialized', {
-            detail: { player: this.player }
-        }));
+        // Notify bridge that app is ready
+        dispatchWindowEvent('player:initialized', { app: this, player: this.player });
         // this.coaching = new CoachingController(); // Disabled for now
         // this.editor = new LyricsEditorController(); // Replaced by React SongEditor
 
@@ -188,39 +191,39 @@ class KaiPlayerApp {
 
             // Listen for WebRTC commands from main process
             window.kaiAPI.events.on('webrtc:setupSender', async () => {
-                const result = await window.webrtcManager.setupSender();
+                const result = await webrtcManager.setupSender();
                 const { ipcRenderer } = require('electron');
                 ipcRenderer.send('webrtc:setupSender-response', result);
             });
 
             window.kaiAPI.events.on('webrtc:createOffer', async () => {
-                const result = await window.webrtcManager.createOffer();
+                const result = await webrtcManager.createOffer();
                 const { ipcRenderer } = require('electron');
                 ipcRenderer.send('webrtc:createOffer-response', result);
             });
 
             window.kaiAPI.events.on('webrtc:setAnswer', async (event, answer) => {
-                const result = await window.webrtcManager.setAnswer(answer);
+                const result = await webrtcManager.setAnswer(answer);
                 const { ipcRenderer } = require('electron');
                 ipcRenderer.send('webrtc:setAnswer-response', result);
             });
 
             window.kaiAPI.events.on('webrtc:stopPainting', () => {
-                window.webrtcManager.stopPainting();
+                webrtcManager.stopPainting();
             });
 
             window.kaiAPI.events.on('webrtc:getSenderStatus', () => {
-                const status = window.webrtcManager.getSenderStatus();
+                const status = webrtcManager.getSenderStatus();
                 const { ipcRenderer } = require('electron');
                 ipcRenderer.send('webrtc:getSenderStatus-response', status);
             });
 
             window.kaiAPI.events.on('webrtc:addICECandidate', async (event, candidate) => {
-                await window.webrtcManager.addICECandidate(candidate);
+                await webrtcManager.addICECandidate(candidate);
             });
 
             window.kaiAPI.events.on('webrtc:cleanupSender', async () => {
-                await window.webrtcManager.cleanupSender();
+                await webrtcManager.cleanupSender();
             });
         }
 
@@ -783,21 +786,4 @@ class KaiPlayerApp {
     }
 }
 
-// Initialize app when DOM is ready
-window.addEventListener('DOMContentLoaded', () => {
-    // Verify Butterchurn libraries loaded correctly
-    verifyButterchurn();
-
-    const app = new KaiPlayerApp();
-
-    // Register app instance for cross-module access via appInstance.js singleton
-    setAppInstance(app);
-
-    // Expose on window for React components and IPC handlers
-    window.app = app;
-
-    // Also expose on window for debugging in dev tools
-    if (process.env.NODE_ENV === 'development') {
-        window.kaiApp = app;
-    }
-});
+// App initialization now happens in react-entry.jsx (single entry point)

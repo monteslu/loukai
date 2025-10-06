@@ -131,15 +131,10 @@
     <script src="lib/butterchurn.min.js"></script>
     <script src="lib/butterchurnPresets.min.js"></script>
 
-    <!-- App Scripts -->
+    <!-- CDG Graphics Library -->
     <script type="module" src="lib/cdgraphics-wrapper.js"></script>
-    <script type="module" src="js/webrtcManager.js"></script>
-    <script type="module" src="js/main.js"></script>
 
-    <!-- React Mount Point -->
-    <div id="react-root"></div>
-
-    <!-- React Bundle (loaded after vanilla JS) -->
+    <!-- Single Entry Point - Everything loaded via imports -->
     <script type="module" src="dist/renderer.js"></script>
 </body>
 </html>

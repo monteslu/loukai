@@ -13,16 +13,16 @@ export function EffectsPanelWrapper({ bridge }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentCategory, setCurrentCategory] = useState('all');
 
-  // Expose effects data to window.app for IPC handlers
+  // Expose effects data to app for IPC handlers (via bridge to avoid module graph issues)
   useEffect(() => {
-    if (window.app) {
-      window.app.effectsData = {
+    if (bridge?.app) {
+      bridge.app.effectsData = {
         effects,
         currentEffect,
         disabledEffects
       };
     }
-  }, [effects, currentEffect, disabledEffects]);
+  }, [bridge, effects, currentEffect, disabledEffects]);
 
   useEffect(() => {
     loadEffects();
@@ -164,7 +164,7 @@ export function EffectsPanelWrapper({ bridge }) {
 
     // Apply effect directly to karaoke renderer (like vanilla effects.js)
     try {
-      const app = window.app; // KaiPlayerApp instance
+      const app = bridge?.app;
       if (app && app.player && app.player.karaokeRenderer) {
         const renderer = app.player.karaokeRenderer;
         if (renderer.setButterchurnPreset) {

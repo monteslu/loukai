@@ -401,8 +401,3 @@ export class CDGPlayer extends PlayerInterface {
         return 'cdg';
     }
 }
-
-// Make it available globally
-if (typeof window !== 'undefined') {
-    window.CDGPlayer = CDGPlayer;
-}

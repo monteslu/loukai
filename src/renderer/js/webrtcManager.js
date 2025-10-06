@@ -507,9 +507,4 @@ export class WebRTCManager {
 // Create singleton instance
 const webrtcManager = new WebRTCManager();
 
-// Make it available globally
-if (typeof window !== 'undefined') {
-  window.webrtcManager = webrtcManager;
-}
-
 export default webrtcManager;

@@ -7,8 +7,6 @@ let _appInstance = null;
 
 export function setAppInstance(instance) {
     _appInstance = instance;
-    // Also expose getAppInstance globally for non-module scripts (karaokeRenderer.js, etc.)
-    window.getAppInstance = getAppInstance;
 }
 
 export function getAppInstance() {

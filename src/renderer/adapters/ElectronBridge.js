@@ -8,6 +8,7 @@
  */
 
 import { BridgeInterface } from '../../shared/adapters/BridgeInterface.js';
+import { onWindowEvent } from '../js/utils/window-events.js';
 
 let _instance = null;
 
@@ -19,10 +20,12 @@ export class ElectronBridge extends BridgeInterface {
     super();
     this.api = window.kaiAPI;
     this.listeners = new Map(); // Track listeners for cleanup
+    this._app = null; // App instance passed via player:initialized event
     this._playerController = null;
 
-    // Listen for player initialization from main.js
-    window.addEventListener('player:initialized', (e) => {
+    // Listen for app initialization from main.js
+    onWindowEvent('player:initialized', (e) => {
+      this._app = e.detail.app;
       this._playerController = e.detail.player;
     });
 
@@ -33,6 +36,10 @@ export class ElectronBridge extends BridgeInterface {
     return this._playerController;
   }
 
+  get app() {
+    return this._app;
+  }
+
   static getInstance() {
     if (!_instance) {
       _instance = new ElectronBridge();
@@ -41,35 +48,35 @@ export class ElectronBridge extends BridgeInterface {
   }
 
   // ===== Player Controls =====
-  // Call window.app methods directly - no IPC roundtrip needed for local control
+  // Call app methods directly via this._app - no IPC roundtrip needed for local control
 
   async play() {
-    if (window.app) {
-      await window.app.togglePlayback();
+    if (this._app) {
+      await this._app.togglePlayback();
       return { success: true };
     }
     return { success: false, error: 'App not initialized' };
   }
 
   async pause() {
-    if (window.app) {
-      await window.app.togglePlayback();
+    if (this._app) {
+      await this._app.togglePlayback();
       return { success: true };
     }
     return { success: false, error: 'App not initialized' };
   }
 
   async restart() {
-    if (window.app) {
-      await window.app.restartTrack();
+    if (this._app) {
+      await this._app.restartTrack();
       return { success: true };
     }
     return { success: false, error: 'App not initialized' };
   }
 
   async seek(positionSec) {
-    if (window.app?.player) {
-      await window.app.player.setPosition(positionSec);
+    if (this._app?.player) {
+      await this._app.player.setPosition(positionSec);
       return { success: true };
     }
     return { success: false, error: 'Player not initialized' };

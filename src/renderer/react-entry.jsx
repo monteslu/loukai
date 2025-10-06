@@ -1,8 +1,8 @@
 /**
  * React Entry Point for Electron Renderer
  *
- * This initializes React in the Electron renderer process.
- * It runs alongside the existing vanilla JS code.
+ * Single entry point for the entire application.
+ * Initializes both vanilla JS app and React components.
  */
 
 import React from 'react';
@@ -18,18 +18,42 @@ import { QueueTab } from './components/QueueTab.jsx';
 import { SongInfoBarWrapper } from './components/SongInfoBarWrapper.jsx';
 import { TransportControlsWrapper } from './components/TransportControlsWrapper.jsx';
 import { StatusBar } from './components/StatusBar.jsx';
+import { onWindowBeforeUnload, onDOMReady } from './js/utils/window-events.js';
 import { TabNavigation } from './components/TabNavigation.jsx';
 import { ServerTab } from './components/ServerTab.jsx';
 import { VisualizationSettings } from '../shared/components/VisualizationSettings.jsx';
+import { verifyButterchurn } from './js/butterchurnVerify.js';
+import { KaiPlayerApp } from './js/main.js';
 
-console.log('🚀 Initializing React in Electron renderer...');
+console.log('🚀 Initializing application...');
 
 // Get the ElectronBridge singleton instance
 const bridge = ElectronBridge.getInstance();
 
-// Connect the bridge
-bridge.connect().then(() => {
+// Initialize the main app when DOM is ready
+onDOMReady(async () => {
+  console.log('📱 DOM ready, initializing app...');
+
+  // Verify Butterchurn libraries loaded correctly
+  verifyButterchurn();
+
+  // Create app instance
+  const app = new KaiPlayerApp();
+
+  // Expose for debugging in dev tools only
+  if (process.env.NODE_ENV === 'development') {
+    window.kaiApp = app;
+  }
+
+  // Wait for bridge to connect, then mount React components
+  await bridge.connect();
   console.log('✅ ElectronBridge connected');
+
+  mountReactComponents();
+});
+
+function mountReactComponents() {
+  console.log('⚛️ Mounting React components...');
 
   // Mount React Library Panel in library tab
   const libraryRoot = document.getElementById('react-library-root');
@@ -180,11 +204,9 @@ bridge.connect().then(() => {
   }
 
   console.log('✅ React mounted successfully!');
-}).catch((err) => {
-  console.error('❌ Failed to connect ElectronBridge:', err);
-});
+}
 
 // Cleanup on window unload
-window.addEventListener('beforeunload', () => {
+onWindowBeforeUnload(() => {
   bridge.disconnect();
 });

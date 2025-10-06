@@ -1,3 +1,6 @@
+import { getAppInstance } from './appInstance.js';
+import { onWindowResize, offWindowEvent } from './utils/window-events.js';
+
 export class KaraokeRenderer {
     constructor(canvasId) {
         this.canvas = document.getElementById(canvasId);
@@ -307,7 +310,7 @@ export class KaraokeRenderer {
         requestAnimationFrame(() => resizeCanvas());
 
         // Resize on window resize
-        window.addEventListener('resize', resizeCanvas);
+        onWindowResize(resizeCanvas);
 
         // Store reference to remove listener on destroy
         this.resizeHandler = resizeCanvas;
@@ -2335,7 +2338,7 @@ export class KaraokeRenderer {
         
         // Clean up resize listener
         if (this.resizeHandler) {
-            window.removeEventListener('resize', this.resizeHandler);
+            offWindowEvent('resize', this.resizeHandler);
         }
         
         // Destroy Butterchurn instance and ALL related components
