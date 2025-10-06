@@ -41,21 +41,38 @@ export class ElectronBridge extends BridgeInterface {
   }
 
   // ===== Player Controls =====
+  // Call window.app methods directly - no IPC roundtrip needed for local control
 
   async play() {
-    return await this.api.player.play();
+    if (window.app) {
+      await window.app.togglePlayback();
+      return { success: true };
+    }
+    return { success: false, error: 'App not initialized' };
   }
 
   async pause() {
-    return await this.api.player.pause();
+    if (window.app) {
+      await window.app.togglePlayback();
+      return { success: true };
+    }
+    return { success: false, error: 'App not initialized' };
   }
 
   async restart() {
-    return await this.api.player.restart();
+    if (window.app) {
+      await window.app.restartTrack();
+      return { success: true };
+    }
+    return { success: false, error: 'App not initialized' };
   }
 
   async seek(positionSec) {
-    return await this.api.player.seek(positionSec);
+    if (window.app?.player) {
+      await window.app.player.setPosition(positionSec);
+      return { success: true };
+    }
+    return { success: false, error: 'Player not initialized' };
   }
 
   async getPlaybackState() {

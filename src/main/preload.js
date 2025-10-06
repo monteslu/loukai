@@ -157,14 +157,7 @@ const api = {
     removeUpdatedListener: (callback) => ipcRenderer.removeListener('preferences:updated', callback)
   },
 
-  admin: {
-    onPlay: (callback) => ipcRenderer.on('admin:play', callback),
-    onNext: (callback) => ipcRenderer.on('admin:next', callback),
-    onRestart: (callback) => ipcRenderer.on('admin:restart', callback),
-    removePlayListener: (callback) => ipcRenderer.removeListener('admin:play', callback),
-    removeNextListener: (callback) => ipcRenderer.removeListener('admin:next', callback),
-    removeRestartListener: (callback) => ipcRenderer.removeListener('admin:restart', callback)
-  },
+  // admin.onPlay/onNext/onRestart removed - web admin calls window.app methods directly via executeJavaScript
 
   renderer: {
     sendPlaybackState: (state) => ipcRenderer.send('renderer:playbackState', state),

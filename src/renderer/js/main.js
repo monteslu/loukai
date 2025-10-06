@@ -176,15 +176,7 @@ class KaiPlayerApp {
                 }
             });
 
-            // Listen for seek commands from web admin
-            window.kaiAPI.events.on('player:seek', (event, positionSec) => {
-                console.log('📥 Received seek command from web admin:', positionSec);
-                if (this.player && this.player.setPosition) {
-                    this.player.setPosition(positionSec);
-                } else {
-                    console.error('❌ Player not available or seek not supported');
-                }
-            });
+            // player:seek removed - web admin now calls window.app.player.setPosition() directly via executeJavaScript
         }
 
 
@@ -285,25 +277,8 @@ class KaiPlayerApp {
             event.sender.send('effects:getDisabled-response', disabledEffects);
         });
 
-        // Admin control event listeners
-        console.log('🎮 Setting up admin IPC listeners...');
-        console.log('🎮 kaiAPI.admin exists:', !!kaiAPI.admin);
-        console.log('🎮 kaiAPI.admin.onPlay exists:', !!(kaiAPI.admin && kaiAPI.admin.onPlay));
-
-        kaiAPI.admin.onPlay(() => {
-            console.log('🎮 Received play command from admin');
-            this.togglePlayback();
-        });
-
-        kaiAPI.admin.onNext(() => {
-            console.log('🎮 Received next command from admin');
-            this.nextTrack();
-        });
-
-        kaiAPI.admin.onRestart(() => {
-            console.log('🎮 Received restart command from admin');
-            this.restartTrack();
-        });
+        // Admin control event listeners removed - web admin now calls window.app methods directly via executeJavaScript
+        // ElectronBridge also calls window.app methods directly (no IPC roundtrip)
 
         // Mixer control event listeners from admin
         kaiAPI.mixer.onSetMasterGain((event, data) => {
