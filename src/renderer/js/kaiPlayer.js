@@ -820,7 +820,7 @@ class KAIPlayer extends PlayerInterface {
     async disableAutoTune() {
         try {
             if (!this.microphoneGain) return;
-            
+
             // Disconnect current connections
             this.microphoneGain.disconnect();
             if (this.autoTuneNode) {
@@ -830,10 +830,15 @@ class KAIPlayer extends PlayerInterface {
                     value: false
                 });
             }
-            
-            // Direct connection to PA output
-            this.microphoneGain.connect(this.outputNodes.PA.masterGain);
-            
+
+            // Only reconnect if mic routing is enabled
+            if (this.mixerState.micToSpeakers) {
+                // Direct connection to PA output
+                this.microphoneGain.connect(this.outputNodes.PA.masterGain);
+            } else {
+                console.log('🎤 Mic input active but not routed to speakers (auto-tune disabled)');
+            }
+
         } catch (error) {
             console.error('Failed to disable auto-tune:', error);
         }

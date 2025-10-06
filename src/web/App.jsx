@@ -9,6 +9,7 @@ import { RequestsList } from '../shared/components/RequestsList.jsx';
 import { SongEditor } from '../shared/components/SongEditor.jsx';
 import { SongInfoBar } from '../shared/components/SongInfoBar.jsx';
 import { VisualizationSettings } from '../shared/components/VisualizationSettings.jsx';
+import { SongRequestPage } from './pages/SongRequestPage.jsx';
 import './App.css';
 
 function LoginScreen({ onLogin, error }) {
@@ -53,6 +54,7 @@ export function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   const [loginError, setLoginError] = useState('');
+  const [isAdminPath, setIsAdminPath] = useState(false);
 
   const [playback, setPlayback] = useState({
     isPlaying: false,
@@ -70,8 +72,18 @@ export function App() {
   const [waveformSettings, setWaveformSettings] = useState(null);
   const [autotuneSettings, setAutotuneSettings] = useState(null);
 
-  // Check authentication on mount
+  // Check if we're on the admin path
   useEffect(() => {
+    setIsAdminPath(window.location.pathname.startsWith('/admin'));
+  }, []);
+
+  // Check authentication on mount (only for admin path)
+  useEffect(() => {
+    if (!isAdminPath) {
+      setChecking(false);
+      return;
+    }
+
     fetch('/admin/check-auth', { credentials: 'include' })
       .then(res => res.json())
       .then(data => {
@@ -82,7 +94,7 @@ export function App() {
         setAuthenticated(false);
         setChecking(false);
       });
-  }, []);
+  }, [isAdminPath]);
 
   // Connect bridge and fetch initial state when authenticated
   useEffect(() => {
@@ -323,6 +335,12 @@ export function App() {
     action.catch(err => console.error('Toggle effect failed:', err));
   };
 
+  // Show public song request page if not on admin path
+  if (!isAdminPath) {
+    return <SongRequestPage />;
+  }
+
+  // Admin path only - check authentication
   if (checking) {
     return (
       <div className="loading-screen">

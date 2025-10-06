@@ -1,6 +1,7 @@
 console.log('🎮 main.js loaded and executing');
 
 import { setAppInstance } from './appInstance.js';
+import { verifyButterchurn } from './butterchurnVerify.js';
 
 class KaiPlayerApp {
     constructor() {
@@ -1022,6 +1023,9 @@ class KaiPlayerApp {
 
 // Initialize app when DOM is ready
 window.addEventListener('DOMContentLoaded', () => {
+    // Verify Butterchurn libraries loaded correctly
+    verifyButterchurn();
+
     const app = new KaiPlayerApp();
 
     // Register app instance for cross-module access via appInstance.js singleton

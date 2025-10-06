@@ -94,9 +94,15 @@ class WebServer {
     }
 
     setupRoutes() {
-        // Main song request page for users
+        // Main song request page (React app - public)
         this.app.get('/', (req, res) => {
-            res.sendFile(path.join(__dirname, '../../static/song-request.html'));
+            const webDistPath = path.join(__dirname, '../web/dist');
+            const indexPath = path.join(webDistPath, 'index.html');
+            if (fs.existsSync(indexPath)) {
+                res.sendFile(indexPath);
+            } else {
+                res.status(404).send('Web UI not built. Run: npm run build:web');
+            }
         });
 
         // Check if admin password is set
@@ -249,11 +255,14 @@ class WebServer {
 
                 const response = {
                     songs: pageSongs.map(song => ({
-                        id: song.path,
+                        path: song.path,
                         title: song.title,
                         artist: song.artist,
                         duration: song.duration,
-                        format: song.format || 'kai'
+                        format: song.format || 'kai',
+                        album: song.album || null,
+                        year: song.year || null,
+                        genre: song.genre || null
                     })),
                     pagination: {
                         currentPage: page,
@@ -324,6 +333,50 @@ class WebServer {
             } catch (error) {
                 console.error('Error fetching songs:', error);
                 res.status(500).json({ error: 'Failed to fetch songs' });
+            }
+        });
+
+        // Quick search endpoint (public)
+        this.app.get('/api/search', async (req, res) => {
+            try {
+                const query = req.query.q || '';
+                const limit = parseInt(req.query.limit) || 20;
+
+                if (!query.trim()) {
+                    return res.json({ results: [] });
+                }
+
+                // Get songs from cache
+                const allSongs = await this.getCachedSongs();
+
+                // Initialize or update Fuse.js if needed
+                if (!this.fuse || this.fuse._docs.length !== allSongs.length) {
+                    this.fuse = new Fuse(allSongs, {
+                        keys: ['title', 'artist', 'album'],
+                        threshold: 0.3,
+                        includeScore: true,
+                        ignoreLocation: true,
+                        findAllMatches: true
+                    });
+                }
+
+                // Use fuzzy search
+                const fuseResults = this.fuse.search(query);
+                const results = fuseResults.slice(0, limit).map(result => ({
+                    path: result.item.path,
+                    title: result.item.title,
+                    artist: result.item.artist,
+                    duration: result.item.duration,
+                    format: result.item.format || 'kai',
+                    album: result.item.album || null,
+                    year: result.item.year || null,
+                    genre: result.item.genre || null
+                }));
+
+                res.json({ results });
+            } catch (error) {
+                console.error('Search failed:', error);
+                res.status(500).json({ error: 'Search failed', results: [] });
             }
         });
 

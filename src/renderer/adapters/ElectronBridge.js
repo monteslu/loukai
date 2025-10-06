@@ -198,19 +198,25 @@ export class ElectronBridge extends BridgeInterface {
     if (settings.micToSpeakers !== undefined) {
       await this.api.settings.set('micToSpeakers', settings.micToSpeakers);
 
-      // Apply to KAIPlayer audio subsystem (not karaokeRenderer)
+      // Apply to both KAIPlayer audio subsystem and karaokeRenderer
       const playerController = this.playerController;
       if (playerController && playerController.kaiPlayer) {
         playerController.kaiPlayer.setMicToSpeakers(settings.micToSpeakers);
+      }
+      if (playerController && playerController.karaokeRenderer) {
+        playerController.karaokeRenderer.setMicToSpeakers(settings.micToSpeakers);
       }
     }
     if (settings.enableMic !== undefined) {
       await this.api.settings.set('enableMic', settings.enableMic);
 
-      // Apply to KAIPlayer audio subsystem (not karaokeRenderer)
+      // Apply to both KAIPlayer audio subsystem and karaokeRenderer
       const playerController = this.playerController;
       if (playerController && playerController.kaiPlayer) {
         playerController.kaiPlayer.setEnableMic(settings.enableMic);
+      }
+      if (playerController && playerController.karaokeRenderer) {
+        playerController.karaokeRenderer.setMicEnabled(settings.enableMic);
       }
     }
   }
