@@ -8,6 +8,16 @@ import { registerMixerHandlers } from './mixerHandlers.js';
 import { registerPlayerHandlers } from './playerHandlers.js';
 import { registerLibraryHandlers } from './libraryHandlers.js';
 import { registerSettingsHandlers } from './settingsHandlers.js';
+import { registerQueueHandlers } from './queueHandlers.js';
+import { registerWebServerHandlers } from './webServerHandlers.js';
+import { registerCanvasHandlers } from './canvasHandlers.js';
+import { registerEffectsHandlers } from './effectsHandlers.js';
+import { registerEditorHandlers } from './editorHandlers.js';
+import { registerPreferencesHandlers } from './preferencesHandlers.js';
+import { registerFileHandlers } from './fileHandlers.js';
+import { registerRendererHandlers } from './rendererHandlers.js';
+import { registerAppHandlers } from './appHandlers.js';
+import { registerAutotuneHandlers } from './autotuneHandlers.js';
 
 /**
  * Register all IPC handlers
@@ -16,12 +26,26 @@ import { registerSettingsHandlers } from './settingsHandlers.js';
 export function registerAllHandlers(mainApp) {
   console.log('📡 Registering IPC handlers...');
 
+  // Core handlers
   registerAudioHandlers(mainApp);
   registerMixerHandlers(mainApp);
   registerPlayerHandlers(mainApp);
   registerLibraryHandlers(mainApp);
   registerSettingsHandlers(mainApp);
-  // Note: Queue and Settings handlers remain in main.js for special logic
+  registerQueueHandlers(mainApp);
+
+  // Feature handlers
+  registerWebServerHandlers(mainApp);
+  registerCanvasHandlers(mainApp);
+  registerEffectsHandlers(mainApp);
+  registerEditorHandlers(mainApp);
+  registerPreferencesHandlers(mainApp);
+  registerAutotuneHandlers(mainApp);
+
+  // System handlers
+  registerFileHandlers(mainApp);
+  registerRendererHandlers(mainApp);
+  registerAppHandlers(mainApp);
 
   console.log('✅ All IPC handlers registered');
 }
