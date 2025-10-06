@@ -7,6 +7,7 @@ import fsPromises from 'fs/promises';
 import os from 'os';
 import yauzl from 'yauzl';
 import { io } from 'socket.io-client';
+import bcrypt from 'bcrypt';
 import AudioEngine from './audioEngine.js';
 import KaiLoader from '../utils/kaiLoader.js';
 import CDGLoader from '../utils/cdgLoader.js';
@@ -20,6 +21,7 @@ import * as libraryService from '../shared/services/libraryService.js';
 import * as playerService from '../shared/services/playerService.js';
 import * as requestsService from '../shared/services/requestsService.js';
 import * as serverSettingsService from '../shared/services/serverSettingsService.js';
+import * as effectsService from '../shared/services/effectsService.js';
 import { registerAllHandlers } from './handlers/index.js';
 
 // ESM equivalent of __dirname
@@ -1487,6 +1489,25 @@ class KaiPlayerApp {
       }
     });
 
+    ipcMain.handle('webServer:setAdminPassword', async (event, password) => {
+      try {
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+        await this.settings.set('server.adminPasswordHash', hashedPassword);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to set admin password:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('webServer:clearAllRequests', async () => {
+      if (this.webServer) {
+        return requestsService.clearRequests(this.webServer);
+      }
+      return { success: false, error: 'Web server not available' };
+    });
+
     // Library handlers
     ipcMain.handle('library:search', (event, query) => {
       return libraryService.searchSongs(this, query);
@@ -1502,9 +1523,10 @@ class KaiPlayerApp {
 
       // If queue was empty, automatically load and start playing the first song
       if (result.success && result.wasEmpty) {
-        console.log(`🎵 Queue was empty, auto-loading "${queueItem.title}"`);
+        console.log(`🎵 Queue was empty, auto-loading "${result.queueItem.title}"`);
         try {
-          await this.loadKaiFile(queueItem.path);
+          // Use the returned queueItem which has the generated ID
+          await this.loadKaiFile(result.queueItem.path, result.queueItem.id);
           console.log('✅ Successfully auto-loaded song from queue');
         } catch (error) {
           console.error('❌ Failed to auto-load song from queue:', error);
@@ -1535,6 +1557,23 @@ class KaiPlayerApp {
       // Update legacy songQueue for compatibility
       this.songQueue = [];
 
+      return result;
+    });
+
+    ipcMain.handle('queue:reorderQueue', async (event, songId, newIndex) => {
+      const result = queueService.reorderQueue(this.appState, songId, newIndex);
+
+      // Update legacy songQueue for compatibility
+      if (result.success) {
+        this.songQueue = result.queue;
+      }
+
+      return result;
+    });
+
+    // Load song from queue by ID
+    ipcMain.handle('queue:load', async (event, itemId) => {
+      const result = await queueService.loadFromQueue(this, itemId);
       return result;
     });
 
@@ -1702,19 +1741,26 @@ class KaiPlayerApp {
 
     // NEW: Renderer state updates to AppState
     ipcMain.on('renderer:updatePlaybackState', (event, updates) => {
-      console.log('📡 Main received renderer:updatePlaybackState:', updates);
       this.appState.updatePlaybackState(updates);
 
       // Also broadcast immediately to web admin for responsive updates
       if (this.webServer && updates) {
-        console.log('📡 Broadcasting to web clients:', updates);
         // Broadcast the updates directly - they already contain position/duration
         this.webServer.broadcastPlaybackState(updates);
       }
     });
 
     ipcMain.on('renderer:songLoaded', (event, songData) => {
-      this.appState.setCurrentSong(songData);
+      // Preserve queueItemId and format if they exist in current song (renderer doesn't know about them)
+      const existingQueueItemId = this.appState.state.currentSong?.queueItemId;
+      const existingFormat = this.appState.state.currentSong?.format;
+      const updatedSongData = {
+        ...songData,
+        queueItemId: existingQueueItemId || songData.queueItemId || null,
+        format: existingFormat || songData.format || 'kai'
+      };
+
+      this.appState.setCurrentSong(updatedSongData);
       // Also update legacy currentSong for compatibility
       this.currentSong = {
         metadata: songData,
@@ -2151,12 +2197,12 @@ class KaiPlayerApp {
     });
   }
 
-  async loadKaiFile(filePath) {
+  async loadKaiFile(filePath, queueItemId = null) {
     // Detect format and load accordingly
     const format = await this.detectSongFormat(filePath);
 
     if (format.type === 'cdg') {
-      return this.loadCDGFile(filePath, format.cdgPath, format.format);
+      return this.loadCDGFile(filePath, format.cdgPath, format.format, queueItemId);
     }
 
     // Default: KAI format
@@ -2173,12 +2219,16 @@ class KaiPlayerApp {
       this.currentSong = kaiData;
 
       // Update AppState with new song (this resets position to 0)
+      // Set isLoading: true initially, will be cleared when song fully loads
       const songData = {
         path: filePath,
         title: kaiData.metadata?.title || 'Unknown',
         artist: kaiData.metadata?.artist || 'Unknown',
         duration: kaiData.metadata?.duration || 0,
-        requester: kaiData.requester || 'KJ'
+        requester: kaiData.requester || 'KJ',
+        isLoading: true,  // Song is being loaded
+        format: 'kai',  // Format for display icon
+        queueItemId: queueItemId  // Track which queue item (for duplicate songs)
       };
       this.appState.setCurrentSong(songData);
 
@@ -2189,9 +2239,9 @@ class KaiPlayerApp {
       this.sendToRenderer('song:loaded', kaiData.metadata || {});
       this.sendToRenderer('song:data', kaiData);
 
-      // Broadcast song loaded to web clients via Socket.IO
+      // Broadcast song loaded to web clients via Socket.IO (use songData, not kaiData!)
       if (this.webServer) {
-        this.webServer.broadcastSongLoaded(kaiData);
+        this.webServer.broadcastSongLoaded(songData);
       }
 
       // Notify queue manager that this song is now current
@@ -2240,9 +2290,9 @@ class KaiPlayerApp {
     return { type: 'kai', format: 'kai', cdgPath: null };
   }
 
-  async loadCDGFile(mp3Path, cdgPath, format) {
+  async loadCDGFile(mp3Path, cdgPath, format, queueItemId = null) {
     try {
-      console.log('💿 Loading CDG file:', { mp3Path, cdgPath, format });
+      console.log('💿 Loading CDG file:', { mp3Path, cdgPath, format, queueItemId });
       const cdgData = await CDGLoader.load(mp3Path, cdgPath, format);
 
       // TODO: Load CDG into audio engine (different path than KAI)
@@ -2251,12 +2301,16 @@ class KaiPlayerApp {
       this.currentSong = cdgData;
 
       // Update AppState with current song info
+      // Set isLoading: true initially, will be cleared when song fully loads
       const songData = {
         path: mp3Path,
         title: cdgData.metadata?.title || 'Unknown',
         artist: cdgData.metadata?.artist || 'Unknown',
         duration: cdgData.metadata?.duration || 0,
-        requester: cdgData.requester || 'KJ'
+        requester: cdgData.requester || 'KJ',
+        isLoading: true,  // Song is being loaded
+        format: format,  // Format for display icon (cdg-pair, cdg-archive, etc)
+        queueItemId: queueItemId  // Track which queue item (for duplicate songs)
       };
       this.appState.setCurrentSong(songData);
 
@@ -2264,9 +2318,9 @@ class KaiPlayerApp {
       this.sendToRenderer('song:loaded', cdgData.metadata || {});
       this.sendToRenderer('song:data', cdgData);
 
-      // Broadcast song loaded to web clients
+      // Broadcast song loaded to web clients (use songData, not cdgData!)
       if (this.webServer) {
-        this.webServer.broadcastSongLoaded(cdgData);
+        this.webServer.broadcastSongLoaded(songData);
       }
 
       // Notify queue manager
@@ -2994,9 +3048,10 @@ class KaiPlayerApp {
 
     // If queue was empty, automatically load and start playing the first song
     if (result.wasEmpty) {
-      console.log(`🎵 Queue was empty, auto-loading "${queueItem.title}"`);
+      console.log(`🎵 Queue was empty, auto-loading "${result.queueItem.title}"`);
       try {
-        await this.loadKaiFile(queueItem.path);
+        // Use the returned queueItem which has the generated ID
+        await this.loadKaiFile(result.queueItem.path, result.queueItem.id);
         console.log('✅ Successfully auto-loaded song from queue');
       } catch (error) {
         console.error('❌ Failed to auto-load song from queue:', error);

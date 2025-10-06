@@ -9,89 +9,18 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- Song Info Bar -->
-        <div class="song-info-bar">
-            <div class="song-info-left">
-                <button id="hamburgerBtn" class="hamburger-btn-info">
-                    <span class="material-icons">menu</span>
-                </button>
-            </div>
-            <div class="song-info-center">
-                <div class="song-info">
-                    <span class="song-display">No song loaded</span>
-                </div>
-            </div>
-            <div class="song-info-right">
-            </div>
-        </div>
+        <!-- Song Info Bar - React Component -->
+        <div id="react-song-info-root"></div>
 
         <!-- Main Content -->
         <div class="main-content">
-            <!-- Sidebar -->
-            <div class="sidebar">
-                <div class="section">
-                    <h3>Waveform Options</h3>
-                    <div class="waveform-controls">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="enableWaveforms" checked>
-                            <span>Enable Waveforms</span>
-                        </label>
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="enableEffects" checked>
-                            <span>Enable Background Effects</span>
-                        </label>
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="randomEffectOnSong">
-                            <span>Random Effect on New Song</span>
-                        </label>
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="showUpcomingLyrics" checked>
-                            <span>Show Upcoming Lyrics</span>
-                        </label>
-                        <div class="slider-control">
-                            <label>Overlay Opacity: <span id="overlayOpacityValue">0.50</span></label>
-                            <input type="range" id="overlayOpacity" min="0" max="1" step="0.01" value="0.5">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="section">
-                    <h3>Auto-Tune</h3>
-                    <div class="autotune-controls">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="autotuneEnabled">
-                            <span>Enable Auto-Tune</span>
-                        </label>
-                        <div class="slider-group">
-                            <label>Strength:</label>
-                            <input type="range" id="autotuneStrength" min="0" max="100" value="50">
-                            <span class="slider-value">50%</span>
-                        </div>
-                        <div class="slider-group">
-                            <label>Speed:</label>
-                            <input type="range" id="autotuneSpeed" min="1" max="100" value="20">
-                            <span class="slider-value">20</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <!-- Sidebar - React Component -->
+            <div class="sidebar" id="react-visualization-root"></div>
 
             <!-- Center Content -->
             <div class="center-content">
-                <!-- Tab Navigation -->
-                <div class="tab-nav">
-                    <button class="tab-btn active" data-tab="player">Player</button>
-                    <button class="tab-btn" data-tab="library">Library</button>
-                    <button class="tab-btn" data-tab="mixer">Audio Settings</button>
-                    <button class="tab-btn" data-tab="coaching">Coaching</button>
-                    <button class="tab-btn" data-tab="effects">Effects</button>
-                    <button class="tab-btn" data-tab="requests">
-                        Song Requests
-                        <span id="requestsBadge" class="tab-badge" style="display: none;">0</span>
-                    </button>
-                    <button class="tab-btn" data-tab="server">Server</button>
-                    <button class="tab-btn" data-tab="editor">Lyrics Editor</button>
-                </div>
+                <!-- Tab Navigation - React Component -->
+                <div id="react-tab-nav-root"></div>
 
                 <!-- Tab Content -->
                 <div class="tab-content">
@@ -99,113 +28,11 @@
                     <div id="library-tab" class="tab-pane">
                         <!-- React Library Panel will be mounted here -->
                         <div id="react-library-root"></div>
-
-                        <!-- Vanilla JS Library - HIDDEN -->
-                        <div class="library-container" style="display: none;">
-                            <div class="library-header">
-                                <div class="library-controls">
-                                    <button id="setSongsFolderBtn" class="library-btn">
-                                        <span class="material-icons">folder_open</span>
-                                        Set Songs Folder
-                                    </button>
-                                    <button id="syncLibraryBtn" class="library-btn">
-                                        <span class="material-icons">sync</span>
-                                        Sync
-                                    </button>
-                                    <button id="refreshLibraryBtn" class="library-btn">
-                                        <span class="material-icons">refresh</span>
-                                        Full Refresh
-                                    </button>
-                                    <div class="library-search">
-                                        <input type="text" id="librarySearch" placeholder="Search songs..." />
-                                    </div>
-                                </div>
-                                <div class="library-info">
-                                    <span id="librarySongsCount">0 songs</span>
-                                    <span id="libraryPath"></span>
-                                </div>
-                            </div>
-                            
-                            <div class="library-content">
-                                <div id="libraryTable" class="library-table">
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th class="col-title">Title</th>
-                                                <th class="col-artist">Artist</th>
-                                                <th class="col-album">Album</th>
-                                                <th class="col-genre">Genre</th>
-                                                <th class="col-key">Key</th>
-                                                <th class="col-duration">Duration</th>
-                                                <th class="col-year">Year</th>
-                                                <th class="col-stems">Stems</th>
-                                                <th class="col-actions">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="libraryTableBody">
-                                            <tr class="library-empty-row">
-                                                <td colspan="9">
-                                                    <div class="library-empty">
-                                                        <div class="empty-icon">🎵</div>
-                                                        <div class="empty-message">No songs library set</div>
-                                                        <div class="empty-detail">Click "Set Songs Folder" to choose your music library</div>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
                     </div>
 
-                    <!-- Mixer Tab -->
+                    <!-- Mixer Tab - React Component -->
                     <div id="mixer-tab" class="tab-pane">
-                        <div class="mixer-container">
-                            <div id="mixerStrips" class="mixer-strips">
-                                <div class="no-song-message">
-                                    Load a KAI file to see mixer controls
-                                </div>
-                            </div>
-
-                            <!-- Audio Device Settings -->
-                            <div class="audio-settings-section">
-                                <h3>Audio Devices <button id="refreshDevicesBtn" class="refresh-btn">↻</button></h3>
-                                <div class="device-selector">
-                                    <label>PA Output:</label>
-                                    <select id="paDeviceSelect"></select>
-                                </div>
-                                <div class="device-selector">
-                                    <label>IEM Output:</label>
-                                    <select id="iemDeviceSelect"></select>
-                                </div>
-                                <div class="device-selector">
-                                    <label>
-                                        <input type="checkbox" id="iemMonoVocals" checked>
-                                        IEM Vocals in Mono (for single earpiece)
-                                    </label>
-                                </div>
-                            </div>
-
-                            <!-- Mic Options -->
-                            <div class="audio-settings-section">
-                                <h3>Mic Options</h3>
-                                <div class="device-selector">
-                                    <label>Mic Input:</label>
-                                    <select id="inputDeviceSelect"></select>
-                                </div>
-                                <div class="waveform-controls">
-                                    <label class="checkbox-label">
-                                        <input type="checkbox" id="micToSpeakers" checked>
-                                        <span>Mic to Speakers</span>
-                                    </label>
-                                    <label class="checkbox-label">
-                                        <input type="checkbox" id="enableMic" checked>
-                                        <span>Enable Mic</span>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
+                        <!-- React MixerTab will be mounted here -->
                     </div>
 
                     <!-- Player Tab -->
@@ -213,36 +40,9 @@
                         <div class="player-container">
                             <!-- Top Section: Queue Sidebar + Canvas -->
                             <div class="player-top-section">
-                                <!-- Queue Sidebar (Left 1/3) -->
+                                <!-- Queue Sidebar (Left 1/3) - React Component -->
                                 <div class="player-queue-sidebar">
-                                    <!-- Queue Display -->
-                                    <div class="player-queue-section">
-                                        <!-- Quick Library Search -->
-                                        <div class="quick-search-controls">
-                                            <input type="text" id="quickLibrarySearch" placeholder="Search..." />
-                                            <div class="quick-search-dropdown" id="quickSearchResults" style="display: none;">
-                                                <div class="no-search-message">Type to search your library</div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="player-queue-header">
-                                            <h4>Queue</h4>
-                                            <div class="queue-actions">
-                                                <button id="playerClearQueueBtn" class="queue-action-btn" title="Clear Queue">
-                                                    <span class="material-icons">delete</span>
-                                                </button>
-                                                <button id="playerShuffleQueueBtn" class="queue-action-btn" title="Shuffle">
-                                                    <span class="material-icons">shuffle</span>
-                                                </button>
-                                            </div>
-                                        </div>
-                                        <div class="player-queue-list" id="playerQueueList">
-                                            <div class="player-queue-empty">
-                                                <span class="material-icons empty-icon">queue_music</span>
-                                                <div class="empty-message">Queue is empty</div>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    <div id="react-queue-root"></div>
                                 </div>
                                 
                                 <!-- Canvas Area (Right 2/3) -->
@@ -256,51 +56,19 @@
                                 </div>
                             </div>
 
-                            <!-- Bottom Section: Transport Controls (Full Width) -->
-                            <div class="transport-extended">
-                                <div id="playControls">
-                                    <button id="restartBtn" title="Restart Track">
-                                        <span class="material-icons">replay</span>
-                                    </button>
-                                    <button id="playPauseBtn" title="Play/Pause">▶</button>
-                                    <button id="nextTrackBtn" title="Next Track">
-                                        <span class="material-icons">skip_next</span>
-                                    </button>
-                                    
-                                    <div class="progress-container">
-                                        <div class="progress-bar">
-                                            <div class="progress-fill" id="progressFill"></div>
-                                            <div class="progress-handle" id="progressHandle"></div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="time-display">
-                                        <span id="currentTime">0:00</span>
-                                        <span>/</span>
-                                        <span id="totalTime">0:00</span>
-                                    </div>
-                                </div>
-                                
-                                <div class="effects-controls">
-                                    <button id="prevEffectBtn" title="Previous Effect">◀ FX</button>
-                                    <span id="currentEffectName">Effect</span>
-                                    <button id="nextEffectBtn" title="Next Effect">FX ▶</button>
-                                    <button id="openCanvasWindowBtn" class="icon-btn" title="Open Canvas Window">
-                                        <span class="material-icons">open_in_new</span>
-                                    </button>
-                                </div>
-                            </div>
+                            <!-- Bottom Section: Transport Controls (Full Width) - React Component -->
+                            <div id="react-transport-root"></div>
                             
                         </div>
                     </div>
 
-                    <!-- Coaching Tab -->
-                    <div id="coaching-tab" class="tab-pane">
+                    <!-- Coaching Tab - Disabled for now -->
+                    <!-- <div id="coaching-tab" class="tab-pane">
                         <div class="coaching-container">
                             <div class="pitch-display">
                                 <canvas id="pitchCanvas" width="600" height="300"></canvas>
                             </div>
-                            
+
                             <div class="coaching-metrics">
                                 <div class="metric">
                                     <label>Pitch Accuracy:</label>
@@ -309,7 +77,7 @@
                                     </div>
                                     <span class="metric-value">0%</span>
                                 </div>
-                                
+
                                 <div class="metric">
                                     <label>Timing:</label>
                                     <div class="metric-bar">
@@ -317,7 +85,7 @@
                                     </div>
                                     <span class="metric-value">0%</span>
                                 </div>
-                                
+
                                 <div class="metric">
                                     <label>Stability:</label>
                                     <div class="metric-bar">
@@ -327,225 +95,23 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </div> -->
 
                     <!-- Effects Tab -->
                     <div id="effects-tab" class="tab-pane">
                         <!-- React Effects Panel will be mounted here -->
                         <div id="react-effects-root"></div>
-
-                        <!-- Vanilla JS Effects - HIDDEN -->
-                        <div class="effects-container" style="display: none;">
-                            <div class="effects-header">
-                                <div class="effects-search">
-                                    <input type="text" id="effectsSearch" placeholder="Search effects..." />
-                                </div>
-                                <div class="effects-info">
-                                    <span id="effectsCount">0 effects</span>
-                                    <button id="randomEffectBtn" class="effects-btn">🎲 Random</button>
-                                </div>
-                            </div>
-
-                            <div class="effects-content">
-                                <div class="effects-categories">
-                                    <button class="category-btn active" data-category="all">All</button>
-                                    <button class="category-btn" data-category="geiss">Geiss</button>
-                                    <button class="category-btn" data-category="martin">Martin</button>
-                                    <button class="category-btn" data-category="flexi">Flexi</button>
-                                    <button class="category-btn" data-category="shifter">Shifter</button>
-                                    <button class="category-btn" data-category="other">Other</button>
-                                </div>
-
-                                <div class="effects-list" id="effectsList">
-                                    <div class="effects-loading">
-                                        <div class="loading-icon">⏳</div>
-                                        <div class="loading-message">Loading Butterchurn effects...</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
 
                     <!-- Song Requests Tab -->
                     <div id="requests-tab" class="tab-pane">
                         <!-- React Requests List will be mounted here -->
                         <div id="react-requests-root"></div>
-
-                        <!-- Vanilla JS Requests - HIDDEN -->
-                        <div class="requests-container" style="display: none;">
-                            <div class="requests-header">
-                                <div class="server-status">
-                                    <h3>🌐 Web Server</h3>
-                                    <p id="serverUrl">Server not started</p>
-                                    <button id="copyUrlBtn" class="requests-btn" style="display: none;">📋 Copy URL</button>
-                                </div>
-                                <div class="requests-settings">
-                                    <label class="checkbox-label">
-                                        <input type="checkbox" id="allowRequestsToggle" checked>
-                                        <span>Allow Song Requests</span>
-                                    </label>
-                                    <label class="checkbox-label">
-                                        <input type="checkbox" id="requireApprovalToggle" checked>
-                                        <span>Require KJ Approval</span>
-                                    </label>
-                                </div>
-                            </div>
-
-                            <div class="requests-content">
-                                <div class="requests-section">
-                                    <div class="requests-section-header">
-                                        <h4>📝 Pending Requests</h4>
-                                        <button id="refreshRequestsBtn" class="requests-btn">🔄 Refresh</button>
-                                    </div>
-                                    <div id="pendingRequestsList" class="requests-list">
-                                        <div class="no-requests">No pending requests</div>
-                                    </div>
-                                </div>
-
-                                <div class="requests-section">
-                                    <div class="requests-section-header">
-                                        <h4>✅ Recent Activity</h4>
-                                        <button id="clearHistoryBtn" class="requests-btn">🗑️ Clear</button>
-                                    </div>
-                                    <div id="requestHistoryList" class="requests-list">
-                                        <div class="no-requests">No recent activity</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
 
-                    <!-- Server Tab -->
+                    <!-- Server Tab - React Component -->
                     <div id="server-tab" class="tab-pane">
-                        <div class="server-container">
-                            <div class="server-header">
-                                <h2>Web Server Settings</h2>
-                                <div class="server-status" id="serverStatus">
-                                    <span class="status-indicator offline" id="statusIndicator"></span>
-                                    <span id="serverStatusText">Checking...</span>
-                                </div>
-                            </div>
-
-                            <div class="server-content">
-                                <!-- Server Control -->
-                                <div class="server-section">
-                                    <h3>Server Control</h3>
-                                    <div class="server-controls">
-                                        <div class="control-row">
-                                            <label>Server Status:</label>
-                                            <div class="control-group">
-                                                <span id="serverUrl">Not running</span>
-                                                <button id="openServerBtn" class="action-btn" disabled>
-                                                    <span class="material-icons">open_in_new</span>
-                                                    Open in Browser
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Server Settings -->
-                                <div class="server-section">
-                                    <h3>General Settings</h3>
-                                    <div class="settings-grid">
-                                        <div class="setting-row">
-                                            <label for="serverName">Server Name:</label>
-                                            <input type="text" id="serverName" class="setting-input" placeholder="Loukai Karaoke">
-                                        </div>
-
-                                        <div class="setting-row">
-                                            <label for="serverPort">Port:</label>
-                                            <input type="number" id="serverPort" class="setting-input" placeholder="3069" min="1024" max="65535" value="3069">
-                                        </div>
-                                        <div class="setting-description">
-                                            Server must be restarted for port changes to take effect
-                                        </div>
-
-                                        <div class="setting-row">
-                                            <label class="checkbox-label">
-                                                <input type="checkbox" id="allowSongRequests" checked>
-                                                <span>Allow Song Requests</span>
-                                            </label>
-                                        </div>
-
-                                        <div class="setting-row">
-                                            <label class="checkbox-label">
-                                                <input type="checkbox" id="requireKJApproval" checked>
-                                                <span>Require KJ Approval</span>
-                                            </label>
-                                        </div>
-
-                                        <div class="setting-row">
-                                            <label class="checkbox-label">
-                                                <input type="checkbox" id="streamVocalsToClients">
-                                                <span>Stream Vocals to Clients (LAN only)</span>
-                                            </label>
-                                        </div>
-
-                                        <div class="setting-row">
-                                            <button id="saveServerSettings" class="save-btn">
-                                                <span class="material-icons">save</span>
-                                                Save Settings
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Admin Password -->
-                                <div class="server-section">
-                                    <h3>Admin Security</h3>
-                                    <div class="settings-grid">
-                                        <div class="setting-row">
-                                            <label for="adminPassword">Admin Password:</label>
-                                            <div class="password-group">
-                                                <input type="password" id="adminPassword" class="setting-input" placeholder="Enter new admin password">
-                                                <button id="setPasswordBtn" class="action-btn">
-                                                    <span class="material-icons">security</span>
-                                                    Set Password
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div class="setting-description">
-                                            KJs will need this password to access the admin panel
-                                        </div>
-
-                                        <div class="setting-row">
-                                            <div class="password-status" id="passwordStatus">
-                                                No admin password set
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Song Requests -->
-                                <div class="server-section">
-                                    <h3>Song Requests</h3>
-                                    <div class="requests-summary">
-                                        <div class="summary-stats">
-                                            <div class="stat-item">
-                                                <span class="stat-value" id="pendingRequests">0</span>
-                                                <span class="stat-label">Pending</span>
-                                            </div>
-                                            <div class="stat-item">
-                                                <span class="stat-value" id="totalRequests">0</span>
-                                                <span class="stat-label">Total</span>
-                                            </div>
-                                        </div>
-                                        <div class="requests-actions">
-                                            <button id="openAdminBtn" class="action-btn">
-                                                <span class="material-icons">admin_panel_settings</span>
-                                                Open Admin Panel
-                                            </button>
-                                            <button id="clearRequestsBtn" class="action-btn danger">
-                                                <span class="material-icons">delete_sweep</span>
-                                                Clear All Requests
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                        <!-- React ServerTab will be mounted here -->
                     </div>
 
                     <!-- Lyrics Editor Tab -->
@@ -557,32 +123,8 @@
             </div>
         </div>
 
-        <!-- Status Bar -->
-        <div class="status-bar">
-            <div class="status-left">
-                <span id="statusText">Ready</span>
-            </div>
-            <div class="status-center">
-                <span id="webUrlDisplay" style="display: none;"></span>
-            </div>
-            <div class="status-right">
-                <span id="latencyDisplay">Latency: -- ms</span>
-                <span id="xrunDisplay">XRuns: 0</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- Song Info Modal -->
-    <div id="songInfoModal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Song Information</h2>
-                <button id="closeSongInfoBtn" class="close-btn">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div id="songInfoContent"></div>
-            </div>
-        </div>
+        <!-- Status Bar - React Component -->
+        <div id="react-status-bar-root"></div>
     </div>
 
     <!-- Visualization Libraries -->
@@ -698,18 +240,19 @@
     <!-- App Scripts -->
     <!-- settingsAPI.js removed - deprecated, use window.kaiAPI.settings instead -->
     <script type="module" src="lib/cdgraphics-wrapper.js"></script>
+    <script src="js/PlayerInterface.js"></script> <!-- Base class for all players -->
     <script src="js/karaokeRenderer.js"></script>
-    <script src="js/cdgRenderer.js"></script>
-    <script src="js/audioEngine.js"></script>
+    <script src="js/cdgPlayer.js"></script>
+    <script src="js/kaiPlayer.js"></script>
     <!-- <script type="module" src="js/lyricsEditor.js"></script> --> <!-- Replaced by React SongEditor -->
-    <script src="js/mixer.js"></script>
+    <!-- <script src="js/mixer.js"></script> --> <!-- Replaced by React MixerPanel + AudioDeviceSettings -->
     <script src="js/player.js"></script>
-    <script src="js/coaching.js"></script>
+    <!-- <script src="js/coaching.js"></script> --> <!-- Disabled for now -->
     <!-- <script type="module" src="js/effects.js"></script> --> <!-- Replaced by React EffectsPanel -->
     <!-- <script src="js/requests.js"></script> --> <!-- Replaced by React RequestsList -->
     <!-- <script type="module" src="js/editor.js"></script> --> <!-- Replaced by React SongEditor -->
     <!-- <script type="module" src="js/library.js"></script> --> <!-- Replaced by React LibraryPanel -->
-    <script type="module" src="js/queue.js"></script>
+    <!-- <script type="module" src="js/queue.js"></script> --> <!-- Replaced by React QueueTab -->
     <script type="module" src="js/main.js"></script>
 
     <!-- React Mount Point -->

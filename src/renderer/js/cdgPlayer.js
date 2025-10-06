@@ -1,8 +1,10 @@
 // CDGraphics will be loaded from node_modules via webpack or as a global
 // For now, we'll load it dynamically when needed
 
-class CDGRenderer {
+class CDGPlayer extends PlayerInterface {
     constructor(canvasId) {
+        super(); // Call PlayerInterface constructor
+
         this.canvas = document.getElementById(canvasId);
 
         if (!this.canvas) {
@@ -13,7 +15,7 @@ class CDGRenderer {
         this.ctx = this.canvas.getContext('2d');
         this.cdgPlayer = null;
         this.cdgData = null;
-        this.isPlaying = false;
+        // Note: this.isPlaying is inherited from PlayerInterface
         this.currentTime = 0;
         this.animationFrame = null;
 
@@ -38,25 +40,37 @@ class CDGRenderer {
         this.effectsEnabled = true;
         this.overlayOpacity = 0.7; // Default, will be updated from settings
 
-        // State reporting interval
-        this.stateReportInterval = null;
+        // Note: this.stateReportInterval is inherited from PlayerInterface
 
-        console.log('💿 CDG Renderer initialized');
+        console.log('💿 CDGPlayer initialized');
     }
 
     setOverlayOpacity(opacity) {
         this.overlayOpacity = opacity;
     }
 
-    async loadCDG(cdgData) {
+    /**
+     * Implements PlayerInterface.loadSong()
+     * @param {Object} songData - CDG song data
+     * @returns {Promise<boolean>} Success status
+     */
+    async loadSong(songData) {
         try {
-            console.log('💿 CDGRenderer: Loading CDG data', {
-                format: cdgData.format,
-                hasAudio: !!cdgData.audio,
-                hasCDG: !!cdgData.cdg
+            console.log('💿 CDGPlayer: Loading CDG data', {
+                format: songData.format,
+                hasAudio: !!songData.audio,
+                hasCDG: !!songData.cdg
             });
 
-            this.cdgData = cdgData;
+            this.cdgData = songData;
+
+            // Reset position using base class method
+            this.resetPosition();
+
+            // Reset CDG-specific timing state
+            this.currentTime = 0;
+            this.startTime = 0;
+            this.pauseTime = 0;
 
             // Load CDGraphics library dynamically
             console.log('💿 Checking CDGraphics availability:', typeof CDGraphics);
@@ -66,7 +80,7 @@ class CDGRenderer {
             }
 
             // Load CDG file data - convert to ArrayBuffer first
-            const cdgBuffer = cdgData.cdg.data;
+            const cdgBuffer = songData.cdg.data;
 
             console.log('💿 CDG buffer type:', cdgBuffer.constructor.name, 'hasBuffer:', !!cdgBuffer.buffer, 'length:', cdgBuffer.length || cdgBuffer.byteLength);
 
@@ -102,19 +116,19 @@ class CDGRenderer {
             }
 
             console.log('💿 Decoding MP3 audio buffer...');
-            const mp3ArrayBuffer = cdgData.audio.mp3.buffer.slice(
-                cdgData.audio.mp3.byteOffset,
-                cdgData.audio.mp3.byteOffset + cdgData.audio.mp3.byteLength
+            const mp3ArrayBuffer = songData.audio.mp3.buffer.slice(
+                songData.audio.mp3.byteOffset,
+                songData.audio.mp3.byteOffset + songData.audio.mp3.byteLength
             );
             this.audioBuffer = await this.audioContext.decodeAudioData(mp3ArrayBuffer);
             console.log('💿 MP3 decoded, duration:', this.audioBuffer.duration);
 
             console.log('💿 CDG loaded successfully, ready to play');
 
-            return { success: true };
+            return true;
         } catch (error) {
             console.error('💿 Failed to load CDG:', error);
-            return { success: false, error: error.message };
+            return false;
         }
     }
 
@@ -329,10 +343,12 @@ class CDGRenderer {
 
     handleSongEnd() {
         console.log('💿 CDG song ended');
-        this.isPlaying = false;
         this.stopRendering();
 
-        // Notify main process
+        // Use base class method for consistent song end handling
+        this._triggerSongEnd();
+
+        // Notify main process (for backward compatibility)
         if (window.electronAPI && window.electronAPI.queue) {
             window.electronAPI.queue.notifyComplete();
         }
@@ -356,42 +372,22 @@ class CDGRenderer {
         return this.pauseTime || 0;
     }
 
+    /**
+     * Implements PlayerInterface method - alias for getCurrentTime()
+     * @returns {number} Current position in seconds
+     */
+    getCurrentPosition() {
+        return this.getCurrentTime();
+    }
+
     getDuration() {
         return this.audioBuffer ? this.audioBuffer.duration : 0;
     }
 
-    reportStateChange() {
-        if (window.kaiAPI?.renderer) {
-            const state = {
-                isPlaying: this.isPlaying,
-                position: this.getCurrentTime(),
-                duration: this.getDuration()
-            };
-            console.log('💿 CDG reporting state:', state);
-            window.kaiAPI.renderer.updatePlaybackState(state);
-        } else {
-            console.warn('⚠️ kaiAPI.renderer not available for CDG reportStateChange');
-        }
-    }
-
-    startStateReporting() {
-        this.stopStateReporting();
-
-        console.log('🎯 CDG startStateReporting() called, setting up interval');
-        // Report state every 100ms (10x/sec)
-        this.stateReportInterval = setInterval(() => {
-            if (this.isPlaying) {
-                this.reportStateChange();
-            }
-        }, 100);
-    }
-
-    stopStateReporting() {
-        if (this.stateReportInterval) {
-            clearInterval(this.stateReportInterval);
-            this.stateReportInterval = null;
-        }
-    }
+    /**
+     * Note: reportStateChange(), startStateReporting(), and stopStateReporting()
+     * are inherited from PlayerInterface base class
+     */
 
     setAudioContext(audioContext, gainNode, analyserNode) {
         this.audioContext = audioContext;
@@ -405,6 +401,8 @@ class CDGRenderer {
     }
 
     destroy() {
+        super.destroy(); // Call parent cleanup (stops state reporting)
+
         this.stopRendering();
         if (this.audioSource) {
             try {
@@ -418,9 +416,17 @@ class CDGRenderer {
         this.cdgPlayer = null;
         this.cdgData = null;
     }
+
+    /**
+     * Get the format type this player handles
+     * @returns {string} Format name
+     */
+    getFormat() {
+        return 'cdg';
+    }
 }
 
 // Make it available globally
 if (typeof window !== 'undefined') {
-    window.CDGRenderer = CDGRenderer;
+    window.CDGPlayer = CDGPlayer;
 }

@@ -1,16 +1,17 @@
 class PlayerController {
-    constructor(audioEngine = null) {
-        this.audioEngine = audioEngine;
+    constructor(kaiPlayer = null) {
+        this.kaiPlayer = kaiPlayer;
         this.lyricsContainer = document.getElementById('lyricsContainer');
 
-        // Initialize karaoke renderer for KAI format
+        // Initialize karaoke renderer for KAI format lyrics
         this.karaokeRenderer = new KaraokeRenderer('karaokeCanvas');
 
-        // Initialize CDG renderer for CDG format
-        this.cdgRenderer = new CDGRenderer('karaokeCanvas');
+        // Initialize CDG player for CDG format (audio + graphics)
+        this.cdgPlayer = new CDGPlayer('karaokeCanvas');
 
-        // Track current format
+        // Track current format and active player
         this.currentFormat = null; // 'kai' or 'cdg'
+        this.currentPlayer = null; // Reference to active PlayerInterface instance
 
         // Ensure canvas is properly sized after initialization
         setTimeout(() => {
@@ -68,10 +69,10 @@ class PlayerController {
     onSongLoaded(metadata) {
         // Always reset timer to 0 first
         this.currentPosition = 0;
-        
-        // Get real duration from audio engine if available, otherwise from metadata
-        if (this.audioEngine && this.audioEngine.getDuration) {
-            this.songDuration = this.audioEngine.getDuration();
+
+        // Get duration using unified player interface
+        if (this.currentPlayer) {
+            this.songDuration = this.currentPlayer.getDuration();
         } else {
             this.songDuration = metadata?.duration || 0;
         }
@@ -184,26 +185,21 @@ class PlayerController {
     }
 
     updatePosition() {
-        // Get real position based on current format
-        if (this.currentFormat === 'cdg' && this.cdgRenderer) {
-            // CDG format - get time from CDG renderer's audio element
-            this.currentPosition = this.cdgRenderer.getCurrentTime();
-            this.songDuration = this.cdgRenderer.getDuration() || this.songDuration;
-        } else if (this.audioEngine && this.audioEngine.getCurrentTime) {
-            // KAI format - get time from audio engine
-            const engineTime = this.audioEngine.getCurrentTime();
-            this.currentPosition = engineTime;
+        // Get real position using unified player interface
+        if (this.currentPlayer) {
+            this.currentPosition = this.currentPlayer.getCurrentPosition();
+            this.songDuration = this.currentPlayer.getDuration() || this.songDuration;
         } else {
-            // Fallback to increment
+            // Fallback to increment if no player loaded
             this.currentPosition += 0.1;
         }
-        
+
         // Stop playback when we reach the end of the song
         if (this.songDuration > 0 && this.currentPosition >= this.songDuration) {
             this.currentPosition = this.songDuration;
             this.pause();
         }
-        
+
         this.updateTimeDisplay();
         this.updateProgressBar();
         this.updateKaraokeTime();
@@ -278,13 +274,10 @@ class PlayerController {
     async setPosition(positionSec) {
         this.currentPosition = Math.max(0, Math.min(this.songDuration, positionSec));
 
-        if (this.currentFormat === 'cdg' && this.cdgRenderer) {
-            // CDG format - seek using CDG renderer
-            this.cdgRenderer.seek(this.currentPosition);
-        } else if (this.audioEngine) {
-            // KAI format - seek using audio engine
+        // Use unified player interface - no format branching needed
+        if (this.currentPlayer) {
             try {
-                await this.audioEngine.seek(this.currentPosition);
+                await this.currentPlayer.seek(this.currentPosition);
             } catch (error) {
                 console.error('Seek error:', error);
             }
@@ -360,21 +353,21 @@ class PlayerController {
 
     // Debug method to manually try loading vocals from current song data
     async debugLoadVocals() {
-        
-        if (this.audioEngine) {
-            
+
+        if (this.kaiPlayer) {
+
             // Try different possible properties where song data might be stored
-            const possibleSongData = this.audioEngine.currentSong || this.audioEngine.songData || this.audioEngine.loadedSong;
-            
+            const possibleSongData = this.kaiPlayer.currentSong || this.kaiPlayer.songData || this.kaiPlayer.loadedSong;
+
             if (possibleSongData) {
-                
+
                 if (possibleSongData.audio && possibleSongData.audio.sources) {
-                    
-                    const vocalsSource = possibleSongData.audio.sources.find(source => 
-                        source.name === 'vocals' || 
+
+                    const vocalsSource = possibleSongData.audio.sources.find(source =>
+                        source.name === 'vocals' ||
                         source.filename?.includes('vocals')
                     );
-                    
+
                     if (vocalsSource && vocalsSource.audioData) {
                         await this.karaokeRenderer.setVocalsAudio(vocalsSource.audioData);
                     } else {

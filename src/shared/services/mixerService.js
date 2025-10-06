@@ -45,8 +45,6 @@ export function setMasterGain(mainApp, bus, gainDb) {
     // Update AppState immediately
     const currentMixer = mainApp.appState.state.mixer;
     if (currentMixer[bus]) {
-      console.log(`🎚️ Setting ${bus} gain: ${currentMixer[bus].gain} → ${gainDb} dB`);
-
       // Create a new mixer state object with the updated bus
       const updatedMixer = {
         ...currentMixer,
@@ -97,7 +95,6 @@ export function toggleMasterMute(mainApp, bus) {
     if (currentMixer[bus]) {
       const oldMuted = currentMixer[bus].muted;
       newMuted = !oldMuted;
-      console.log(`🔇 Toggling ${bus} mute: ${oldMuted} → ${newMuted}`);
 
       // Create a new mixer state object with the updated bus
       const updatedMixer = {
@@ -146,8 +143,6 @@ export function setMasterMute(mainApp, bus, muted) {
     // Update AppState immediately
     const currentMixer = mainApp.appState.state.mixer;
     if (currentMixer[bus]) {
-      console.log(`🔇 Setting ${bus} mute: ${currentMixer[bus].muted} → ${muted}`);
-
       // Create a new mixer state object with the updated bus
       const updatedMixer = {
         ...currentMixer,

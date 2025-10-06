@@ -49,7 +49,6 @@ graph LR
     subgraph "Main Process Components"
         App[KaiPlayerApp<br/>main.js]
         State[AppState<br/>Canonical State]
-        Audio[AudioEngine<br/>Stub/Placeholder]
         Web[WebServer<br/>Express + Socket.io]
         Settings[SettingsManager<br/>Persistence]
         Persist[StatePersistence<br/>Auto-save]
@@ -57,7 +56,6 @@ graph LR
     end
 
     App --> State
-    App --> Audio
     App --> Web
     App --> Settings
     App --> Persist
@@ -93,7 +91,8 @@ Where the magic happens - real-time audio processing and UI.
 graph TB
     subgraph "Renderer Process"
         Main[main.js<br/>Entry Point]
-        Engine[AudioEngine<br/>Web Audio API]
+        KAIPlayer[KAIPlayer<br/>KAI Format Playback]
+        CDGPlayer[CDGPlayer<br/>CDG Format Playback]
         Player[player.js<br/>Playback Control]
         Mixer[mixer.js<br/>Gain Controls]
         Editor[editor.js<br/>Waveform + Lyrics]
@@ -101,11 +100,12 @@ graph TB
         Library[library.js<br/>Song Browser]
         Queue[queue.js<br/>Queue Manager]
         Coaching[coaching.js<br/>Pitch Tracking]
-        KaraokeRender[karaokeRenderer.js<br/>Lyrics Display]
-        CDGRender[cdgRenderer.js<br/>CDG Graphics]
+        KaraokeRender[karaokeRenderer.js<br/>KAI Lyrics Display]
+        PlayerInterface[PlayerInterface<br/>Base Class]
     end
 
-    Main --> Engine
+    Main --> KAIPlayer
+    Main --> CDGPlayer
     Main --> Player
     Main --> Mixer
     Main --> Editor
@@ -114,102 +114,190 @@ graph TB
     Main --> Queue
     Main --> Coaching
     Player --> KaraokeRender
-    Player --> CDGRender
+    Player -.currentPlayer.-> KAIPlayer
+    Player -.currentPlayer.-> CDGPlayer
+    KAIPlayer -.extends.-> PlayerInterface
+    CDGPlayer -.extends.-> PlayerInterface
 
-    Engine -->|Controls| Player
-    Mixer -->|Controls| Engine
+    Mixer -->|Controls| KAIPlayer
 
-    style Engine fill:#bbf,stroke:#333,stroke-width:2px
+    style KAIPlayer fill:#bbf,stroke:#333,stroke-width:2px
+    style CDGPlayer fill:#bfb,stroke:#333,stroke-width:2px
+    style PlayerInterface fill:#ffb,stroke:#333,stroke-width:2px
 ```
 
 **Key Responsibilities:**
-- Decode audio stems (Opus format via Web Audio API)
-- Real-time audio routing (vocals → IEM, music → PA)
-- Audio mixing (gain, mute, routing per stem)
-- Microphone input with auto-tune processing
-- Lyrics rendering (synchronized to audio position)
-- CDG rendering (legacy karaoke graphics)
+- **KAIPlayer**: KAI format playback with AI-separated stems
+  - Decode audio stems (Opus format via Web Audio API)
+  - Real-time audio routing (vocals → IEM, music → PA)
+  - Audio mixing (gain, mute, routing per stem)
+  - Microphone input with auto-tune processing
+- **CDGPlayer**: CDG format playback with graphics rendering
+  - MP3 audio playback
+  - CDG graphics rendering (legacy karaoke)
+  - Single audio context (PA output only)
+- **KaraokeRenderer**: Visual lyrics rendering for KAI format
+  - Synchronized lyrics display (word-level timing)
+  - Waveform visualization
+  - Visual effects (Butterchurn audio visualizer)
+- **PlayerInterface**: Abstract base class defining common interface
+  - Unified play/pause/seek methods
+  - State reporting (100ms interval to web admin)
+  - Song end callbacks
 - Waveform visualization for editor
 - Pitch tracking and analysis (coaching mode)
-- Visual effects (Butterchurn audio visualizer)
 
-### 3. Audio Engine Architecture
+### 3. Player Architecture
 
-The most critical component - dual-output routing with stem separation.
+Unified interface for multiple karaoke formats with format-specific implementations.
 
 ```mermaid
 graph TB
-    subgraph "Audio Sources"
-        VocalsStem[Vocals Stem<br/>AudioBuffer]
-        MusicStem[Music Stem<br/>AudioBuffer]
-        BassStem[Bass Stem<br/>AudioBuffer]
-        DrumsStem[Drums Stem<br/>AudioBuffer]
-        Mic[Microphone<br/>MediaStream]
+    subgraph "PlayerInterface Base Class"
+        Interface[Abstract Methods:<br/>play, pause, seek<br/>getCurrentPosition, getDuration<br/>loadSong, getFormat]
+        State[Common State:<br/>isPlaying, onSongEndedCallback<br/>stateReportInterval]
+        Methods[Common Methods:<br/>reportStateChange<br/>startStateReporting<br/>resetPosition<br/>_triggerSongEnd]
     end
 
-    subgraph "Processing Chain"
-        VocalsGain[Vocals Gain Node]
-        MusicGain[Music Gain Node]
-        BassGain[Bass Gain Node]
-        DrumsGain[Drums Gain Node]
-        MicGain[Mic Gain Node]
-        AutoTune[Auto-tune Worklet<br/>Optional]
+    subgraph "KAIPlayer Implementation"
+        KAISources[Audio Sources:<br/>Vocals, Music, Bass, Drums]
+        KAIRouting[Dual-Output Routing:<br/>IEM Bus, PA Bus]
+        KAIMic[Microphone + Auto-tune]
+        KAIDevices[Two Audio Contexts:<br/>IEM Device, PA Device]
     end
 
-    subgraph "Bus Routing"
-        IEMBus[IEM Master Bus<br/>Gain + Mono]
-        PABus[PA Master Bus<br/>Gain + Stereo]
+    subgraph "CDGPlayer Implementation"
+        CDGSources[Audio Source:<br/>MP3 AudioBuffer]
+        CDGGraphics[CDG Graphics:<br/>300x216 Canvas]
+        CDGDevice[Single Audio Context:<br/>PA Device Only]
+        CDGEffects[Background Effects:<br/>Butterchurn]
     end
 
-    subgraph "Output Devices"
-        IEMDevice[IEM Output Device<br/>Headphones/In-Ear]
-        PADevice[PA Output Device<br/>Speakers/Mixer]
-    end
+    Interface --> KAISources
+    Interface --> CDGSources
+    State --> KAISources
+    State --> CDGSources
+    Methods --> KAISources
+    Methods --> CDGSources
 
-    VocalsStem --> VocalsGain
-    MusicStem --> MusicGain
-    BassStem --> BassGain
-    DrumsStem --> DrumsGain
-    Mic --> MicGain
+    KAISources --> KAIRouting
+    KAIRouting --> KAIMic
+    KAIMic --> KAIDevices
 
-    VocalsGain -->|Route to IEM| IEMBus
-    MusicGain -->|Route to PA| PABus
-    BassGain -->|Route to PA| PABus
-    DrumsGain -->|Route to PA| PABus
+    CDGSources --> CDGGraphics
+    CDGGraphics --> CDGEffects
+    CDGEffects --> CDGDevice
 
-    MicGain --> AutoTune
-    AutoTune -->|Processed Vocals| PABus
-
-    IEMBus -->|AudioContext.setSinkId| IEMDevice
-    PABus -->|AudioContext.setSinkId| PADevice
-
-    style IEMBus fill:#fbb,stroke:#333,stroke-width:2px
-    style PABus fill:#bfb,stroke:#333,stroke-width:2px
-    style AutoTune fill:#ffb,stroke:#333,stroke-width:2px
+    style Interface fill:#ffb,stroke:#333,stroke-width:2px
+    style KAIDevices fill:#bbf,stroke:#333,stroke-width:2px
+    style CDGDevice fill:#bfb,stroke:#333,stroke-width:2px
 ```
 
-**Audio Flow:**
+**PlayerInterface Abstraction:**
 
-**Stems (from KAI file):**
-- **Vocals** → Individual Gain → **IEM Bus** → Headphones
-- **Music/Bass/Drums** → Individual Gain → **PA Bus** → Speakers
+The `PlayerInterface` base class provides a unified interface for all karaoke formats:
 
-**Microphone (singer's live voice):**
-- Mic Input → Mic Gain → Auto-tune (optional) → **PA Bus ONLY** → Speakers
-- **Never routed to IEM** - Singer should NOT hear their own mic in the monitors
+**Abstract Methods (must be implemented):**
+- `play()` - Start playback
+- `pause()` - Stop playback
+- `seek(position)` - Jump to specific time
+- `getCurrentPosition()` - Get current playback time
+- `getDuration()` - Get total song duration
+- `loadSong(songData)` - Load format-specific song data
+- `getFormat()` - Return format identifier ('kai', 'cdg', etc.)
 
-**Master Buses:**
-- **IEM Bus:** Mono, routed to in-ear monitors (reference vocals only from stems)
-- **PA Bus:** Stereo, routed to main speakers (music + processed live mic)
+**Common Implementations (inherited):**
+- `reportStateChange()` - Send position updates to web admin
+- `startStateReporting()` - Begin 100ms interval updates
+- `stopStateReporting()` - Stop interval updates
+- `resetPosition()` - Reset to beginning on song load
+- `onSongEnded(callback)` - Register song end handler
+- `_triggerSongEnd()` - Invoke song end callback
 
-**Why This Matters:**
-- Singer hears **reference vocals** clearly (no music drowning them out)
-- Singer does **NOT** hear their own mic (prevents latency, feedback, and distraction)
-- Audience hears professional mix (music + live mic, no reference vocals)
-- Auto-tune processing only affects what audience hears
-- Zero-latency monitoring for singer (pre-recorded stems, not live audio)
+**Format-Specific Implementations:**
 
-### 4. Web Server & Admin Interface
+**KAIPlayer (AI-Separated Stems):**
+- Decode Opus audio stems (vocals, music, bass, drums)
+- **Dual-output routing:**
+  - **Vocals** → Individual Gain → **IEM Bus** → Headphones
+  - **Music/Bass/Drums** → Individual Gain → **PA Bus** → Speakers
+- **Microphone (live voice):**
+  - Mic Input → Mic Gain → Auto-tune (optional) → **PA Bus ONLY**
+  - **Never routed to IEM** - Singer should NOT hear their own mic
+- Two AudioContext instances (IEM device, PA device)
+- Zero-latency monitoring for singer (pre-recorded stems)
+
+**CDGPlayer (Legacy Karaoke):**
+- Decode MP3 audio
+- Render CDG graphics (300x216 pixel canvas)
+- **Single-output routing:**
+  - MP3 → Gain Node → **PA Bus** → Speakers
+- Make CDG background transparent, overlay on Butterchurn effects
+- Single AudioContext (PA device only)
+- No IEM routing (traditional karaoke mode)
+
+### 4. Polymorphic Player Control
+
+The renderer uses a `currentPlayer` reference to eliminate format branching:
+
+```javascript
+// PlayerController sets currentPlayer when loading a song
+if (format === 'cdg') {
+    this.currentPlayer = this.cdgPlayer;
+} else {
+    this.currentPlayer = this.kaiPlayer;
+}
+this.currentPlayer.onSongEnded(() => this.handleSongEnded());
+
+// All playback control uses the same interface (no format checks!)
+async togglePlayback() {
+    if (this.isPlaying) {
+        await this.currentPlayer.pause();
+    } else {
+        await this.currentPlayer.play();
+    }
+}
+
+async seek(position) {
+    await this.currentPlayer.seek(position);
+}
+
+getDuration() {
+    return this.currentPlayer.getDuration();
+}
+```
+
+**Benefits:**
+- No `if (format === 'cdg')` checks scattered throughout code
+- Adding new formats (e.g., video) just requires extending PlayerInterface
+- Type-safe interface ensures all players have same methods
+- Bugs fixed once in PlayerInterface benefit all formats
+
+### PlayerFactory
+
+The `PlayerFactory` provides a clean way to instantiate players:
+
+```javascript
+// Create player based on format
+const player = PlayerFactory.create('cdg', { canvasId: 'karaokeCanvas' });
+
+// Check if format is supported
+if (PlayerFactory.isSupported('mp4')) {
+    // Video support available
+}
+
+// Get all supported formats
+const formats = PlayerFactory.getSupportedFormats(); // ['kai', 'cdg']
+```
+
+**Factory benefits:**
+- Centralized player instantiation
+- Automatic validation (checks for required options)
+- Helpful error messages for unsupported formats
+- Dynamic support detection (checks if MoviePlayer loaded)
+- Future-proof (adding formats just updates the factory)
+
+### 5. Web Server & Admin Interface
 
 Remote control and song request system with two distinct UIs.
 
@@ -322,7 +410,7 @@ sequenceDiagram
     participant Renderer
     participant Main
     participant Loader as KaiLoader
-    participant Engine as AudioEngine
+    participant Player as KAIPlayer
     participant Device as Audio Devices
 
     User->>Renderer: Click "Open File"
@@ -335,15 +423,15 @@ sequenceDiagram
     Loader->>Loader: Extract lyrics.json
     Loader->>Main: Return song data
     Main->>Renderer: IPC: song:data
-    Renderer->>Engine: Load stems
-    Engine->>Engine: Decode Opus → AudioBuffer
-    Engine->>Engine: Create source nodes
-    Engine->>Engine: Route vocals → IEM
-    Engine->>Engine: Route music → PA
-    Engine->>Device: Set sink IDs
+    Renderer->>Player: loadSong(songData)
+    Player->>Player: Decode Opus → AudioBuffer
+    Player->>Player: Create source nodes
+    Player->>Player: Route vocals → IEM
+    Player->>Player: Route music → PA
+    Player->>Device: Set sink IDs
     User->>Renderer: Click "Play"
-    Renderer->>Engine: play()
-    Engine->>Device: Start audio playback
+    Renderer->>Player: play()
+    Player->>Device: Start audio playback
     Device-->>User: Audio output (IEM + PA)
 ```
 
@@ -355,16 +443,16 @@ sequenceDiagram
     participant WebServer
     participant Main
     participant Renderer
-    participant Engine as AudioEngine
+    participant Player as KAIPlayer
 
     WebUI->>WebServer: Adjust PA gain slider
     WebServer->>WebServer: Validate & sanitize
     WebServer->>Main: Socket.io: mixer-update
     Main->>Main: Update AppState
     Main->>Renderer: IPC: mixer:setMasterGain
-    Renderer->>Engine: setMasterGain('PA', gainDb)
-    Engine->>Engine: Update PA master gain node
-    Engine-->>Renderer: Gain applied
+    Renderer->>Player: setMasterGain('PA', gainDb)
+    Player->>Player: Update PA master gain node
+    Player-->>Renderer: Gain applied
     Renderer->>Main: IPC: renderer:updateMixerState
     Main->>WebServer: Socket.io broadcast
     WebServer->>WebUI: mixer-update event

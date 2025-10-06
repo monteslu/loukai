@@ -1,0 +1,71 @@
+/* Song Info Bar */
+.song-info-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 36px;
+  background: #2a2a2a;
+  padding: 0 12px;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+.song-info-left,
+.song-info-center,
+.song-info-right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.song-info-center {
+  justify-content: center;
+}
+
+.song-info-right {
+  justify-content: flex-end;
+}
+
+.hamburger-btn-info {
+  background: none;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hamburger-btn-info:hover {
+  background: #3a3a3a;
+}
+
+.hamburger-btn-info .material-icons {
+  font-size: 18px;
+}
+
+.song-info {
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.song-info .format-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.song-display {
+  font-weight: 500;
+  font-size: 14px;
+  color: #ffffff;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 600px;
+}

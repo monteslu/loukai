@@ -5,6 +5,7 @@
  * Works with both ElectronBridge and WebBridge via callbacks
  */
 
+import { useState } from 'react';
 import { getFormatIcon, formatDuration } from '../formatUtils.js';
 import './QueueList.css';
 
@@ -19,13 +20,54 @@ export function QueueList({
   onClearQueue,
   onClear,                  // Alias for web compatibility
   onShuffleQueue,
+  onReorderQueue,           // New: drag and drop reordering
   onQuickSearch,
   className = ''
 }) {
+  const [draggedIndex, setDraggedIndex] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
+
   // Support both prop names
   const handlePlay = onPlayFromQueue || onLoad;
   const handleRemove = onRemoveFromQueue || onRemove;
   const handleClear = onClearQueue || onClear;
+
+  // Drag and drop handlers
+  const handleDragStart = (e, index) => {
+    if (!onReorderQueue) return;
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', e.currentTarget);
+  };
+
+  const handleDragOver = (e, index) => {
+    if (!onReorderQueue || draggedIndex === null) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e, dropIndex) => {
+    if (!onReorderQueue || draggedIndex === null) return;
+    e.preventDefault();
+
+    if (draggedIndex !== dropIndex) {
+      const item = queue[draggedIndex];
+      onReorderQueue(item.id, dropIndex);
+    }
+
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
 
   if (queue.length === 0) {
     return (
@@ -105,13 +147,37 @@ export function QueueList({
       <div className="player-queue-list">
         {queue.map((item, index) => {
           // Support both currentIndex (renderer) and currentSongId (web)
-          const isCurrentSong = (currentIndex >= 0 && index === currentIndex) ||
-                                (currentSongId && (item.id === currentSongId || item.path === currentSongId));
+          // ONLY match by queueItemId - no path fallback to avoid duplicate song highlighting
+          let isCurrentSong = false;
+
+          // Renderer uses currentIndex
+          if (currentIndex >= 0 && index === currentIndex) {
+            isCurrentSong = true;
+          }
+          // Web uses currentSongId (queueItemId only - must be a number)
+          else if (typeof currentSongId === 'number') {
+            isCurrentSong = item.id === currentSongId;
+          }
+
           const itemClass = isCurrentSong ? 'player-queue-item current' : 'player-queue-item';
           const requesterText = item.requester ? ` • Singer: ${item.requester}` : '';
 
+          const isDragging = draggedIndex === index;
+          const isDragOver = dragOverIndex === index;
+          const dragClass = `${itemClass}${isDragging ? ' dragging' : ''}${isDragOver ? ' drag-over' : ''}`;
+
           return (
-            <div key={item.id} className={itemClass} data-item-id={item.id}>
+            <div
+              key={item.id}
+              className={dragClass}
+              data-item-id={item.id}
+              draggable={!!onReorderQueue}
+              onDragStart={(e) => handleDragStart(e, index)}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, index)}
+              onDragEnd={handleDragEnd}
+            >
               <div className="queue-item-number">{index + 1}</div>
               <div className="queue-item-info">
                 <div className="queue-item-title" title={item.title}>{item.title}</div>

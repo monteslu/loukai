@@ -64,7 +64,9 @@ export const MIXER_CHANNELS = {
 export const PLAYER_CHANNELS = {
   PLAY: 'player:play',
   PAUSE: 'player:pause',
-  SEEK: 'player:seek'
+  SEEK: 'player:seek',
+  RESTART: 'player:restart',
+  NEXT: 'player:next'
 };
 
 // ============================================================================

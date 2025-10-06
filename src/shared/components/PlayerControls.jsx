@@ -12,6 +12,7 @@ export function PlayerControls({
   playback,
   currentSong,
   currentEffect,
+  isLoading,
   onPlay,
   onPause,
   onRestart,
@@ -23,6 +24,9 @@ export function PlayerControls({
   className = ''
 }) {
   const { isPlaying, position = 0, duration = 0 } = playback || {};
+
+  // Derive loading state from currentSong if not explicitly provided
+  const loading = isLoading !== undefined ? isLoading : (currentSong?.isLoading || false);
 
   const handleProgressClick = (e) => {
     if (!duration || !onSeek) return;
@@ -42,22 +46,29 @@ export function PlayerControls({
           onClick={onRestart}
           title="Restart Track"
           className="transport-btn"
+          disabled={loading}
         >
           <span className="material-icons">replay</span>
         </button>
 
         <button
           onClick={isPlaying ? onPause : onPlay}
-          title={isPlaying ? 'Pause' : 'Play'}
+          title={loading ? 'Loading...' : (isPlaying ? 'Pause' : 'Play')}
           className="transport-btn play-pause-btn"
+          disabled={loading}
         >
-          <span className="material-icons">{isPlaying ? 'pause' : 'play_arrow'}</span>
+          {loading ? (
+            <span className="material-icons rotating">hourglass_empty</span>
+          ) : (
+            <span className="material-icons">{isPlaying ? 'pause' : 'play_arrow'}</span>
+          )}
         </button>
 
         <button
           onClick={onNext}
           title="Next Track"
           className="transport-btn"
+          disabled={loading}
         >
           <span className="material-icons">skip_next</span>
         </button>

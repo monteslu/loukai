@@ -32,7 +32,11 @@ export function getEffectsManager() {
 }
 
 export function getAudioEngine() {
-    return _appInstance?.audioEngine;
+    return _appInstance?.kaiPlayer;
+}
+
+export function getKAIPlayer() {
+    return _appInstance?.kaiPlayer;
 }
 
 export function getEditor() {

@@ -2,15 +2,16 @@
 .player-queue-section {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
-  height: 100%;
+  gap: 4px;
+  flex: 1;
+  min-height: 0; /* Important for flex children with overflow */
 }
 
 .player-queue-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--spacing-sm) 0;
+  padding: 4px 0;
 }
 
 .player-queue-header h4 {
@@ -52,7 +53,7 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
+  gap: 4px;
 }
 
 .player-queue-empty {
@@ -77,8 +78,8 @@
 .player-queue-item {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm);
+  gap: 8px;
+  padding: 6px 8px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-tertiary);
   border-radius: var(--radius-sm);
@@ -92,6 +93,20 @@
 .player-queue-item.current {
   background: rgba(76, 175, 80, 0.2);
   border-color: var(--accent-success);
+}
+
+/* Drag and drop states */
+.player-queue-item.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.player-queue-item.drag-over {
+  border-top: 2px solid var(--accent-color, #00ffff);
+}
+
+.player-queue-item[draggable="true"] {
+  cursor: grab;
 }
 
 .queue-item-artist {

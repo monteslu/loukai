@@ -7,6 +7,8 @@ import { EffectsPanel } from '../shared/components/EffectsPanel.jsx';
 import { LibraryPanel } from '../shared/components/LibraryPanel.jsx';
 import { RequestsList } from '../shared/components/RequestsList.jsx';
 import { SongEditor } from '../shared/components/SongEditor.jsx';
+import { SongInfoBar } from '../shared/components/SongInfoBar.jsx';
+import { VisualizationSettings } from '../shared/components/VisualizationSettings.jsx';
 import './App.css';
 
 function LoginScreen({ onLogin, error }) {
@@ -65,6 +67,8 @@ export function App() {
   const [requests, setRequests] = useState([]);
   const [effectsSearch, setEffectsSearch] = useState('');
   const [effectsCategory, setEffectsCategory] = useState('all');
+  const [waveformSettings, setWaveformSettings] = useState(null);
+  const [autotuneSettings, setAutotuneSettings] = useState(null);
 
   // Check authentication on mount
   useEffect(() => {
@@ -132,13 +136,15 @@ export function App() {
         if (!mounted) return;
         console.log('📥 Received queue-update:', data);
         setQueue(data.queue || []);
-        // Update currentSong if provided in queue update (keeps highlighting in sync)
-        if (data.currentSong) {
-          console.log('✅ Updating currentSong from queue-update:', data.currentSong);
-          setCurrentSong(data.currentSong);
-        } else {
-          console.warn('⚠️ queue-update missing currentSong!');
-        }
+        // Note: currentSong is now handled by dedicated 'current-song-update' event
+        // This prevents duplicate updates that could cause wrong highlighting
+      });
+
+      // Subscribe to current song updates (includes isLoading state)
+      bridge.onStateChange('currentSong', (song) => {
+        if (!mounted) return;
+        console.log('🎵 Received current-song-update:', song);
+        setCurrentSong(song);
       });
 
       bridge.onStateChange('mixer', (newMixer) => {
@@ -166,7 +172,9 @@ export function App() {
             artist: data.artist,
             duration: data.duration,
             path: data.path,
-            requester: data.requester
+            requester: data.requester,
+            queueItemId: data.queueItemId,
+            isLoading: data.isLoading
           });
         });
 
@@ -204,6 +212,17 @@ export function App() {
           setRequests(prev => prev.map(r =>
             r.id === request.id ? { ...r, status: 'rejected' } : r
           ));
+        });
+
+        // Listen for settings changes from renderer
+        bridge.socket.on('settings:waveform', (settings) => {
+          console.log('🎨 Received waveform settings update:', settings);
+          if (mounted) setWaveformSettings(settings);
+        });
+
+        bridge.socket.on('settings:autotune', (settings) => {
+          console.log('🎵 Received autotune settings update:', settings);
+          if (mounted) setAutotuneSettings(settings);
         });
       }
     });
@@ -269,6 +288,10 @@ export function App() {
     bridge.clearQueue().catch(err => console.error('Clear queue failed:', err));
   };
 
+  const handleReorderQueue = (songId, newIndex) => {
+    bridge.reorderQueue(songId, newIndex).catch(err => console.error('Reorder queue failed:', err));
+  };
+
   // Mixer handlers using bridge
   const handleGainChange = (bus, gain) => {
     bridge.setMasterGain(bus, gain).catch(err => console.error('Gain change failed:', err));
@@ -321,6 +344,8 @@ export function App() {
         </button>
       </header>
 
+      <SongInfoBar currentSong={currentSong} />
+
       <div className="tab-nav">
         <button
           className={`tab-btn ${currentTab === 'queue' ? 'active' : ''}`}
@@ -367,25 +392,43 @@ export function App() {
 
       <main className="tab-content">
         <div className={`tab-pane ${currentTab === 'queue' ? 'active' : ''}`}>
-          <PlayerControls
-            playback={playback}
-            currentSong={currentSong}
-            currentEffect={effects?.current}
-            onPlay={handlePlay}
-            onPause={handlePause}
-            onRestart={handleRestart}
-            onNext={handleNext}
-            onSeek={handleSeek}
-            onPreviousEffect={handleEffectPrevious}
-            onNextEffect={handleEffectNext}
-          />
-          <QueueList
-            queue={queue}
-            currentSongId={currentSong?.path}
-            onLoad={handlePlayFromQueue}
-            onRemove={handleRemoveFromQueue}
-            onClear={handleClearQueue}
-          />
+          <div className="queue-tab-layout">
+            <div className="player-controls-full-width">
+              <PlayerControls
+                playback={playback}
+                currentSong={currentSong}
+                currentEffect={effects?.current}
+                onPlay={handlePlay}
+                onPause={handlePause}
+                onRestart={handleRestart}
+                onNext={handleNext}
+                onSeek={handleSeek}
+                onPreviousEffect={handleEffectPrevious}
+                onNextEffect={handleEffectNext}
+              />
+            </div>
+            <div className="queue-content-row">
+              <div className="queue-left">
+                <VisualizationSettings
+                  bridge={bridge}
+                  waveformSettings={waveformSettings}
+                  autotuneSettings={autotuneSettings}
+                  onWaveformChange={setWaveformSettings}
+                  onAutotuneChange={setAutotuneSettings}
+                />
+              </div>
+              <div className="queue-right">
+                <QueueList
+                  queue={queue}
+                  currentSongId={currentSong?.queueItemId ?? null}
+                  onLoad={handlePlayFromQueue}
+                  onRemove={handleRemoveFromQueue}
+                  onClear={handleClearQueue}
+                  onReorderQueue={handleReorderQueue}
+                />
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className={`tab-pane ${currentTab === 'library' ? 'active' : ''}`}>

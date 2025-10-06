@@ -121,23 +121,26 @@ export function getQueueInfo(appState) {
 }
 
 /**
- * Reorder queue by moving an item from one position to another
+ * Reorder queue by moving an item to a new position
  * @param {AppState} appState - Application state instance
- * @param {number} fromIndex - Source index
- * @param {number} toIndex - Target index
+ * @param {string|number} songId - ID of song to move
+ * @param {number} newIndex - Target index position
  * @returns {Object} Result with success status and updated queue
  */
-export function reorderQueue(appState, fromIndex, toIndex) {
+export function reorderQueue(appState, songId, newIndex) {
   const queue = appState.state.queue;
 
-  if (fromIndex < 0 || fromIndex >= queue.length) {
+  // Find the song by ID
+  const fromIndex = queue.findIndex(item => item.id === songId);
+
+  if (fromIndex === -1) {
     return {
       success: false,
-      error: 'Invalid source index'
+      error: 'Song not found in queue'
     };
   }
 
-  if (toIndex < 0 || toIndex >= queue.length) {
+  if (newIndex < 0 || newIndex >= queue.length) {
     return {
       success: false,
       error: 'Invalid target index'
@@ -146,7 +149,7 @@ export function reorderQueue(appState, fromIndex, toIndex) {
 
   // Move item
   const [item] = queue.splice(fromIndex, 1);
-  queue.splice(toIndex, 0, item);
+  queue.splice(newIndex, 0, item);
 
   // Trigger queue changed event
   appState.emit('queueChanged', queue);
@@ -165,24 +168,51 @@ export function reorderQueue(appState, fromIndex, toIndex) {
  */
 export async function loadFromQueue(mainApp, itemId) {
   const queue = mainApp.appState.getQueue();
-  const item = queue.find(q => q.id === parseFloat(itemId));
+
+  console.log('🎵 loadFromQueue called with itemId:', itemId, 'type:', typeof itemId);
+  console.log('📋 Current queue:', queue.map(q => ({ id: q.id, path: q.path, title: q.title })));
+
+  // Convert itemId to number for comparison
+  const numericId = typeof itemId === 'number' ? itemId : parseFloat(itemId);
+  console.log('🔢 Numeric ID:', numericId);
+
+  const item = queue.find(q => {
+    const match = q.id === numericId;
+    console.log(`  Comparing queue item ${q.id} === ${numericId}? ${match}`);
+    return match;
+  });
 
   if (!item) {
+    console.error('❌ Song not found in queue for itemId:', itemId);
     return {
       success: false,
       error: 'Song not found in queue'
     };
   }
 
+  console.log('✅ Found item in queue:', item);
+
   try {
-    // Load and play the song using mainApp's loadKaiFile method
-    await mainApp.loadKaiFile(item.path);
+    // Determine file format and call appropriate loader
+    const ext = item.path.toLowerCase();
+    if (ext.endsWith('.kai')) {
+      console.log('🎵 Loading KAI file:', item.path, 'queueItemId:', item.id);
+      await mainApp.loadKaiFile(item.path, item.id);
+    } else if (ext.endsWith('.cdg') || ext.endsWith('.mp3')) {
+      console.log('💿 Loading CDG file:', item.path, 'queueItemId:', item.id);
+      // For CDG, the path might be .mp3 or .cdg, loadCDGFile handles both
+      const basePath = item.path.replace(/\.(mp3|cdg)$/i, '');
+      await mainApp.loadCDGFile(`${basePath}.mp3`, `${basePath}.cdg`, 'cdg-pair', item.id);
+    } else {
+      throw new Error(`Unsupported file format: ${item.path}`);
+    }
 
     return {
       success: true,
       song: item
     };
   } catch (error) {
+    console.error('❌ Error loading song from queue:', error);
     return {
       success: false,
       error: error.message
