@@ -10,6 +10,7 @@ import { useBridge } from '../../shared/context/BridgeContext.jsx';
 import { PlayerControls } from '../../shared/components/PlayerControls.jsx';
 import { MixerPanel } from '../../shared/components/MixerPanel.jsx';
 import { QueueList } from '../../shared/components/QueueList.jsx';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
 import './App.css';
 
 export default function App() {
@@ -100,6 +101,43 @@ export default function App() {
     }
   };
 
+  // Keyboard shortcut callbacks
+  const handleTogglePlayback = async () => {
+    if (playback.isPlaying) {
+      await bridge.pause();
+    } else {
+      await bridge.play();
+    }
+  };
+
+  const handleToggleVocalsGlobal = async () => {
+    await bridge.toggleMute('vocals', 'PA');
+    await bridge.toggleMute('vocals', 'IEM');
+  };
+
+  const handleToggleVocalsPA = async () => {
+    await bridge.toggleMute('vocals', 'PA');
+  };
+
+  const handleToggleStemMute = async (stemIndex) => {
+    // TODO: Implement stem mute/solo in React mixer panel
+    console.warn('toggleStemMute not yet implemented in React mixer', stemIndex);
+  };
+
+  const handleToggleStemSolo = async (stemIndex) => {
+    // TODO: Implement stem mute/solo in React mixer panel
+    console.warn('toggleStemSolo not yet implemented in React mixer', stemIndex);
+  };
+
+  // Set up keyboard shortcuts
+  useKeyboardShortcuts({
+    onTogglePlayback: handleTogglePlayback,
+    onToggleVocalsGlobal: handleToggleVocalsGlobal,
+    onToggleVocalsPA: handleToggleVocalsPA,
+    onToggleStemMute: handleToggleStemMute,
+    onToggleStemSolo: handleToggleStemSolo
+  });
+
   return (
     <div className="react-root-container">
       <div className="react-app-content">
@@ -133,9 +171,9 @@ export default function App() {
           <h3>📋 Queue</h3>
           <QueueList
             queue={queue}
-            currentIndex={queue.findIndex(item =>
-              item.id === currentSong?.id || item.path === currentSong?.path
-            )}
+            currentIndex={currentSong?.queueItemId ? queue.findIndex(item =>
+              item.id === currentSong.queueItemId
+            ) : -1}
             onPlayFromQueue={handlePlayFromQueue}
             onRemoveFromQueue={handleRemoveFromQueue}
             onClearQueue={handleClearQueue}

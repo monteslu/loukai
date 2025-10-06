@@ -1,0 +1,122 @@
+.queue-tab-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1; /* Use flex instead of height: 100% */
+  gap: 0.5rem;
+  padding: 0.5rem;
+  box-sizing: border-box;
+  min-height: 0; /* Important for flex overflow */
+  overflow: hidden; /* Prevent overflow beyond container */
+}
+
+/* Quick search section */
+.quick-search-section {
+  position: relative;
+}
+
+.quick-search-input {
+  width: 100%;
+  padding: 0.5rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--border-color, #333);
+  background: var(--bg-secondary, #1a1a1a);
+  color: var(--text-primary, #fff);
+  border-radius: 4px;
+}
+
+.quick-search-input:focus {
+  outline: none;
+  border-color: var(--accent-color, #00ffff);
+}
+
+/* Search dropdown */
+.quick-search-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  right: 0;
+  max-height: 400px;
+  overflow-y: auto;
+  background: var(--bg-secondary, #1a1a1a);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 4px;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.no-search-message {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-secondary, #999);
+}
+
+.quick-search-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border-color, #333);
+  transition: background-color 0.2s;
+}
+
+.quick-search-item:hover {
+  background: var(--bg-hover, #2a2a2a);
+}
+
+.quick-search-item:last-child {
+  border-bottom: none;
+}
+
+.quick-search-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.quick-search-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  color: var(--text-primary, #fff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quick-search-artist {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #999);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quick-search-add-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border-primary, #333);
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  color: var(--text-primary, #fff);
+}
+
+.quick-search-add-btn:hover {
+  background: var(--btn-bg-hover, #4a4a4a);
+  border-color: var(--accent-color, #00ffff);
+}
+
+.quick-search-add-btn .material-icons {
+  font-size: 20px;
+}
+
+.format-icon {
+  font-size: 1rem;
+  opacity: 0.7;
+}

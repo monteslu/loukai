@@ -1,0 +1,42 @@
+/**
+ * ServerTab Component Styles
+ * Main styles are in styles/main.css
+ * This file only contains component-specific additions
+ */
+
+/* Toast notification message */
+.server-message {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 20px;
+  border-radius: 4px;
+  color: white;
+  font-weight: 500;
+  z-index: 10000;
+  animation: slideIn 0.3s ease;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.server-message.success {
+  background: #28a745;
+}
+
+.server-message.error {
+  background: #dc3545;
+}
+
+.server-message.info {
+  background: #17a2b8;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}

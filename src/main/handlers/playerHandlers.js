@@ -26,4 +26,14 @@ export function registerPlayerHandlers(mainApp) {
   ipcMain.handle(PLAYER_CHANNELS.SEEK, (event, positionSec) => {
     return playerService.seek(mainApp, positionSec);
   });
+
+  // Restart
+  ipcMain.handle(PLAYER_CHANNELS.RESTART, () => {
+    return playerService.restart(mainApp);
+  });
+
+  // Next
+  ipcMain.handle(PLAYER_CHANNELS.NEXT, () => {
+    return playerService.playNext(mainApp);
+  });
 }

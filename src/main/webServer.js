@@ -705,6 +705,17 @@ class WebServer {
             }
         });
 
+        this.app.post('/admin/queue/reorder', async (req, res) => {
+            try {
+                const { songId, newIndex } = req.body;
+                const result = queueService.reorderQueue(this.mainApp.appState, songId, newIndex);
+                res.json(result);
+            } catch (error) {
+                console.error('Error reordering queue:', error);
+                res.status(500).json({ error: 'Failed to reorder queue' });
+            }
+        });
+
         // Effects management endpoints
         this.app.get('/admin/effects', async (req, res) => {
             try {
@@ -1248,11 +1259,30 @@ class WebServer {
         });
 
         // ===== NEW: Preferences Control Endpoints =====
-        this.app.get('/admin/preferences', (req, res) => {
+        this.app.get('/admin/preferences', async (req, res) => {
             try {
                 const result = preferencesService.getPreferences(this.mainApp.appState);
                 if (result.success) {
-                    res.json(result.preferences);
+                    // Also load waveform and autotune preferences from settings
+                    const waveformPreferences = await this.mainApp.settings.get('waveformPreferences', {
+                        enableWaveforms: true,
+                        enableEffects: true,
+                        randomEffectOnSong: false,
+                        showUpcomingLyrics: true,
+                        overlayOpacity: 0.7
+                    });
+
+                    const autoTunePreferences = await this.mainApp.settings.get('autoTunePreferences', {
+                        enabled: false,
+                        strength: 50,
+                        speed: 20
+                    });
+
+                    res.json({
+                        ...result.preferences,
+                        waveformPreferences,
+                        autoTunePreferences
+                    });
                 } else {
                     res.status(500).json({ error: result.error });
                 }
@@ -1321,8 +1351,17 @@ class WebServer {
                 const result = preferencesService.updateAutoTunePreferences(this.mainApp.appState, req.body);
 
                 if (result.success) {
-                    // Send to renderer
-                    await this.mainApp.sendToRendererAndWait('autotune:setSettings', req.body, 2000);
+                    // Save settings and send to renderer (no need to wait for response)
+                    await this.mainApp.settings.set('autoTunePreferences', req.body);
+
+                    // Send to renderer window to apply in real-time
+                    if (this.mainApp.mainWindow && !this.mainApp.mainWindow.isDestroyed()) {
+                        this.mainApp.mainWindow.webContents.send('autotune:settingsChanged', req.body);
+                    }
+
+                    // Broadcast to all web admin clients
+                    this.io.to('admin-clients').emit('settings:autotune', req.body);
+
                     res.json(result);
                 } else {
                     res.status(500).json(result);
@@ -1360,8 +1399,17 @@ class WebServer {
                 const result = preferencesService.updateEffectsPreferences(this.mainApp.appState, req.body);
 
                 if (result.success) {
-                    // Send to renderer
-                    await this.mainApp.sendToRendererAndWait('effects:updateSettings', req.body, 2000);
+                    // Save settings and send to renderer (no need to wait for response)
+                    await this.mainApp.settings.set('waveformPreferences', req.body);
+
+                    // Send to renderer window to apply in real-time
+                    if (this.mainApp.mainWindow && !this.mainApp.mainWindow.isDestroyed()) {
+                        this.mainApp.mainWindow.webContents.send('waveform:settingsChanged', req.body);
+                    }
+
+                    // Broadcast to all web admin clients
+                    this.io.to('admin-clients').emit('settings:waveform', req.body);
+
                     res.json(result);
                 } else {
                     res.status(500).json(result);
@@ -1402,6 +1450,11 @@ class WebServer {
                 queue,
                 currentSong
             });
+        });
+
+        // Subscribe to current song changes and broadcast to admin clients (includes isLoading state)
+        this.mainApp.appState.on('currentSongChanged', (currentSong) => {
+            this.io.to('admin-clients').emit('current-song-update', currentSong);
         });
 
         // Subscribe to playback state changes and broadcast to admin clients
@@ -1727,6 +1780,8 @@ class WebServer {
             const duration = songData.duration || songData.metadata?.duration || 0;
             const path = songData.path || songData.originalFilePath || null;
             const requester = songData.requester || null;
+            const queueItemId = songData.queueItemId || null;
+            const isLoading = songData.isLoading || false;
 
             this.io.emit('song-loaded', {
                 songId: `${title} - ${artist}`,
@@ -1734,7 +1789,9 @@ class WebServer {
                 artist,
                 duration,
                 path,
-                requester
+                requester,
+                queueItemId,
+                isLoading
             });
         }
     }

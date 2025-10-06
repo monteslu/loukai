@@ -41,6 +41,7 @@ class KaraokeRenderer {
         this.micDataArray = null;
         this.waveformData = new Uint8Array(1440).fill(128); // 6 seconds at 240Hz (1440 pixels) - mic rolling buffer (128 = silence)
         this.micGainNode = null; // For routing mic to speakers
+        this.inputDevice = 'default'; // Stored input device ID from preferences
         
         // Waveform preferences (will be set from main app)
         this.waveformPreferences = {
@@ -979,18 +980,15 @@ class KaraokeRenderer {
     
     async startMicrophoneCapture() {
         if (!this.waveformPreferences.enableMic) return;
-        
+
         try {
-            // Get the selected input device
-            const inputSelect = document.getElementById('inputDeviceSelect');
-            const selectedDevice = inputSelect.options[inputSelect.selectedIndex];
-            
+            // Use stored input device from preferences
             const constraints = {
-                audio: selectedDevice?.dataset.deviceId ? {
-                    deviceId: { exact: selectedDevice.dataset.deviceId }
+                audio: this.inputDevice ? {
+                    deviceId: { exact: this.inputDevice }
                 } : true
             };
-            
+
             this.micStream = await navigator.mediaDevices.getUserMedia(constraints);
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             this.analyser = this.audioContext.createAnalyser();
@@ -2451,18 +2449,16 @@ class KaraokeRenderer {
     
     async ensureInputDeviceSelection() {
         try {
-            // Get saved input device preference from settings API
+            // Load saved input device preference from settings API
             if (window.kaiAPI.settings) {
                 const prefs = await window.kaiAPI.settings.get('devicePreferences');
-                if (prefs && prefs.input) {
-                    const inputSelect = document.getElementById('inputDeviceSelect');
-                    if (inputSelect && prefs.input.id !== inputSelect.value) {
-                        inputSelect.value = prefs.input.id;
-                    }
+                if (prefs && prefs.input && prefs.input.id) {
+                    this.inputDevice = prefs.input.id;
+                    console.log('🎤 Loaded input device from preferences:', this.inputDevice);
                 }
             }
         } catch (error) {
-            console.warn('Failed to ensure input device selection:', error);
+            console.warn('Failed to load input device preference:', error);
         }
     }
     

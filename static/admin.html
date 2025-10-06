@@ -1577,7 +1577,15 @@
             }
 
             const html = queueData.queue.map((item, index) => {
-                const isCurrent = queueData.currentSong && item.path === queueData.currentSong.path;
+                // Match by queueItemId first (for duplicate songs), then fall back to path
+                let isCurrent = false;
+                if (queueData.currentSong) {
+                    if (queueData.currentSong.queueItemId && item.id === queueData.currentSong.queueItemId) {
+                        isCurrent = true;
+                    } else if (item.path === queueData.currentSong.path) {
+                        isCurrent = true;
+                    }
+                }
                 const requesterText = item.requester ? ` • Singer: ${item.requester}` : '';
 
                 return `

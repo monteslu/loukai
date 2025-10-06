@@ -1,0 +1,49 @@
+/* Tab navigation styles are in main.css */
+/* This file exists for component structure consistency */
+
+.tab-nav {
+  display: flex;
+  background: #2a2a2a;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+.tab-btn {
+  position: relative;
+  padding: 12px 24px;
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tab-btn:hover {
+  color: #ccc;
+  background: #333;
+}
+
+.tab-btn.active {
+  color: #007acc;
+  border-bottom-color: #007acc;
+  background: #1a1a1a;
+}
+
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: #dc2626;
+  color: white;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}

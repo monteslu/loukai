@@ -26,6 +26,7 @@ const api = {
   mixer: {
     setMasterGain: (bus, gainDb) => ipcRenderer.invoke('mixer:setMasterGain', bus, gainDb),
     toggleMasterMute: (bus) => ipcRenderer.invoke('mixer:toggleMasterMute', bus),
+    toggleMute: (stemId, bus) => ipcRenderer.invoke('mixer:toggleMute', stemId, bus),
 
     onStateChange: (callback) => ipcRenderer.on('mixer:state', callback),
     removeStateListener: (callback) => ipcRenderer.removeListener('mixer:state', callback),
@@ -41,6 +42,7 @@ const api = {
     pause: () => ipcRenderer.invoke('player:pause'),
     seek: (positionSec) => ipcRenderer.invoke('player:seek', positionSec),
     restart: () => ipcRenderer.invoke('player:restart'),
+    next: () => ipcRenderer.invoke('player:next'),
 
     onPlaybackState: (callback) => ipcRenderer.on('playback:state', callback),
     removePlaybackListener: (callback) => ipcRenderer.removeListener('playback:state', callback)
@@ -101,7 +103,9 @@ const api = {
     getSongRequests: () => ipcRenderer.invoke('webServer:getSongRequests'),
     approveRequest: (requestId) => ipcRenderer.invoke('webServer:approveRequest', requestId),
     rejectRequest: (requestId) => ipcRenderer.invoke('webServer:rejectRequest', requestId),
-    refreshCache: () => ipcRenderer.invoke('webServer:refreshCache')
+    refreshCache: () => ipcRenderer.invoke('webServer:refreshCache'),
+    setAdminPassword: (password) => ipcRenderer.invoke('webServer:setAdminPassword', password),
+    clearAllRequests: () => ipcRenderer.invoke('webServer:clearAllRequests')
   },
 
   settings: {
@@ -118,6 +122,8 @@ const api = {
     removeSong: (itemId) => ipcRenderer.invoke('queue:removeSong', itemId),
     get: () => ipcRenderer.invoke('queue:get'),
     clear: () => ipcRenderer.invoke('queue:clear'),
+    load: (itemId) => ipcRenderer.invoke('queue:load', itemId),
+    reorderQueue: (songId, newIndex) => ipcRenderer.invoke('queue:reorderQueue', songId, newIndex),
 
     onUpdated: (callback) => ipcRenderer.on('queue:updated', callback),
     removeUpdatedListener: (callback) => ipcRenderer.removeListener('queue:updated', callback)

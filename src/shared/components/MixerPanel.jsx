@@ -8,16 +8,16 @@
 import './MixerPanel.css';
 
 export function MixerPanel({
-  mixer = {},         // Support both 'mixer' (web) and 'mixerState' (renderer)
-  mixerState = {},
+  mixer,              // Support both 'mixer' (web) and 'mixerState' (renderer)
+  mixerState,
   onSetMasterGain,
   onToggleMasterMute,
   onGainChange,      // Alias for web compatibility
   onMuteToggle,      // Alias for web compatibility
   className = ''
 }) {
-  // Support both prop names
-  const state = mixer || mixerState || {};
+  // Support both prop names - prefer mixerState if provided, then mixer, then empty object
+  const state = mixerState || mixer || {};
   const handleGainChange = onSetMasterGain || onGainChange;
   const handleMuteToggle = onToggleMasterMute || onMuteToggle;
   const buses = [

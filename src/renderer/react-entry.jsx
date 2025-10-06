@@ -13,6 +13,14 @@ import { LibraryPanel } from '../shared/components/LibraryPanel.jsx';
 import { EffectsPanelWrapper } from './components/EffectsPanelWrapper.jsx';
 import { RequestsListWrapper } from './components/RequestsListWrapper.jsx';
 import { SongEditor } from '../shared/components/SongEditor.jsx';
+import { MixerTab } from './components/MixerTab.jsx';
+import { QueueTab } from './components/QueueTab.jsx';
+import { SongInfoBarWrapper } from './components/SongInfoBarWrapper.jsx';
+import { TransportControlsWrapper } from './components/TransportControlsWrapper.jsx';
+import { StatusBar } from './components/StatusBar.jsx';
+import { TabNavigation } from './components/TabNavigation.jsx';
+import { ServerTab } from './components/ServerTab.jsx';
+import { VisualizationSettings } from '../shared/components/VisualizationSettings.jsx';
 
 console.log('🚀 Initializing React in Electron renderer...');
 
@@ -69,6 +77,106 @@ bridge.connect().then(() => {
       </React.StrictMode>
     );
     console.log('✅ SongEditor mounted in editor tab');
+  }
+
+  // Mount React Queue in player sidebar (replaces vanilla queue.js)
+  const queueRoot = document.getElementById('react-queue-root');
+  if (queueRoot) {
+    const queuePanelRoot = ReactDOM.createRoot(queueRoot);
+    queuePanelRoot.render(
+      <React.StrictMode>
+        <QueueTab bridge={bridge} />
+      </React.StrictMode>
+    );
+    console.log('✅ QueueTab mounted in player sidebar');
+  }
+
+  // Mount React Mixer Tab in mixer tab (replaces vanilla mixer.js)
+  const mixerTab = document.getElementById('mixer-tab');
+  if (mixerTab) {
+    // Clear vanilla HTML
+    mixerTab.innerHTML = '<div id="react-mixer-root"></div>';
+    const mixerRoot = ReactDOM.createRoot(document.getElementById('react-mixer-root'));
+    mixerRoot.render(
+      <React.StrictMode>
+        <MixerTab bridge={bridge} />
+      </React.StrictMode>
+    );
+    console.log('✅ MixerTab mounted in mixer tab');
+  }
+
+  // Mount React Server Tab in server tab (replaces vanilla server.js)
+  const serverTab = document.getElementById('server-tab');
+  if (serverTab) {
+    // Clear vanilla HTML
+    serverTab.innerHTML = '<div id="react-server-root"></div>';
+    const serverRoot = ReactDOM.createRoot(document.getElementById('react-server-root'));
+    serverRoot.render(
+      <React.StrictMode>
+        <ServerTab bridge={bridge} />
+      </React.StrictMode>
+    );
+    console.log('✅ ServerTab mounted in server tab');
+  }
+
+  // Mount React SongInfoBar (replaces vanilla song-info-bar)
+  const songInfoBar = document.getElementById('react-song-info-root');
+  if (songInfoBar) {
+    const songInfoRoot = ReactDOM.createRoot(songInfoBar);
+    songInfoRoot.render(
+      <React.StrictMode>
+        <SongInfoBarWrapper bridge={bridge} />
+      </React.StrictMode>
+    );
+    console.log('✅ SongInfoBar mounted');
+  }
+
+  // Mount React TransportControls (replaces vanilla playControls)
+  const transportRoot = document.getElementById('react-transport-root');
+  if (transportRoot) {
+    const transportControlsRoot = ReactDOM.createRoot(transportRoot);
+    transportControlsRoot.render(
+      <React.StrictMode>
+        <TransportControlsWrapper bridge={bridge} />
+      </React.StrictMode>
+    );
+    console.log('✅ TransportControls mounted');
+  }
+
+  // Mount React TabNavigation (replaces vanilla tab navigation)
+  const tabNavRoot = document.getElementById('react-tab-nav-root');
+  if (tabNavRoot) {
+    const tabNavigationRoot = ReactDOM.createRoot(tabNavRoot);
+    tabNavigationRoot.render(
+      <React.StrictMode>
+        <TabNavigation requestsCount={0} />
+      </React.StrictMode>
+    );
+    console.log('✅ TabNavigation mounted');
+  }
+
+  // Mount React StatusBar (replaces vanilla status bar)
+  const statusBarRoot = document.getElementById('react-status-bar-root');
+  if (statusBarRoot) {
+    const statusRoot = ReactDOM.createRoot(statusBarRoot);
+    statusRoot.render(
+      <React.StrictMode>
+        <StatusBar bridge={bridge} />
+      </React.StrictMode>
+    );
+    console.log('✅ StatusBar mounted');
+  }
+
+  // Mount React VisualizationSettings (replaces vanilla sidebar)
+  const visualizationRoot = document.getElementById('react-visualization-root');
+  if (visualizationRoot) {
+    const vizRoot = ReactDOM.createRoot(visualizationRoot);
+    vizRoot.render(
+      <React.StrictMode>
+        <VisualizationSettings bridge={bridge} />
+      </React.StrictMode>
+    );
+    console.log('✅ VisualizationSettings mounted');
   }
 
   console.log('✅ React mounted successfully!');

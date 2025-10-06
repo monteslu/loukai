@@ -112,7 +112,10 @@ class AppState extends StateManager {
       title: songData.title,
       artist: songData.artist,
       duration: songData.duration || 0,
-      requester: songData.requester || 'KJ'
+      requester: songData.requester || 'KJ',
+      isLoading: songData.isLoading || false,  // Preserve loading state
+      format: songData.format,  // Preserve format (kai/cdg)
+      queueItemId: songData.queueItemId || null  // Track which queue item is loaded (for duplicate songs)
     } : null;
 
     // Update currentSong domain

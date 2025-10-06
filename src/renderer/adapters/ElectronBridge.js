@@ -19,7 +19,18 @@ export class ElectronBridge extends BridgeInterface {
     super();
     this.api = window.kaiAPI;
     this.listeners = new Map(); // Track listeners for cleanup
+    this._playerController = null;
+
+    // Listen for player initialization from main.js
+    window.addEventListener('player:initialized', (e) => {
+      this._playerController = e.detail.player;
+    });
+
     _instance = this;
+  }
+
+  get playerController() {
+    return this._playerController;
   }
 
   static getInstance() {
@@ -71,21 +82,17 @@ export class ElectronBridge extends BridgeInterface {
     return await this.api.queue.clear();
   }
 
-  async reorderQueue(fromIndex, toIndex) {
-    // TODO: Not implemented in preload API yet
-    console.warn('reorderQueue not implemented in preload API');
-    return { success: false };
+  async reorderQueue(songId, newIndex) {
+    return await this.api.queue.reorderQueue(songId, newIndex);
   }
 
   async playNext() {
-    // TODO: Not implemented in preload API yet
-    console.warn('playNext not implemented in preload API');
-    return { success: false };
+    return await this.api.player.next();
   }
 
   async playFromQueue(songId) {
-    // Load song by path (songId is the file path)
-    return await this.api.file.loadKaiFromPath(songId);
+    // Load song from queue by ID (uses queue service)
+    return await this.api.queue.load(songId);
   }
 
   // ===== Mixer Controls =====
@@ -107,6 +114,105 @@ export class ElectronBridge extends BridgeInterface {
     // This method might not exist on kaiAPI yet - use toggleMasterMute for now
     // TODO: Add to preload.js if needed
     return await this.api.mixer.toggleMasterMute(bus);
+  }
+
+  async toggleMute(stemId, bus) {
+    return await this.api.mixer.toggleMute(stemId, bus);
+  }
+
+  // ===== Audio Device Management =====
+
+  async getAudioDevices() {
+    // Enumerate devices directly in renderer (main process doesn't have access to navigator.mediaDevices)
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+        console.warn('MediaDevices API not available');
+        return [];
+      }
+
+      // Request permission first to get device labels
+      await navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+          stream.getTracks().forEach(track => track.stop());
+        })
+        .catch(err => {
+          console.warn('Microphone permission denied:', err);
+        });
+
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioDevices = [];
+
+      devices.forEach((device, index) => {
+        if (device.kind === 'audiooutput' || device.kind === 'audioinput') {
+          audioDevices.push({
+            id: device.deviceId,
+            deviceId: device.deviceId,
+            label: device.label || `${device.kind === 'audiooutput' ? 'Speaker' : 'Microphone'} ${index + 1}`,
+            name: device.label || `${device.kind === 'audiooutput' ? 'Speaker' : 'Microphone'} ${index + 1}`,
+            maxInputChannels: device.kind === 'audioinput' ? 2 : 0,
+            maxOutputChannels: device.kind === 'audiooutput' ? 2 : 0,
+            defaultSampleRate: 48000,
+            hostApi: 'Web Audio API',
+            deviceKind: device.kind,
+            groupId: device.groupId
+          });
+        }
+      });
+
+      return audioDevices;
+    } catch (error) {
+      console.error('Failed to enumerate audio devices:', error);
+      return [];
+    }
+  }
+
+  async setAudioDevice(deviceType, deviceId) {
+    return await this.api.audio.setDevice(deviceType, deviceId);
+  }
+
+  async getDevicePreferences() {
+    return await this.api.settings.get('devicePreferences', {});
+  }
+
+  async saveDevicePreferences(preferences) {
+    return await this.api.settings.set('devicePreferences', preferences);
+  }
+
+  async getAudioSettings() {
+    const iemMonoVocals = await this.api.settings.get('iemMonoVocals', true);
+    const micToSpeakers = await this.api.settings.get('micToSpeakers', true);
+    const enableMic = await this.api.settings.get('enableMic', true);
+    return { iemMonoVocals, micToSpeakers, enableMic };
+  }
+
+  async saveAudioSettings(settings) {
+    if (settings.iemMonoVocals !== undefined) {
+      await this.api.settings.set('iemMonoVocals', settings.iemMonoVocals);
+
+      // Apply to KAIPlayer audio subsystem
+      const playerController = this.playerController;
+      if (playerController && playerController.kaiPlayer) {
+        playerController.kaiPlayer.setIEMMonoVocals(settings.iemMonoVocals);
+      }
+    }
+    if (settings.micToSpeakers !== undefined) {
+      await this.api.settings.set('micToSpeakers', settings.micToSpeakers);
+
+      // Apply to KAIPlayer audio subsystem (not karaokeRenderer)
+      const playerController = this.playerController;
+      if (playerController && playerController.kaiPlayer) {
+        playerController.kaiPlayer.setMicToSpeakers(settings.micToSpeakers);
+      }
+    }
+    if (settings.enableMic !== undefined) {
+      await this.api.settings.set('enableMic', settings.enableMic);
+
+      // Apply to KAIPlayer audio subsystem (not karaokeRenderer)
+      const playerController = this.playerController;
+      if (playerController && playerController.kaiPlayer) {
+        playerController.kaiPlayer.setEnableMic(settings.enableMic);
+      }
+    }
   }
 
   // ===== Effects Controls =====
@@ -290,6 +396,130 @@ export class ElectronBridge extends BridgeInterface {
     return await this.api.preferences.setEffects(prefs);
   }
 
+  async getWaveformPreferences() {
+    return await this.api.settings.get('waveformPreferences', {
+      enableWaveforms: true,
+      enableEffects: true,
+      randomEffectOnSong: false,
+      showUpcomingLyrics: true,
+      overlayOpacity: 0.7
+    });
+  }
+
+  async saveWaveformPreferences(prefs) {
+    // Extract only serializable values (avoid React synthetic objects)
+    const cleanPrefs = {
+      enableWaveforms: prefs.enableWaveforms,
+      enableEffects: prefs.enableEffects,
+      randomEffectOnSong: prefs.randomEffectOnSong,
+      showUpcomingLyrics: prefs.showUpcomingLyrics,
+      overlayOpacity: prefs.overlayOpacity
+    };
+
+    const result = await this.api.settings.set('waveformPreferences', cleanPrefs);
+
+    // Use the player reference from event (no globals)
+    const playerController = this.playerController;
+
+    if (!playerController) {
+      console.warn('⚠️ Player not initialized yet');
+      return result;
+    }
+
+    const currentFormat = playerController.currentFormat;
+    const karaokeRenderer = playerController.karaokeRenderer;
+    const cdgPlayer = playerController.cdgPlayer;
+
+    console.log('🔧 Applying settings, format:', currentFormat, 'prefs:', cleanPrefs);
+
+    if (currentFormat === 'kai' && karaokeRenderer) {
+      console.log('🎵 Applying to KAI player');
+      if (cleanPrefs.enableWaveforms !== undefined) {
+        karaokeRenderer.setWaveformsEnabled(cleanPrefs.enableWaveforms);
+      }
+      if (cleanPrefs.enableEffects !== undefined) {
+        karaokeRenderer.setEffectsEnabled(cleanPrefs.enableEffects);
+      }
+      if (cleanPrefs.showUpcomingLyrics !== undefined) {
+        karaokeRenderer.setShowUpcomingLyrics(cleanPrefs.showUpcomingLyrics);
+      }
+      if (cleanPrefs.overlayOpacity !== undefined) {
+        karaokeRenderer.waveformPreferences.overlayOpacity = cleanPrefs.overlayOpacity;
+      }
+    } else if (currentFormat === 'cdg' && cdgPlayer) {
+      console.log('💿 Applying to CDG player');
+      if (cleanPrefs.enableEffects !== undefined) {
+        cdgPlayer.setEffectsEnabled(cleanPrefs.enableEffects);
+      }
+      if (cleanPrefs.overlayOpacity !== undefined) {
+        cdgPlayer.setOverlayOpacity(cleanPrefs.overlayOpacity);
+      }
+    } else {
+      console.warn('⚠️ No active player format or player not ready');
+    }
+
+    return result;
+  }
+
+  async getAutotunePreferences() {
+    return await this.api.settings.get('autoTunePreferences', {
+      enabled: false,
+      strength: 50,
+      speed: 20
+    });
+  }
+
+  async saveAutotunePreferences(prefs) {
+    // Extract only serializable values (avoid React synthetic objects)
+    const cleanPrefs = {
+      enabled: prefs.enabled,
+      strength: prefs.strength,
+      speed: prefs.speed
+    };
+
+    const result = await this.api.settings.set('autoTunePreferences', cleanPrefs);
+
+    // Apply settings to audio engine in real-time
+    if (cleanPrefs.enabled !== undefined) {
+      await this.setAutotuneEnabled(cleanPrefs.enabled);
+    }
+    if (cleanPrefs.strength !== undefined || cleanPrefs.speed !== undefined) {
+      await this.setAutotuneSettings(cleanPrefs);
+    }
+
+    return result;
+  }
+
+  async setAutotuneEnabled(enabled) {
+    return await this.api.autotune.setEnabled(enabled);
+  }
+
+  async setAutotuneSettings(settings) {
+    return await this.api.autotune.setSettings(settings);
+  }
+
+  // Subscribe to settings changes from external sources (e.g., web admin)
+  onSettingsChanged(type, callback) {
+    const eventMap = {
+      'waveform': 'waveform:settingsChanged',
+      'autotune': 'autotune:settingsChanged'
+    };
+
+    const eventName = eventMap[type];
+    if (!eventName) return () => {};
+
+    // Wrap callback to handle IPC event signature (event, settings)
+    const wrappedCallback = (event, settings) => {
+      callback(settings);
+    };
+
+    this.api.events.on(eventName, wrappedCallback);
+
+    return () => {
+      this.api.events.off?.(eventName, wrappedCallback);
+    };
+  }
+
   // ===== Song Requests =====
 
   async getRequests() {
@@ -302,6 +532,52 @@ export class ElectronBridge extends BridgeInterface {
 
   async rejectRequest(requestId) {
     return await this.api.webServer.rejectRequest(requestId);
+  }
+
+  // ===== Server Management =====
+
+  async getServerUrl() {
+    return await this.api.webServer.getUrl();
+  }
+
+  async getServerSettings() {
+    return await this.api.webServer.getSettings();
+  }
+
+  async updateServerSettings(settings) {
+    return await this.api.webServer.updateSettings(settings);
+  }
+
+  async getAdminPasswordStatus() {
+    return await this.api.settings.get('server.adminPasswordHash');
+  }
+
+  async setAdminPassword(password) {
+    return await this.api.webServer.setAdminPassword(password);
+  }
+
+  async clearAllRequests() {
+    return await this.api.webServer.clearAllRequests();
+  }
+
+  // ===== System =====
+
+  async openExternal(url) {
+    return await this.api.shell.openExternal(url);
+  }
+
+  // ===== Audio Monitoring =====
+
+  onLatencyUpdate(callback) {
+    const handler = (event, latencyMs) => callback(latencyMs);
+    this.api.audio.onLatencyUpdate(handler);
+    return () => this.api.audio.removeLatencyListener?.(handler);
+  }
+
+  onXRunUpdate(callback) {
+    const handler = (event, count) => callback(count);
+    this.api.audio.onXRun(handler);
+    return () => this.api.audio.removeXRunListener?.(handler);
   }
 
   // ===== State Subscriptions =====

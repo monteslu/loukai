@@ -83,15 +83,15 @@ export class WebBridge extends BridgeInterface {
     return await this._fetch('/queue/clear', { method: 'POST' });
   }
 
-  async reorderQueue(fromIndex, toIndex) {
+  async reorderQueue(songId, newIndex) {
     return await this._fetch('/queue/reorder', {
       method: 'POST',
-      body: JSON.stringify({ fromIndex, toIndex })
+      body: JSON.stringify({ songId, newIndex })
     });
   }
 
   async playNext() {
-    return await this._fetch('/queue/next', { method: 'POST' });
+    return await this._fetch('/player/next', { method: 'POST' });
   }
 
   async playFromQueue(songId) {
@@ -254,6 +254,43 @@ export class WebBridge extends BridgeInterface {
     });
   }
 
+  // Waveform/Visualization Settings (for VisualizationSettings component)
+  async getWaveformPreferences() {
+    const prefs = await this.getPreferences();
+    return prefs.waveformPreferences || {
+      enableWaveforms: true,
+      enableEffects: true,
+      randomEffectOnSong: false,
+      showUpcomingLyrics: true,
+      overlayOpacity: 0.7
+    };
+  }
+
+  async saveWaveformPreferences(prefs) {
+    return await this.updateEffectsPreferences(prefs);
+  }
+
+  async getAutotunePreferences() {
+    const prefs = await this.getPreferences();
+    return prefs.autoTunePreferences || {
+      enabled: false,
+      strength: 50,
+      speed: 20
+    };
+  }
+
+  async saveAutotunePreferences(prefs) {
+    return await this.updateAutoTunePreferences(prefs);
+  }
+
+  async setAutotuneEnabled(enabled) {
+    return await this.updateAutoTunePreferences({ enabled });
+  }
+
+  async setAutotuneSettings(settings) {
+    return await this.updateAutoTunePreferences(settings);
+  }
+
   // ===== Song Requests =====
 
   async getRequests() {
@@ -284,7 +321,8 @@ export class WebBridge extends BridgeInterface {
       'playback': 'playback-state-update',
       'effects': 'effects-update',
       'preferences': 'preferences-update',
-      'requests': 'new-song-request'
+      'requests': 'new-song-request',
+      'currentSong': 'current-song-update'
     };
 
     const event = eventMap[domain];
@@ -315,7 +353,8 @@ export class WebBridge extends BridgeInterface {
       'playback': 'playback-state-update',
       'effects': 'effects-update',
       'preferences': 'preferences-update',
-      'requests': 'new-song-request'
+      'requests': 'new-song-request',
+      'currentSong': 'current-song-update'
     };
 
     const event = eventMap[domain];

@@ -1,5 +1,7 @@
-class RendererAudioEngine {
+class KAIPlayer extends PlayerInterface {
     constructor() {
+        super(); // Call PlayerInterface constructor
+
         // Dual audio contexts for PA and IEM outputs
         this.audioContexts = {
             PA: null,
@@ -12,7 +14,10 @@ class RendererAudioEngine {
             IEM: 'default'
         };
 
-        this.isPlaying = false;
+        // Input device ID for microphone
+        this.inputDevice = 'default';
+
+        // Note: this.isPlaying is inherited from PlayerInterface
         this.currentPosition = 0;
         this.songData = null;
         this.audioBuffers = new Map();
@@ -34,8 +39,7 @@ class RendererAudioEngine {
         this.startTime = 0;
         this.pauseTime = 0;
 
-        // Event callbacks
-        this.onSongEndedCallback = null;
+        // Note: this.onSongEndedCallback is inherited from PlayerInterface
 
         // Microphone input
         this.microphoneStream = null;
@@ -67,11 +71,13 @@ class RendererAudioEngine {
                 enabled: false,
                 strength: 50,
                 speed: 5
-            }
+            },
+            // Mic routing settings
+            micToSpeakers: true,
+            enableMic: true
         };
 
-        // State reporting to main process
-        this.stateReportInterval = null;
+        // Note: this.stateReportInterval is inherited from PlayerInterface
     }
 
     async initialize() {
@@ -108,6 +114,10 @@ class RendererAudioEngine {
             
             // Load auto-tune worklet
             await this.loadAutoTuneWorklet();
+
+            // Load mic settings
+            await this.loadMicSettings();
+
             return true;
         } catch (error) {
             console.error('Failed to initialize dual audio contexts:', error);
@@ -129,6 +139,10 @@ class RendererAudioEngine {
                 if (devicePrefs?.IEM?.id) {
                     this.outputDevices.IEM = devicePrefs.IEM.id;
                     console.log('📂 Set IEM device:', devicePrefs.IEM.id);
+                }
+                if (devicePrefs?.input?.id) {
+                    this.inputDevice = devicePrefs.input.id;
+                    console.log('📂 Set input device:', devicePrefs.input.id);
                 }
             }
 
@@ -171,7 +185,8 @@ class RendererAudioEngine {
             // Final summary of loaded devices
             console.log('🔊 Final device configuration:', {
                 PA: this.outputDevices.PA,
-                IEM: this.outputDevices.IEM
+                IEM: this.outputDevices.IEM,
+                input: this.inputDevice
             });
         } catch (error) {
             console.error('Failed to load device preferences:', error);
@@ -244,7 +259,10 @@ class RendererAudioEngine {
     async loadSong(songData) {
         this.songData = songData;
 
-        // Reset all timing state for new song
+        // Reset position using base class method
+        this.resetPosition();
+
+        // Reset engine-specific timing state
         this.currentPosition = 0;
         this.startTime = 0;
         this.pauseTime = 0;
@@ -276,21 +294,9 @@ class RendererAudioEngine {
     }
 
     /**
-     * Report state changes to main process
+     * Note: reportStateChange(), startStateReporting(), and stopStateReporting()
+     * are inherited from PlayerInterface base class
      */
-    reportStateChange() {
-        if (window.kaiAPI?.renderer) {
-            const state = {
-                isPlaying: this.isPlaying,
-                position: this.getCurrentPosition(),
-                duration: this.getDuration()
-            };
-            console.log('🎵 AudioEngine reporting state:', state);
-            window.kaiAPI.renderer.updatePlaybackState(state);
-        } else {
-            console.warn('⚠️ kaiAPI.renderer not available for reportStateChange');
-        }
-    }
 
     reportSongLoaded() {
         if (window.kaiAPI?.renderer && this.songData) {
@@ -299,7 +305,9 @@ class RendererAudioEngine {
                 path: this.songData.originalFilePath || this.songData.filePath,
                 title: this.songData.metadata?.title || 'Unknown',
                 artist: this.songData.metadata?.artist || 'Unknown',
-                duration: duration
+                duration: duration,
+                isLoading: false,  // Song is fully loaded
+                format: 'kai'
             });
 
             // Report initial mixer state
@@ -310,26 +318,6 @@ class RendererAudioEngine {
     reportMixerState() {
         if (window.kaiAPI?.renderer && this.mixerState) {
             window.kaiAPI.renderer.updateMixerState(this.mixerState);
-        }
-    }
-
-    startStateReporting() {
-        this.stopStateReporting();
-
-        console.log('🎯 startStateReporting() called, setting up interval');
-        // Report state every 100ms (10x/sec)
-        this.stateReportInterval = setInterval(() => {
-            console.log('⏰ Interval tick, isPlaying:', this.isPlaying);
-            if (this.isPlaying) {
-                this.reportStateChange();
-            }
-        }, 100);
-    }
-
-    stopStateReporting() {
-        if (this.stateReportInterval) {
-            clearInterval(this.stateReportInterval);
-            this.stateReportInterval = null;
         }
     }
 
@@ -742,10 +730,15 @@ class RendererAudioEngine {
     
     async startMicrophoneInput(deviceId = 'default') {
         try {
-            
+            // Don't start mic if disabled
+            if (!this.mixerState.enableMic) {
+                console.log('🎤 Microphone is disabled, not starting');
+                return;
+            }
+
             // Stop existing microphone if running
             this.stopMicrophoneInput();
-            
+
             const constraints = {
                 audio: {
                     deviceId: deviceId !== 'default' ? { exact: deviceId } : undefined,
@@ -756,29 +749,33 @@ class RendererAudioEngine {
                     autoGainControl: false
                 }
             };
-            
+
             // Get microphone stream
             this.microphoneStream = await navigator.mediaDevices.getUserMedia(constraints);
-            
+
             // Create audio source from microphone
             this.microphoneSource = this.audioContexts.PA.createMediaStreamSource(this.microphoneStream);
-            
+
             // Create gain node for microphone volume control
             this.microphoneGain = this.audioContexts.PA.createGain();
             this.microphoneGain.gain.value = 1.0; // Full volume, can be adjusted
-            
-            // Connect microphone chain
+
+            // Connect microphone to gain node
             this.microphoneSource.connect(this.microphoneGain);
-            
-            // If auto-tune is available and enabled, route through it
-            if (this.autoTuneWorkletLoaded && this.mixerState.autotuneSettings.enabled) {
-                await this.enableAutoTune();
+
+            // Only route to speakers if micToSpeakers is enabled
+            if (this.mixerState.micToSpeakers) {
+                // If auto-tune is available and enabled, route through it
+                if (this.autoTuneWorkletLoaded && this.mixerState.autotuneSettings.enabled) {
+                    await this.enableAutoTune();
+                } else {
+                    // Direct connection to PA output
+                    this.microphoneGain.connect(this.outputNodes.PA.masterGain);
+                }
             } else {
-                // Direct connection to PA output
-                this.microphoneGain.connect(this.outputNodes.PA.masterGain);
+                console.log('🎤 Mic input active but not routed to speakers');
             }
-            
-            
+
         } catch (error) {
             console.error('Failed to start microphone input:', error);
             this.stopMicrophoneInput();
@@ -921,6 +918,58 @@ class RendererAudioEngine {
         return true;
     }
 
+    async loadMicSettings() {
+        try {
+            if (window.kaiAPI.settings) {
+                const micToSpeakers = await window.kaiAPI.settings.get('micToSpeakers', true);
+                const enableMic = await window.kaiAPI.settings.get('enableMic', true);
+                const iemMonoVocals = await window.kaiAPI.settings.get('iemMonoVocals', true);
+
+                this.mixerState.micToSpeakers = micToSpeakers;
+                this.mixerState.enableMic = enableMic;
+                this.mixerState.iemMonoVocals = iemMonoVocals;
+
+                console.log('🎤 Loaded mic settings:', { micToSpeakers, enableMic, iemMonoVocals });
+            }
+        } catch (error) {
+            console.error('Failed to load mic settings:', error);
+        }
+    }
+
+    setMicToSpeakers(enabled) {
+        this.mixerState.micToSpeakers = enabled;
+        console.log('🎤 Mic to speakers:', enabled);
+
+        // Update routing if mic is currently active
+        if (this.microphoneGain) {
+            this.microphoneGain.disconnect();
+
+            if (enabled) {
+                // Reconnect to speakers
+                if (this.autoTuneWorkletLoaded && this.mixerState.autotuneSettings.enabled) {
+                    this.enableAutoTune();
+                } else {
+                    this.microphoneGain.connect(this.outputNodes.PA.masterGain);
+                }
+            }
+            // If disabled, mic stays disconnected (captured but not routed)
+        }
+    }
+
+    setEnableMic(enabled) {
+        this.mixerState.enableMic = enabled;
+        console.log('🎤 Enable mic:', enabled);
+
+        if (enabled) {
+            // Restart mic with saved device preference
+            console.log('🎤 Starting mic with device:', this.inputDevice);
+            this.startMicrophoneInput(this.inputDevice);
+        } else {
+            // Stop mic completely
+            this.stopMicrophoneInput();
+        }
+    }
+
     stop() {
         this.isPlaying = false;
         this.stopAllSources();
@@ -966,19 +1015,17 @@ class RendererAudioEngine {
         // 1. We've been monitoring for at least 2 seconds (prevents seek issues)
         // 2. Song duration > 3 seconds 
         // 3. Current position is near the end
-        if (this.isPlaying && 
-            timeSinceMonitoringStarted > 2.0 && 
-            duration > 3 && 
+        if (this.isPlaying &&
+            timeSinceMonitoringStarted > 2.0 &&
+            duration > 3 &&
             currentPos >= duration - 0.2) {
-            
+
             console.log('🎵 Song ended - position monitoring detected end');
-            this.isPlaying = false;
             this.stopAllSources();
             this.stopSongEndMonitoring();
-            
-            if (this.onSongEndedCallback) {
-                this.onSongEndedCallback();
-            }
+
+            // Use base class method for consistent song end handling
+            this._triggerSongEnd();
         }
     }
 
@@ -1013,7 +1060,15 @@ class RendererAudioEngine {
     linearToDb(linear) {
         return 20 * Math.log10(linear);
     }
+
+    /**
+     * Get the format type this player handles
+     * @returns {string} Format name
+     */
+    getFormat() {
+        return 'kai';
+    }
 }
 
-// Export removed - RendererAudioEngine is instantiated by KaiPlayerApp in main.js
+// Export removed - KAIPlayer is instantiated by KaiPlayerApp in main.js
 // No longer attached to window global

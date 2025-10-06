@@ -157,3 +157,27 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* Disabled state for buttons during loading */
+.transport-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.transport-btn:disabled:hover {
+    background: #3a3a3a;
+}
+
+/* Rotating animation for loading spinner */
+@keyframes rotate {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.rotating {
+    animation: rotate 2s linear infinite;
+}
