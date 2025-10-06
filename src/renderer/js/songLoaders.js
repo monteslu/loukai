@@ -7,7 +7,6 @@
  * Load CDG format song
  */
 export async function loadCDGSong(app, songData, metadata) {
-    console.log('💿 Loading CDG format');
 
     app.player.currentFormat = 'cdg';
     app.player.currentPlayer = app.player.cdgPlayer;
@@ -79,14 +78,12 @@ export async function loadCDGSong(app, songData, metadata) {
     // Controls now managed by React TransportControlsWrapper
     app.updateStatus(`Loaded: ${metadata?.title || 'CDG Song'}`);
 
-    console.log('💿 CDG loading complete');
 }
 
 /**
  * Load KAI format song
  */
 export async function loadKAISong(app, songData, metadata) {
-    console.log('🎵 Loading KAI format');
 
     app.player.currentFormat = 'kai';
     app.player.currentPlayer = app.kaiPlayer;
@@ -169,7 +166,6 @@ export async function loadKAISong(app, songData, metadata) {
     // Clear pending metadata
     app._pendingMetadata = null;
 
-    console.log('🎵 KAI loading complete');
 }
 
 /**
@@ -183,9 +179,7 @@ async function setupButterchurnForCDG(app, songData, waveformPrefs) {
         );
 
         // Feed CDG MP3 audio to Butterchurn for visualization
-        console.log('💿 Feeding CDG audio to Butterchurn...');
         await app.player.karaokeRenderer.setMusicAudio(songData.audio.mp3);
-        console.log('💿 Butterchurn connected to CDG audio for visualization');
 
         // Apply random effect if enabled
         await applyRandomEffectIfEnabled(app, waveformPrefs);

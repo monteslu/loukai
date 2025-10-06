@@ -1,4 +1,7 @@
-class PlayerController {
+import { KaraokeRenderer } from './karaokeRenderer.js';
+import { CDGPlayer } from './cdgPlayer.js';
+
+export class PlayerController {
     constructor(kaiPlayer = null) {
         this.kaiPlayer = kaiPlayer;
         // lyricsContainer removed - KaraokeRenderer handles canvas-based lyrics now

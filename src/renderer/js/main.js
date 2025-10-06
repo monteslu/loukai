@@ -1,12 +1,11 @@
-console.log('🎮 main.js loaded and executing');
-
 import { setAppInstance } from './appInstance.js';
 import { verifyButterchurn } from './butterchurnVerify.js';
 import { loadCDGSong, loadKAISong } from './songLoaders.js';
+import { KAIPlayer } from './kaiPlayer.js';
+import { PlayerController } from './player.js';
 
 class KaiPlayerApp {
     constructor() {
-        console.log('🎮 KaiPlayerApp constructor called');
         this.currentSong = null;
         this.isPlaying = false;
         this.currentPosition = 0;
@@ -125,13 +124,11 @@ class KaiPlayerApp {
         // Listen for preferences updates from main process (AppState changes)
         if (window.kaiAPI && window.kaiAPI.events) {
             window.kaiAPI.events.on('preferences:updated', (event, preferences) => {
-                console.log('📥 Received preferences update from main:', preferences);
                 this.syncPreferencesFromMain(preferences);
             });
 
             // Listen for waveform settings changes from web admin
             window.kaiAPI.events.on('waveform:settingsChanged', (event, settings) => {
-                console.log('📥 Received waveform settings update from web admin:', settings);
 
                 // Apply settings to active player
                 const playerController = this.player;
@@ -166,7 +163,6 @@ class KaiPlayerApp {
 
             // Listen for autotune settings changes from web admin
             window.kaiAPI.events.on('autotune:settingsChanged', (event, settings) => {
-                console.log('📥 Received autotune settings update from web admin:', settings);
 
                 // Apply via IPC
                 if (settings.enabled !== undefined) {
@@ -263,7 +259,6 @@ class KaiPlayerApp {
         // Mixer control event listeners from admin
         kaiAPI.mixer.onSetMasterGain((event, data) => {
             const { bus, gainDb } = data;
-            console.log(`🎚️ Received setMasterGain from admin: ${bus} = ${gainDb} dB`);
             if (this.kaiPlayer) {
                 this.kaiPlayer.setMasterGain(bus, gainDb);
                 // Update UI
@@ -273,7 +268,6 @@ class KaiPlayerApp {
 
         kaiAPI.mixer.onToggleMasterMute((event, data) => {
             const { bus, muted } = data;
-            console.log(`🔇 Received toggleMasterMute from admin: ${bus} = ${muted}`);
             if (this.kaiPlayer) {
                 // If muted is provided, use setMasterMute, otherwise toggle
                 if (muted !== undefined) {
@@ -289,7 +283,6 @@ class KaiPlayerApp {
         // Listen for setMasterMute command (with specific mute state)
         kaiAPI.mixer.onSetMasterMute((event, data) => {
             const { bus, muted } = data;
-            console.log(`🔇 Received setMasterMute from admin: ${bus} = ${muted}`);
             if (this.kaiPlayer) {
                 this.kaiPlayer.setMasterMute(bus, muted);
                 // Update UI
@@ -300,7 +293,6 @@ class KaiPlayerApp {
         // Listen for song:loaded event (sent BEFORE song:data)
         // This triggers the loading state display
         kaiAPI.song.onLoaded((event, metadata) => {
-            console.log('💿 song:loaded event received:', metadata);
             this.onSongLoaded(metadata);
         });
 
@@ -309,13 +301,11 @@ class KaiPlayerApp {
             const isSameSong = this.currentSong &&
                                this.currentSong.originalFilePath === songData.originalFilePath;
 
-            console.log('💿 song:onData - isSameSong:', isSameSong, 'current:', this.currentSong?.originalFilePath, 'new:', songData.originalFilePath);
 
             this.currentSong = songData;
 
             // Reset play state when loading a new song - but not if it's the same song
             if (!isSameSong) {
-                console.log('💿 Resetting play state and pausing old song');
                 this.isPlaying = false;
 
                 // CRITICAL: Actually pause the currently playing audio (don't call stop() - it destroys audio contexts!)
@@ -368,7 +358,6 @@ class KaiPlayerApp {
     async loadKaiFile() {
         try {
             // Pause current playback first
-            console.log('💿 loadKaiFile: Pausing current playback');
             this.isPlaying = false;
 
             if (this.kaiPlayer) {
@@ -429,7 +418,6 @@ class KaiPlayerApp {
     async togglePlayback() {
         if (!this.currentSong) return;
 
-        console.log('💿 togglePlayback called, format:', this.player?.currentFormat, 'isPlaying:', this.isPlaying);
 
         try {
             if (this.isPlaying) {
@@ -468,7 +456,6 @@ class KaiPlayerApp {
                     this.player.currentPlayer.reportStateChange();
                 }
 
-                console.log('💿 After play, isPlaying:', this.isPlaying);
             }
         } catch (error) {
             console.error('Playback error:', error);
@@ -519,7 +506,6 @@ class KaiPlayerApp {
                 console.log('🎵 Auto-loaded next song from queue:', result.song.title);
                 this.updateStatus(`Loaded: ${result.song.title}`);
             } else {
-                console.log('📭 No more songs in queue');
                 this.updateStatus('Queue empty');
             }
         } catch (error) {
@@ -545,7 +531,6 @@ class KaiPlayerApp {
 
     async nextTrack() {
         // Pause current playback first
-        console.log('💿 nextTrack: Pausing current playback');
         this.isPlaying = false;
 
         if (this.kaiPlayer) {
@@ -564,7 +549,6 @@ class KaiPlayerApp {
         try {
             const result = await kaiAPI.player.next();
             if (!result.success) {
-                console.log('No more songs in queue');
             }
         } catch (error) {
             console.error('Failed to play next track:', error);
@@ -576,7 +560,6 @@ class KaiPlayerApp {
     // Autotune settings now handled by React VisualizationSettings component
     // Status text now handled by React StatusBar - keeping method to avoid breaking existing code
     updateStatus(message) {
-        console.log(`[Status] ${message}`);
     }
     
     // Device persistence methods
@@ -607,7 +590,6 @@ class KaiPlayerApp {
             const micToSpeakers = await window.kaiAPI.settings.get('micToSpeakers', true);
             const enableMic = await window.kaiAPI.settings.get('enableMic', true);
 
-            console.log('📥 Loaded audio settings for karaokeRenderer:', { micToSpeakers, enableMic });
 
             // Apply to karaokeRenderer for visualization purposes
             // (KAIPlayer loads its own settings for actual audio routing)
@@ -663,7 +645,6 @@ class KaiPlayerApp {
                 if (preferences.microphone.enabled) {
                     // Use saved input device preference
                     const deviceId = this.devicePreferences?.input?.id || this.kaiPlayer.inputDevice || 'default';
-                    console.log('🎤 Starting mic with saved device:', deviceId);
                     this.kaiPlayer.startMicrophoneInput(deviceId);
                 } else {
                     this.kaiPlayer.stopMicrophoneInput();
@@ -679,7 +660,6 @@ class KaiPlayerApp {
             this.kaiPlayer.setIEMMonoVocals(preferences.iemMonoVocals);
         }
 
-        console.log('✅ Preferences synced from main process');
     }
 
     // Auto-tune preferences now handled by React VisualizationSettings component
@@ -713,15 +693,7 @@ class KaiPlayerApp {
     
     // Device selection restoration now handled by React MixerTab
     updateEffectDisplay() {
-
-
-
-        // }
-
-        // Sync the effects manager UI - now handled by React EffectsPanelWrapper
-        // if (this.effectsManager && typeof this.effectsManager.syncWithRenderer === 'function') {
-        //     this.effectsManager.syncWithRenderer();
-        // }
+        // No-op: Effect display now handled by React EffectsPanelWrapper
     }
     
     async toggleCanvasFullscreen() {

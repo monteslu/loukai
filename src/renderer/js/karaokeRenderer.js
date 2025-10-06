@@ -1,5 +1,4 @@
-
-class KaraokeRenderer {
+export class KaraokeRenderer {
     constructor(canvasId) {
         this.canvas = document.getElementById(canvasId);
         
@@ -1230,7 +1229,6 @@ class KaraokeRenderer {
         // karaokeRenderer mic is ONLY for waveform visualization, NOT audio routing
         // kaiPlayer handles all microphone-to-speaker routing to PA/IEM outputs
         // This setting is stored for preferences sync but not used by karaokeRenderer
-        console.log('🎤 KaraokeRenderer: micToSpeakers preference updated to', enabled, '(kaiPlayer handles actual routing)');
     }
     
     setMicEnabled(enabled) {
@@ -2425,7 +2423,6 @@ class KaraokeRenderer {
                 const prefs = await window.kaiAPI.settings.get('devicePreferences');
                 if (prefs && prefs.input && prefs.input.id) {
                     this.inputDevice = prefs.input.id;
-                    console.log('🎤 Loaded input device from preferences:', this.inputDevice);
                 }
             }
         } catch (error) {

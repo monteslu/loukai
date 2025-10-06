@@ -1,7 +1,9 @@
 // CDGraphics will be loaded from node_modules via webpack or as a global
 // For now, we'll load it dynamically when needed
 
-class CDGPlayer extends PlayerInterface {
+import { PlayerInterface } from './PlayerInterface.js';
+
+export class CDGPlayer extends PlayerInterface {
     constructor(canvasId) {
         super(); // Call PlayerInterface constructor
 
@@ -42,7 +44,6 @@ class CDGPlayer extends PlayerInterface {
 
         // Note: this.stateReportInterval is inherited from PlayerInterface
 
-        console.log('💿 CDGPlayer initialized');
     }
 
     setOverlayOpacity(opacity) {
@@ -56,12 +57,6 @@ class CDGPlayer extends PlayerInterface {
      */
     async loadSong(songData) {
         try {
-            console.log('💿 CDGPlayer: Loading CDG data', {
-                format: songData.format,
-                hasAudio: !!songData.audio,
-                hasCDG: !!songData.cdg
-            });
-
             this.cdgData = songData;
 
             // Reset position using base class method
@@ -73,7 +68,6 @@ class CDGPlayer extends PlayerInterface {
             this.pauseTime = 0;
 
             // Load CDGraphics library dynamically
-            console.log('💿 Checking CDGraphics availability:', typeof CDGraphics);
             if (typeof CDGraphics === 'undefined') {
                 console.error('💿 CDGraphics library not loaded');
                 throw new Error('CDGraphics library not available');
@@ -82,7 +76,6 @@ class CDGPlayer extends PlayerInterface {
             // Load CDG file data - convert to ArrayBuffer first
             const cdgBuffer = songData.cdg.data;
 
-            console.log('💿 CDG buffer type:', cdgBuffer.constructor.name, 'hasBuffer:', !!cdgBuffer.buffer, 'length:', cdgBuffer.length || cdgBuffer.byteLength);
 
             // Convert to ArrayBuffer
             let arrayBuffer;
@@ -102,12 +95,9 @@ class CDGPlayer extends PlayerInterface {
                 throw new Error('Unknown buffer type');
             }
 
-            console.log('💿 Converted to ArrayBuffer, length:', arrayBuffer.byteLength);
 
             // Initialize CDGraphics player with the ArrayBuffer
-            console.log('💿 Creating CDGraphics instance with buffer');
             this.cdgPlayer = new CDGraphics(arrayBuffer);
-            console.log('💿 CDGraphics instance created successfully');
 
             // Decode MP3 audio buffer using Web Audio API
             // Audio context will be set by main.js before loading
@@ -115,15 +105,12 @@ class CDGPlayer extends PlayerInterface {
                 throw new Error('Audio context not set. Call setAudioContext() first.');
             }
 
-            console.log('💿 Decoding MP3 audio buffer...');
             const mp3ArrayBuffer = songData.audio.mp3.buffer.slice(
                 songData.audio.mp3.byteOffset,
                 songData.audio.mp3.byteOffset + songData.audio.mp3.byteLength
             );
             this.audioBuffer = await this.audioContext.decodeAudioData(mp3ArrayBuffer);
-            console.log('💿 MP3 decoded, duration:', this.audioBuffer.duration);
 
-            console.log('💿 CDG loaded successfully, ready to play');
 
             return true;
         } catch (error) {
@@ -138,7 +125,6 @@ class CDGPlayer extends PlayerInterface {
             return;
         }
 
-        console.log('💿 Playing CDG');
         this.isPlaying = true;
 
         // Stop existing source if any (and clear its onended handler)
@@ -189,7 +175,6 @@ class CDGPlayer extends PlayerInterface {
     }
 
     pause() {
-        console.log('💿 Pausing CDG');
         this.isPlaying = false;
 
         // Store current position before stopping
@@ -216,7 +201,6 @@ class CDGPlayer extends PlayerInterface {
     }
 
     seek(positionSec) {
-        console.log('💿 Seeking to:', positionSec);
         const wasPlaying = this.isPlaying;
 
         // Pause if playing
@@ -342,7 +326,6 @@ class CDGPlayer extends PlayerInterface {
     }
 
     handleSongEnd() {
-        console.log('💿 CDG song ended');
         this.stopRendering();
 
         // Use base class method for consistent song end handling
@@ -357,12 +340,10 @@ class CDGPlayer extends PlayerInterface {
     setEffectsCanvas(canvas, butterchurn) {
         this.effectsCanvas = canvas;
         this.butterchurn = butterchurn;
-        console.log('💿 Effects canvas set for CDG renderer');
     }
 
     setEffectsEnabled(enabled) {
         this.effectsEnabled = enabled;
-        console.log('💿 Effects enabled:', enabled);
     }
 
     getCurrentTime() {
@@ -393,11 +374,6 @@ class CDGPlayer extends PlayerInterface {
         this.audioContext = audioContext;
         this.gainNode = gainNode;
         this.analyserNode = analyserNode;
-        console.log('💿 Audio context set for CDG renderer', {
-            hasContext: !!audioContext,
-            hasGain: !!gainNode,
-            hasAnalyser: !!analyserNode
-        });
     }
 
     destroy() {

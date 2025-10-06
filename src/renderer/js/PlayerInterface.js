@@ -5,7 +5,7 @@
  * (KAI, CDG, MP4, etc.) and eliminates code duplication for common features
  * like state reporting, playback control, and position tracking.
  */
-class PlayerInterface {
+export class PlayerInterface {
     constructor() {
         if (this.constructor === PlayerInterface) {
             throw new Error('PlayerInterface is abstract and cannot be instantiated directly');
@@ -186,7 +186,7 @@ class PlayerInterface {
  * This factory pattern centralizes player instantiation and makes it easy
  * to add new formats without modifying calling code.
  */
-class PlayerFactory {
+export class PlayerFactory {
     /**
      * Create a player for the specified format
      * @param {string} format - Format type ('kai', 'cdg', 'mp4', etc.)
@@ -260,7 +260,3 @@ class PlayerFactory {
     }
 }
 
-// Export for ES modules
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { PlayerInterface, PlayerFactory };
-}

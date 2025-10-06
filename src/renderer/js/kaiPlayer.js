@@ -1,4 +1,6 @@
-class KAIPlayer extends PlayerInterface {
+import { PlayerInterface } from './PlayerInterface.js';
+
+export class KAIPlayer extends PlayerInterface {
     constructor() {
         super(); // Call PlayerInterface constructor
 
@@ -96,7 +98,6 @@ class KAIPlayer extends PlayerInterface {
             // Apply saved PA gain (considering mute state)
             const paGain = this.mixerState.PA.muted ? 0 : this.dbToLinear(this.mixerState.PA.gain);
             this.outputNodes.PA.masterGain.gain.value = paGain;
-            console.log(`🔊 Applied PA gain: ${this.mixerState.PA.gain} dB (linear: ${paGain}, muted: ${this.mixerState.PA.muted})`);
 
             // Initialize IEM audio context with saved device
             const iemContextOptions = {};
@@ -109,7 +110,6 @@ class KAIPlayer extends PlayerInterface {
             // Apply saved IEM gain (considering mute state)
             const iemGain = this.mixerState.IEM.muted ? 0 : this.dbToLinear(this.mixerState.IEM.gain);
             this.outputNodes.IEM.masterGain.gain.value = iemGain;
-            console.log(`🔊 Applied IEM gain: ${this.mixerState.IEM.gain} dB (linear: ${iemGain}, muted: ${this.mixerState.IEM.muted})`);
             
             
             // Load auto-tune worklet
@@ -130,64 +130,45 @@ class KAIPlayer extends PlayerInterface {
             // Load device preferences from settingsAPI
             if (window.kaiAPI.settings) {
                 const devicePrefs = await window.kaiAPI.settings.get('devicePreferences', null);
-                console.log('📂 Loaded device preferences:', devicePrefs);
 
                 if (devicePrefs?.PA?.id) {
                     this.outputDevices.PA = devicePrefs.PA.id;
-                    console.log('📂 Set PA device:', devicePrefs.PA.id);
                 }
                 if (devicePrefs?.IEM?.id) {
                     this.outputDevices.IEM = devicePrefs.IEM.id;
-                    console.log('📂 Set IEM device:', devicePrefs.IEM.id);
                 }
                 if (devicePrefs?.input?.id) {
                     this.inputDevice = devicePrefs.input.id;
-                    console.log('📂 Set input device:', devicePrefs.input.id);
                 }
             }
 
             // Load mixer state from AppState
             if (window.kaiAPI?.app) {
                 const appState = await window.kaiAPI.app.getState();
-                console.log('📂 Received AppState for mixer:', appState?.mixer ? 'found' : 'not found');
 
                 // Load mixer state from AppState
                 if (appState?.mixer) {
 
                     if (typeof appState.mixer.PA?.gain === 'number') {
                         this.mixerState.PA.gain = appState.mixer.PA.gain;
-                        console.log('📂 Set PA gain to:', appState.mixer.PA.gain);
                     }
                     if (typeof appState.mixer.PA?.muted === 'boolean') {
                         this.mixerState.PA.muted = appState.mixer.PA.muted;
-                        console.log('📂 Set PA muted to:', appState.mixer.PA.muted);
                     }
                     if (typeof appState.mixer.IEM?.gain === 'number') {
                         this.mixerState.IEM.gain = appState.mixer.IEM.gain;
-                        console.log('📂 Set IEM gain to:', appState.mixer.IEM.gain);
                     }
                     if (typeof appState.mixer.IEM?.muted === 'boolean') {
                         this.mixerState.IEM.muted = appState.mixer.IEM.muted;
-                        console.log('📂 Set IEM muted to:', appState.mixer.IEM.muted);
                     }
                     if (typeof appState.mixer.mic?.gain === 'number') {
                         this.mixerState.mic.gain = appState.mixer.mic.gain;
-                        console.log('📂 Set mic gain to:', appState.mixer.mic.gain);
                     }
                     if (typeof appState.mixer.mic?.muted === 'boolean') {
                         this.mixerState.mic.muted = appState.mixer.mic.muted;
-                        console.log('📂 Set mic muted to:', appState.mixer.mic.muted);
                     }
-                    console.log('✅ Final mixer state after loading:', JSON.stringify(this.mixerState, null, 2));
                 }
             }
-
-            // Final summary of loaded devices
-            console.log('🔊 Final device configuration:', {
-                PA: this.outputDevices.PA,
-                IEM: this.outputDevices.IEM,
-                input: this.inputDevice
-            });
         } catch (error) {
             console.error('Failed to load device preferences:', error);
         }
@@ -195,7 +176,6 @@ class KAIPlayer extends PlayerInterface {
     
     async setOutputDevice(busType, deviceId) {
         try {
-            console.log(`🔊 setOutputDevice called: busType=${busType}, deviceId=${deviceId}`);
 
             if (!['PA', 'IEM'].includes(busType)) {
                 console.error('Invalid bus type:', busType);
@@ -212,7 +192,6 @@ class KAIPlayer extends PlayerInterface {
 
             // Store the device preference
             this.outputDevices[busType] = deviceId;
-            console.log(`🔊 Stored ${busType} device preference:`, deviceId);
             
             // Close existing context for this bus
             if (this.audioContexts[busType]) {
@@ -223,13 +202,10 @@ class KAIPlayer extends PlayerInterface {
             const contextOptions = {};
             if (deviceId !== 'default' && 'sinkId' in AudioContext.prototype) {
                 contextOptions.sinkId = deviceId;
-                console.log(`🔊 Creating ${busType} AudioContext with sinkId:`, deviceId);
             } else {
-                console.log(`🔊 Creating ${busType} AudioContext with default sink`);
             }
 
             this.audioContexts[busType] = new (window.AudioContext || window.webkitAudioContext)(contextOptions);
-            console.log(`🔊 ${busType} AudioContext created successfully`);
             this.outputNodes[busType].masterGain = this.audioContexts[busType].createGain();
             this.outputNodes[busType].masterGain.connect(this.audioContexts[busType].destination);
             
@@ -551,7 +527,6 @@ class KAIPlayer extends PlayerInterface {
                     
                     // Proper karaoke routing: vocals to IEM only, music/backing tracks to PA only
                     if (isVocals) {
-                        console.log(`🎤 Routing VOCALS (${stem.name}) → IEM device (${this.outputDevices.IEM})`);
                         // Vocals go to IEM only (singer's ears)
                         const iemSource = this.audioContexts.IEM.createBufferSource();
                         iemSource.buffer = audioBuffer;
@@ -560,7 +535,6 @@ class KAIPlayer extends PlayerInterface {
                         this.outputNodes.IEM.sourceNodes.set(stem.name, iemSource);
                         
                     } else {
-                        console.log(`🎵 Routing MUSIC (${stem.name}) → PA device (${this.outputDevices.PA})`);
                         // Backing tracks go to PA only (audience)
                         const paSource = this.audioContexts.PA.createBufferSource();
                         paSource.buffer = audioBuffer;
@@ -662,7 +636,6 @@ class KAIPlayer extends PlayerInterface {
         if (!['PA', 'IEM', 'mic'].includes(bus)) return false;
 
         this.mixerState[bus].muted = muted;
-        console.log(`🔇 Setting ${bus} mute to: ${muted}`);
 
         // Apply mute (set gain to 0 or restore)
         if (bus === 'PA' && this.outputNodes.PA.masterGain) {
@@ -732,7 +705,6 @@ class KAIPlayer extends PlayerInterface {
         try {
             // Don't start mic if disabled
             if (!this.mixerState.enableMic) {
-                console.log('🎤 Microphone is disabled, not starting');
                 return;
             }
 
@@ -773,7 +745,6 @@ class KAIPlayer extends PlayerInterface {
                     this.microphoneGain.connect(this.outputNodes.PA.masterGain);
                 }
             } else {
-                console.log('🎤 Mic input active but not routed to speakers');
             }
 
         } catch (error) {
@@ -836,7 +807,6 @@ class KAIPlayer extends PlayerInterface {
                 // Direct connection to PA output
                 this.microphoneGain.connect(this.outputNodes.PA.masterGain);
             } else {
-                console.log('🎤 Mic input active but not routed to speakers (auto-tune disabled)');
             }
 
         } catch (error) {
@@ -934,7 +904,6 @@ class KAIPlayer extends PlayerInterface {
                 this.mixerState.enableMic = enableMic;
                 this.mixerState.iemMonoVocals = iemMonoVocals;
 
-                console.log('🎤 Loaded mic settings:', { micToSpeakers, enableMic, iemMonoVocals });
             }
         } catch (error) {
             console.error('Failed to load mic settings:', error);
@@ -943,7 +912,6 @@ class KAIPlayer extends PlayerInterface {
 
     setMicToSpeakers(enabled) {
         this.mixerState.micToSpeakers = enabled;
-        console.log('🎤 Mic to speakers:', enabled);
 
         // Update routing if mic is currently active
         if (this.microphoneGain) {
@@ -963,11 +931,9 @@ class KAIPlayer extends PlayerInterface {
 
     setEnableMic(enabled) {
         this.mixerState.enableMic = enabled;
-        console.log('🎤 Enable mic:', enabled);
 
         if (enabled) {
             // Restart mic with saved device preference
-            console.log('🎤 Starting mic with device:', this.inputDevice);
             this.startMicrophoneInput(this.inputDevice);
         } else {
             // Stop mic completely
@@ -1025,7 +991,6 @@ class KAIPlayer extends PlayerInterface {
             duration > 3 &&
             currentPos >= duration - 0.2) {
 
-            console.log('🎵 Song ended - position monitoring detected end');
             this.stopAllSources();
             this.stopSongEndMonitoring();
 
