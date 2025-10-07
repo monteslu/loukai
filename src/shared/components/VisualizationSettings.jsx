@@ -71,12 +71,10 @@ export function VisualizationSettings({
     if (!bridge) return;
 
     const unsubWaveform = bridge.onSettingsChanged?.('waveform', (settings) => {
-      console.log('📥 VisualizationSettings received waveform update:', settings);
       setWaveformSettings(prev => ({ ...prev, ...settings }));
     });
 
     const unsubAutotune = bridge.onSettingsChanged?.('autotune', (settings) => {
-      console.log('📥 VisualizationSettings received autotune update:', settings);
       setAutotuneSettings(prev => ({ ...prev, ...settings }));
     });
 

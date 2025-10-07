@@ -1357,6 +1357,10 @@ class WebServer {
                 if (result.success) {
                     // Send to renderer for immediate effect
                     this.mainApp.sendToRenderer('waveform:settingsChanged', result.settings);
+
+                    // Broadcast to all admin clients via socket.io
+                    this.io.to('admin-clients').emit('settings:waveform', result.settings);
+
                     res.json(result);
                 } else {
                     res.status(500).json(result);
@@ -1384,6 +1388,10 @@ class WebServer {
                 if (result.success) {
                     // Send to renderer for immediate effect
                     this.mainApp.sendToRenderer('autotune:settingsChanged', result.settings);
+
+                    // Broadcast to all admin clients via socket.io
+                    this.io.to('admin-clients').emit('settings:autotune', result.settings);
+
                     res.json(result);
                 } else {
                     res.status(500).json(result);

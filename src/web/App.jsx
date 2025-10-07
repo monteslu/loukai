@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { WebBridge } from './adapters/WebBridge.js';
 import { PlayerControls } from '../shared/components/PlayerControls.jsx';
 import { QueueList } from '../shared/components/QueueList.jsx';
+import { QuickSearch } from '../shared/components/QuickSearch.jsx';
 import { MixerPanel } from '../shared/components/MixerPanel.jsx';
 import { EffectsPanel } from '../shared/components/EffectsPanel.jsx';
 import { LibraryPanel } from '../shared/components/LibraryPanel.jsx';
@@ -436,6 +437,8 @@ export function App() {
                 />
               </div>
               <div className="queue-right">
+                <QuickSearch bridge={bridge} requester="Web Admin" />
+
                 <QueueList
                   queue={queue}
                   currentSongId={currentSong?.queueItemId ?? null}

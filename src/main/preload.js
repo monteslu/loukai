@@ -45,7 +45,15 @@ const api = {
     next: () => ipcRenderer.invoke('player:next'),
 
     onPlaybackState: (callback) => ipcRenderer.on('playback:state', callback),
-    removePlaybackListener: (callback) => ipcRenderer.removeListener('playback:state', callback)
+    removePlaybackListener: (callback) => ipcRenderer.removeListener('playback:state', callback),
+
+    // Events from main process for playback control
+    onTogglePlayback: (callback) => ipcRenderer.on('player:togglePlayback', callback),
+    onRestart: (callback) => ipcRenderer.on('player:restart', callback),
+    onSetPosition: (callback) => ipcRenderer.on('player:setPosition', callback),
+    removeTogglePlaybackListener: (callback) => ipcRenderer.removeListener('player:togglePlayback', callback),
+    removeRestartListener: (callback) => ipcRenderer.removeListener('player:restart', callback),
+    removeSetPositionListener: (callback) => ipcRenderer.removeListener('player:setPosition', callback)
   },
   
   autotune: {
@@ -164,7 +172,11 @@ const api = {
     updatePlaybackState: (updates) => ipcRenderer.send('renderer:updatePlaybackState', updates),
     songLoaded: (songData) => ipcRenderer.send('renderer:songLoaded', songData),
     updateMixerState: (mixerState) => ipcRenderer.send('renderer:updateMixerState', mixerState),
-    updateEffectsState: (effectsState) => ipcRenderer.send('renderer:updateEffectsState', effectsState)
+    updateEffectsState: (effectsState) => ipcRenderer.send('renderer:updateEffectsState', effectsState),
+    sendEffectsList: (effects) => ipcRenderer.send('effects:getList-response', effects),
+    sendCurrentEffect: (effectName) => ipcRenderer.send('effects:getCurrent-response', effectName),
+    sendDisabledEffects: (disabled) => ipcRenderer.send('effects:getDisabled-response', disabled),
+    sendWebRTCResponse: (command, result) => ipcRenderer.send(`webrtc:${command}-response`, result)
   },
 
   events: {

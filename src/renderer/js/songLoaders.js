@@ -59,7 +59,12 @@ export async function loadCDGSong(app, songData, metadata) {
     await setupButterchurnForCDG(app, songData, waveformPrefs);
 
     // CDG doesn't use audio engine or lyrics
-    app.player.onSongLoaded(metadata);
+    // Include requester from songData if not in metadata
+    const fullMetadata = {
+        ...metadata,
+        requester: metadata.requester || songData.requester || app.currentSong?.requester
+    };
+    app.player.onSongLoaded(fullMetadata);
 
     // Broadcast that CDG is ready (clear loading state)
     if (window.kaiAPI?.renderer) {
@@ -125,7 +130,8 @@ export async function loadKAISong(app, songData, metadata) {
             ...metadata,
             lyrics: app.currentSong.lyrics,
             duration: app.kaiPlayer ? app.kaiPlayer.getDuration() : (app.currentSong.metadata?.duration || 0),
-            audio: app.currentSong.audio // Include audio sources for vocals waveform
+            audio: app.currentSong.audio, // Include audio sources for vocals waveform
+            requester: metadata.requester || songData.requester || app.currentSong.requester
         };
         app.player.onSongLoaded(fullMetadata);
 

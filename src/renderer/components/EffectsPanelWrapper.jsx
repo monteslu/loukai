@@ -13,33 +13,55 @@ export function EffectsPanelWrapper({ bridge }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentCategory, setCurrentCategory] = useState('all');
 
-  // Expose effects data to app for IPC handlers (via bridge to avoid module graph issues)
-  useEffect(() => {
-    if (bridge?.app) {
-      bridge.app.effectsData = {
-        effects,
-        currentEffect,
-        disabledEffects
-      };
-    }
-  }, [bridge, effects, currentEffect, disabledEffects]);
-
   useEffect(() => {
     loadEffects();
     loadDisabledEffects();
   }, []);
+
+  // Respond to IPC requests for effects list (for web admin API)
+  useEffect(() => {
+    if (!window.kaiAPI?.events) return;
+
+    const handleGetEffectsList = () => {
+      // Strip out preset data (not serializable) - only send metadata
+      const serializableEffects = effects.map(e => ({
+        name: e.name,
+        displayName: e.displayName,
+        author: e.author,
+        category: e.category
+      }));
+
+      window.kaiAPI.renderer.sendEffectsList(serializableEffects);
+    };
+
+    const handleGetCurrentEffect = () => {
+      window.kaiAPI.renderer.sendCurrentEffect(currentEffect);
+    };
+
+    const handleGetDisabledEffects = () => {
+      window.kaiAPI.renderer.sendDisabledEffects(disabledEffects);
+    };
+
+    window.kaiAPI.events.on('effects:getList', handleGetEffectsList);
+    window.kaiAPI.events.on('effects:getCurrent', handleGetCurrentEffect);
+    window.kaiAPI.events.on('effects:getDisabled', handleGetDisabledEffects);
+
+    return () => {
+      window.kaiAPI.events.removeListener('effects:getList', handleGetEffectsList);
+      window.kaiAPI.events.removeListener('effects:getCurrent', handleGetCurrentEffect);
+      window.kaiAPI.events.removeListener('effects:getDisabled', handleGetDisabledEffects);
+    };
+  }, [effects, currentEffect, disabledEffects]);
 
   // Listen for effects commands from web admin
   useEffect(() => {
     if (!window.kaiAPI?.events || effects.length === 0) return;
 
     const onSelectFromAdmin = (event, effectName) => {
-      console.log('🎨 Received effects:select from admin:', effectName);
       selectEffect(effectName);
     };
 
     const onNextFromAdmin = () => {
-      console.log('🎨 Received effects:next from admin');
       const enabledEffects = effects.filter(e => !disabledEffects.includes(e.name));
       if (enabledEffects.length === 0) return;
 
@@ -49,7 +71,6 @@ export function EffectsPanelWrapper({ bridge }) {
     };
 
     const onPreviousFromAdmin = () => {
-      console.log('🎨 Received effects:previous from admin');
       const enabledEffects = effects.filter(e => !disabledEffects.includes(e.name));
       if (enabledEffects.length === 0) return;
 
@@ -59,17 +80,14 @@ export function EffectsPanelWrapper({ bridge }) {
     };
 
     const onRandomFromAdmin = () => {
-      console.log('🎨 Received effects:random from admin');
       randomEffect();
     };
 
     const onDisableFromAdmin = (event, effectName) => {
-      console.log('🎨 Received effects:disable from admin:', effectName);
       disableEffect(effectName);
     };
 
     const onEnableFromAdmin = (event, effectName) => {
-      console.log('🎨 Received effects:enable from admin:', effectName);
       enableEffect(effectName);
     };
 
@@ -145,45 +163,35 @@ export function EffectsPanelWrapper({ bridge }) {
 
   const loadDisabledEffects = async () => {
     try {
-      if (window.kaiAPI?.settings) {
-        const waveformPrefs = await window.kaiAPI.settings.get('waveformPreferences');
-        if (waveformPrefs?.disabledEffects) {
-          setDisabledEffects(waveformPrefs.disabledEffects);
-        }
+      const waveformPrefs = await bridge.getWaveformPreferences();
+      if (waveformPrefs?.disabledEffects) {
+        setDisabledEffects(waveformPrefs.disabledEffects);
       }
     } catch (error) {
       console.error('Failed to load disabled effects:', error);
     }
   };
 
-  const selectEffect = (effectName) => {
+  const selectEffect = async (effectName) => {
     const preset = effects.find(e => e.name === effectName);
     if (!preset) return;
 
     setCurrentEffect(effectName);
 
-    // Apply effect directly to karaoke renderer (like vanilla effects.js)
+    // Apply effect to Butterchurn directly
     try {
-      const app = bridge?.app;
-      if (app && app.player && app.player.karaokeRenderer) {
-        const renderer = app.player.karaokeRenderer;
-        if (renderer.setButterchurnPreset) {
-          console.log('🎨 Applying effect:', preset.displayName);
-          renderer.setButterchurnPreset(preset.preset);
-        }
-      }
-
-      // Update main app's effect display
-      if (app && typeof app.updateEffectDisplay === 'function') {
-        setTimeout(() => app.updateEffectDisplay(), 100);
-      }
-
-      // Report to AppState for web admin sync
-      if (window.kaiAPI?.renderer) {
-        window.kaiAPI.renderer.updateEffectsState({ current: effectName });
+      if (window.app?.player?.karaokeRenderer) {
+        window.app.player.karaokeRenderer.switchToPreset(effectName, 2.0);
       }
     } catch (error) {
-      console.error('Failed to apply effect:', error);
+      console.error('Failed to apply effect to Butterchurn:', error);
+    }
+
+    // Notify main process for state management via bridge
+    try {
+      await bridge.selectEffect(effectName);
+    } catch (error) {
+      console.error('Failed to notify main process:', error);
     }
   };
 
@@ -193,7 +201,6 @@ export function EffectsPanelWrapper({ bridge }) {
 
     const randomIndex = Math.floor(Math.random() * enabledEffects.length);
     const randomEffect = enabledEffects[randomIndex];
-    console.log('🎲 Random effect:', randomEffect.displayName);
     selectEffect(randomEffect.name);
   };
 
@@ -201,15 +208,11 @@ export function EffectsPanelWrapper({ bridge }) {
     const updated = disabledEffects.filter(e => e !== effectName);
     setDisabledEffects(updated);
 
-    // Save to settings
+    // Save to settings via bridge
     try {
-      if (window.kaiAPI?.settings) {
-        const waveformPrefs = await window.kaiAPI.settings.get('waveformPreferences') || {};
-        waveformPrefs.disabledEffects = updated;
-        await window.kaiAPI.settings.set('waveformPreferences', waveformPrefs);
-      }
+      await bridge.enableEffect(effectName);
     } catch (error) {
-      console.error('Failed to save disabled effects:', error);
+      console.error('Failed to enable effect:', error);
     }
   };
 
@@ -217,15 +220,11 @@ export function EffectsPanelWrapper({ bridge }) {
     const updated = [...disabledEffects, effectName];
     setDisabledEffects(updated);
 
-    // Save to settings
+    // Save to settings via bridge
     try {
-      if (window.kaiAPI?.settings) {
-        const waveformPrefs = await window.kaiAPI.settings.get('waveformPreferences') || {};
-        waveformPrefs.disabledEffects = updated;
-        await window.kaiAPI.settings.set('waveformPreferences', waveformPrefs);
-      }
+      await bridge.disableEffect(effectName);
     } catch (error) {
-      console.error('Failed to save disabled effects:', error);
+      console.error('Failed to disable effect:', error);
     }
   };
 

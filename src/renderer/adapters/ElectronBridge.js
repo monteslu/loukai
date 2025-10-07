@@ -8,7 +8,6 @@
  */
 
 import { BridgeInterface } from '../../shared/adapters/BridgeInterface.js';
-import { onWindowEvent } from '../js/utils/window-events.js';
 
 let _instance = null;
 
@@ -19,25 +18,8 @@ export class ElectronBridge extends BridgeInterface {
     }
     super();
     this.api = window.kaiAPI;
-    this.listeners = new Map(); // Track listeners for cleanup
-    this._app = null; // App instance passed via player:initialized event
-    this._playerController = null;
-
-    // Listen for app initialization from main.js
-    onWindowEvent('player:initialized', (e) => {
-      this._app = e.detail.app;
-      this._playerController = e.detail.player;
-    });
 
     _instance = this;
-  }
-
-  get playerController() {
-    return this._playerController;
-  }
-
-  get app() {
-    return this._app;
   }
 
   static getInstance() {
@@ -48,39 +30,7 @@ export class ElectronBridge extends BridgeInterface {
   }
 
   // ===== Player Controls =====
-  // Call app methods directly via this._app - no IPC roundtrip needed for local control
-
-  async play() {
-    if (this._app) {
-      await this._app.togglePlayback();
-      return { success: true };
-    }
-    return { success: false, error: 'App not initialized' };
-  }
-
-  async pause() {
-    if (this._app) {
-      await this._app.togglePlayback();
-      return { success: true };
-    }
-    return { success: false, error: 'App not initialized' };
-  }
-
-  async restart() {
-    if (this._app) {
-      await this._app.restartTrack();
-      return { success: true };
-    }
-    return { success: false, error: 'App not initialized' };
-  }
-
-  async seek(positionSec) {
-    if (this._app?.player) {
-      await this._app.player.setPosition(positionSec);
-      return { success: true };
-    }
-    return { success: false, error: 'Player not initialized' };
-  }
+  // NOTE: Play/pause/seek handled via React hooks (usePlayer)
 
   async getPlaybackState() {
     const state = await this.api.app.getState();
@@ -212,37 +162,15 @@ export class ElectronBridge extends BridgeInterface {
   async saveAudioSettings(settings) {
     if (settings.iemMonoVocals !== undefined) {
       await this.api.settings.set('iemMonoVocals', settings.iemMonoVocals);
-
-      // Apply to KAIPlayer audio subsystem
-      const playerController = this.playerController;
-      if (playerController && playerController.kaiPlayer) {
-        playerController.kaiPlayer.setIEMMonoVocals(settings.iemMonoVocals);
-      }
     }
     if (settings.micToSpeakers !== undefined) {
       await this.api.settings.set('micToSpeakers', settings.micToSpeakers);
-
-      // Apply to both KAIPlayer audio subsystem and karaokeRenderer
-      const playerController = this.playerController;
-      if (playerController && playerController.kaiPlayer) {
-        playerController.kaiPlayer.setMicToSpeakers(settings.micToSpeakers);
-      }
-      if (playerController && playerController.karaokeRenderer) {
-        playerController.karaokeRenderer.setMicToSpeakers(settings.micToSpeakers);
-      }
     }
     if (settings.enableMic !== undefined) {
       await this.api.settings.set('enableMic', settings.enableMic);
-
-      // Apply to both KAIPlayer audio subsystem and karaokeRenderer
-      const playerController = this.playerController;
-      if (playerController && playerController.kaiPlayer) {
-        playerController.kaiPlayer.setEnableMic(settings.enableMic);
-      }
-      if (playerController && playerController.karaokeRenderer) {
-        playerController.karaokeRenderer.setMicEnabled(settings.enableMic);
-      }
     }
+    // Settings saved - will be applied on app/player restart
+    console.log('✅ Audio settings saved:', settings);
   }
 
   // ===== Effects Controls =====
@@ -448,45 +376,8 @@ export class ElectronBridge extends BridgeInterface {
 
     const result = await this.api.settings.set('waveformPreferences', cleanPrefs);
 
-    // Use the player reference from event (no globals)
-    const playerController = this.playerController;
-
-    if (!playerController) {
-      console.warn('⚠️ Player not initialized yet');
-      return result;
-    }
-
-    const currentFormat = playerController.currentFormat;
-    const karaokeRenderer = playerController.karaokeRenderer;
-    const cdgPlayer = playerController.cdgPlayer;
-
-    console.log('🔧 Applying settings, format:', currentFormat, 'prefs:', cleanPrefs);
-
-    if (currentFormat === 'kai' && karaokeRenderer) {
-      console.log('🎵 Applying to KAI player');
-      if (cleanPrefs.enableWaveforms !== undefined) {
-        karaokeRenderer.setWaveformsEnabled(cleanPrefs.enableWaveforms);
-      }
-      if (cleanPrefs.enableEffects !== undefined) {
-        karaokeRenderer.setEffectsEnabled(cleanPrefs.enableEffects);
-      }
-      if (cleanPrefs.showUpcomingLyrics !== undefined) {
-        karaokeRenderer.setShowUpcomingLyrics(cleanPrefs.showUpcomingLyrics);
-      }
-      if (cleanPrefs.overlayOpacity !== undefined) {
-        karaokeRenderer.waveformPreferences.overlayOpacity = cleanPrefs.overlayOpacity;
-      }
-    } else if (currentFormat === 'cdg' && cdgPlayer) {
-      console.log('💿 Applying to CDG player');
-      if (cleanPrefs.enableEffects !== undefined) {
-        cdgPlayer.setEffectsEnabled(cleanPrefs.enableEffects);
-      }
-      if (cleanPrefs.overlayOpacity !== undefined) {
-        cdgPlayer.setOverlayOpacity(cleanPrefs.overlayOpacity);
-      }
-    } else {
-      console.warn('⚠️ No active player format or player not ready');
-    }
+    // Settings saved and broadcast via IPC (applied by useAudioEngine hook)
+    console.log('✅ Waveform preferences saved and broadcast:', cleanPrefs);
 
     return result;
   }
@@ -684,11 +575,6 @@ export class ElectronBridge extends BridgeInterface {
     }
   }
 
-  offStateChange(domain, callback) {
-    // No longer needed - cleanup functions returned directly from onStateChange
-    console.warn('offStateChange is deprecated - use the cleanup function returned from onStateChange instead');
-  }
-
   // ===== Lifecycle =====
 
   async connect() {
@@ -699,7 +585,6 @@ export class ElectronBridge extends BridgeInterface {
   async disconnect() {
     // Cleanup is now handled by the cleanup functions returned from each subscription
     // Components should call the cleanup functions when they unmount
-    this.listeners.clear();
     console.log('✅ ElectronBridge disconnected');
   }
 }

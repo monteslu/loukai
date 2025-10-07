@@ -45,7 +45,8 @@ export function registerEffectsHandlers(mainApp) {
   // Select an effect
   ipcMain.handle('effects:select', async (event, effectName) => {
     try {
-      mainApp.sendToRenderer('effects:select', effectName);
+      // Update AppState so web admin and other clients can see current effect
+      mainApp.appState.updateEffectsState({ current: effectName });
       return { success: true };
     } catch (error) {
       console.error('Failed to select effect:', error);

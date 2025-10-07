@@ -42,32 +42,4 @@ export function registerAppHandlers(mainApp) {
   ipcMain.handle('library:search', (event, query) => {
     return libraryService.searchSongs(mainApp, query);
   });
-
-  // Set application setting
-  ipcMain.handle('settings:set', (event, key, value) => {
-    mainApp.settings.set(key, value);
-
-    // Update AppState for device preferences
-    if (key === 'devicePreferences') {
-      mainApp.appState.setAudioDevices(value);
-    }
-
-    // Broadcast settings changes to web admin clients
-    if (mainApp.webServer && mainApp.webServer.io) {
-      if (key === 'waveformPreferences') {
-        mainApp.webServer.io.to('admin-clients').emit('settings:waveform', value);
-
-        // If disabled effects changed, also emit effects update
-        if (value.disabledEffects !== undefined) {
-          mainApp.webServer.io.emit('effects-update', {
-            disabled: value.disabledEffects
-          });
-        }
-      } else if (key === 'autoTunePreferences') {
-        mainApp.webServer.io.to('admin-clients').emit('settings:autotune', value);
-      }
-    }
-
-    return { success: true };
-  });
 }

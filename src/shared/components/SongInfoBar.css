@@ -46,7 +46,7 @@
   font-size: 18px;
 }
 
-.song-info {
+.song-info-display {
   text-align: center;
   display: flex;
   align-items: center;
@@ -54,7 +54,7 @@
   gap: 8px;
 }
 
-.song-info .format-icon {
+.song-info-display .format-icon {
   font-size: 16px;
   line-height: 1;
 }

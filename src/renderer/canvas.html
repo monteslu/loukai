@@ -48,12 +48,33 @@
             border: none;
             cursor: pointer;
         }
+
+        /* Hide video controls completely */
+        #video::-webkit-media-controls {
+            display: none !important;
+        }
+
+        #video::-webkit-media-controls-enclosure {
+            display: none !important;
+        }
+
+        #video::-webkit-media-controls-panel {
+            display: none !important;
+        }
+
+        #video::-webkit-media-controls-play-button {
+            display: none !important;
+        }
+
+        #video::-webkit-media-controls-start-playback-button {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
     <video id="video" autoplay muted playsinline></video>
 
-    <!-- Load canvas application logic -->
-    <script type="module" src="js/canvas-app.js"></script>
+    <!-- Load canvas application logic (not a module due to nodeIntegration) -->
+    <script src="js/canvas-app.js"></script>
 </body>
 </html>

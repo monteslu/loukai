@@ -1,67 +1,45 @@
 /**
  * TransportControlsWrapper - Renderer-specific wrapper for PlayerControls
- * Manages state and bridge integration for transport controls
+ * Uses React Context and hooks instead of bridge
  */
 
 import React, { useState, useEffect } from 'react';
 import { PlayerControls } from '../../shared/components/PlayerControls.jsx';
+import { usePlayerState } from '../../shared/contexts/PlayerContext.jsx';
+import { usePlayer } from '../../shared/hooks/usePlayer.js';
 
 export function TransportControlsWrapper({ bridge }) {
-  const [playback, setPlayback] = useState({ isPlaying: false, position: 0, duration: 0 });
-  const [currentSong, setCurrentSong] = useState(null);
+  const { currentSong, isPlaying, currentPosition, duration } = usePlayerState();
+  const { play, pause, restart, next, seek } = usePlayer();
   const [currentEffect, setCurrentEffect] = useState('');
 
+  // Subscribe to effects state (TODO: move to EffectsContext in future)
   useEffect(() => {
-    if (!bridge) return;
+    if (!window.kaiAPI?.effects) return;
 
-    const unsubscribers = [];
+    const handleEffectChanged = (event, effects) => {
+      setCurrentEffect(effects.current || '');
+    };
 
-    // Subscribe to playback state
-    unsubscribers.push(
-      bridge.onPlaybackStateChanged?.((state) => {
-        setPlayback(state);
-      })
-    );
-
-    // Subscribe to current song
-    unsubscribers.push(
-      bridge.onCurrentSongChanged?.((song) => {
-        setCurrentSong(song);
-      })
-    );
-
-    // Subscribe to effects
-    unsubscribers.push(
-      bridge.onEffectChanged?.((effect) => {
-        setCurrentEffect(effect.current || '');
-      })
-    );
-
-    // Fetch initial state
-    Promise.all([
-      bridge.getPlaybackState?.().then(setPlayback).catch(() => {}),
-      bridge.getQueue?.().then(data => {
-        if (data.currentSong) {
-          setCurrentSong(data.currentSong);
-        }
-      }).catch(() => {})
-    ]);
+    window.kaiAPI.effects.onChanged(handleEffectChanged);
 
     return () => {
-      unsubscribers.forEach(unsub => unsub && unsub());
+      window.kaiAPI.effects.removeChangedListener(handleEffectChanged);
     };
-  }, [bridge]);
+  }, []);
 
-  // Player callbacks
-  const handlePlay = () => bridge.play?.();
-  const handlePause = () => bridge.pause?.();
-  const handleRestart = () => bridge.restart?.();
-  const handleNext = () => bridge.playNext?.();
-  const handleSeek = (position) => bridge.seek?.(position);
+  // Effect callbacks (TODO: move to useEffects hook in future)
+  const handlePreviousEffect = () => {
+    if (window.kaiAPI?.effects) {
+      window.kaiAPI.effects.previous();
+    }
+  };
 
-  // Effect callbacks
-  const handlePreviousEffect = () => bridge.previousEffect?.();
-  const handleNextEffect = () => bridge.nextEffect?.();
+  const handleNextEffect = () => {
+    if (window.kaiAPI?.effects) {
+      window.kaiAPI.effects.next();
+    }
+  };
 
   const handleOpenCanvasWindow = () => {
     if (window.kaiAPI?.window?.openCanvas) {
@@ -69,6 +47,7 @@ export function TransportControlsWrapper({ bridge }) {
     }
   };
 
+  const playback = { isPlaying, position: currentPosition, duration };
   const isLoading = currentSong?.isLoading || false;
 
   return (
@@ -77,11 +56,11 @@ export function TransportControlsWrapper({ bridge }) {
       currentSong={currentSong}
       currentEffect={currentEffect}
       isLoading={isLoading}
-      onPlay={handlePlay}
-      onPause={handlePause}
-      onRestart={handleRestart}
-      onNext={handleNext}
-      onSeek={handleSeek}
+      onPlay={play}
+      onPause={pause}
+      onRestart={restart}
+      onNext={next}
+      onSeek={seek}
       onPreviousEffect={handlePreviousEffect}
       onNextEffect={handleNextEffect}
       onOpenCanvasWindow={handleOpenCanvasWindow}

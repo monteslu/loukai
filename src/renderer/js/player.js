@@ -51,6 +51,15 @@ export class PlayerController {
     }
 
     onSongLoaded(metadata) {
+        // Store song metadata for display
+        if (this.karaokeRenderer && metadata) {
+            this.karaokeRenderer.setSongMetadata({
+                title: metadata.title,
+                artist: metadata.artist,
+                requester: metadata.requester
+            });
+        }
+
         // Get duration from player for karaokeRenderer
         let duration = this.currentPlayer?.getDuration() || metadata?.duration || 0;
 
@@ -70,8 +79,10 @@ export class PlayerController {
         const lyrics = metadata?.lyrics || null;
         if (lyrics) {
             this.karaokeRenderer.loadLyrics(lyrics, duration);
+            // Initial render at position 0 to show title
+            this.karaokeRenderer.setCurrentTime(0);
         }
-        
+
         // Load vocals audio data for waveform visualization
         if (metadata?.audio?.sources) {
             
@@ -164,26 +175,59 @@ export class PlayerController {
 
     async play() {
         this.isPlaying = true;
-        
+
         if (this.karaokeRenderer) {
             this.karaokeRenderer.setPlaying(true);
         }
-        
-        // Audio engine is already handled by main.js - don't call it again
+
+        // Play the actual audio
+        if (this.currentPlayer) {
+            await this.currentPlayer.play();
+        }
     }
 
     async pause() {
         this.isPlaying = false;
-        
+
         if (this.karaokeRenderer) {
             this.karaokeRenderer.setPlaying(false);
         }
-        
-        // Audio engine is already handled by main.js - don't call it again
+
+        // Pause the actual audio
+        if (this.currentPlayer) {
+            await this.currentPlayer.pause();
+        }
     }
 
     // Utility methods removed - no longer needed (formatTime handled by formatUtils.js)
     // debugLoadVocals removed - no longer needed
+
+    applyWaveformSettings(settings) {
+        // Apply settings to active renderer (KAI or CDG)
+        if (this.currentFormat === 'kai' && this.karaokeRenderer) {
+            // Update waveformPreferences object (used by renderer)
+            if (settings.enableWaveforms !== undefined) {
+                this.karaokeRenderer.waveformPreferences.enableWaveforms = settings.enableWaveforms;
+            }
+            if (settings.enableEffects !== undefined) {
+                this.karaokeRenderer.waveformPreferences.enableEffects = settings.enableEffects;
+            }
+            if (settings.showUpcomingLyrics !== undefined) {
+                this.karaokeRenderer.waveformPreferences.showUpcomingLyrics = settings.showUpcomingLyrics;
+            }
+            if (settings.overlayOpacity !== undefined) {
+                this.karaokeRenderer.waveformPreferences.overlayOpacity = settings.overlayOpacity;
+            }
+        } else if (this.currentFormat === 'cdg' && this.cdgPlayer) {
+            // CDG player settings
+            if (settings.enableEffects !== undefined) {
+                this.cdgPlayer.setEffectsEnabled(settings.enableEffects);
+            }
+            if (settings.overlayOpacity !== undefined) {
+                this.cdgPlayer.overlayOpacity = settings.overlayOpacity;
+            }
+        }
+    }
 
     destroy() {
         if (this.updateTimer) {

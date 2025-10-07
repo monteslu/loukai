@@ -123,7 +123,7 @@ export function useKeyboardShortcuts(options = {}) {
  * Toggle canvas fullscreen
  * This is a utility function that directly manipulates the DOM
  */
-async function toggleCanvasFullscreen() {
+export async function toggleCanvasFullscreen() {
   try {
     const karaokeCanvas = document.getElementById('karaokeCanvas');
     if (!karaokeCanvas) {

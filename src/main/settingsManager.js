@@ -14,15 +14,12 @@ class SettingsManager {
     try {
       const data = await fs.readFile(this.settingsPath, 'utf8');
       this.settings = JSON.parse(data);
-      console.log('📁 Settings loaded:', this.settings);
     } catch (error) {
       // Try to restore from backup if main file is corrupted
       const backupPath = this.settingsPath + '.backup';
       try {
-        console.warn('⚠️ Settings file corrupted or missing, attempting backup restore...');
         const backupData = await fs.readFile(backupPath, 'utf8');
         this.settings = JSON.parse(backupData);
-        console.log('✅ Settings restored from backup:', this.settings);
 
         // Save the restored settings back to main file
         await this.save();
@@ -33,7 +30,6 @@ class SettingsManager {
           lastOpenedFile: null,
           windowBounds: null
         };
-        console.log('📁 Using default settings (backup not available)');
       }
     }
     return this.settings;
@@ -66,7 +62,6 @@ class SettingsManager {
       await fs.writeFile(this.settingsPath, jsonString, 'utf8');
 
       this.isDirty = false;
-      console.log('💾 Settings saved');
     } catch (error) {
       console.error('❌ Failed to save settings:', error);
       throw error; // Propagate error so caller knows save failed
@@ -77,7 +72,8 @@ class SettingsManager {
     if (!this.settings) {
       throw new Error('Settings not loaded. Call load() first.');
     }
-    return this.settings[key] !== undefined ? this.settings[key] : defaultValue;
+    const value = this.settings[key] !== undefined ? this.settings[key] : defaultValue;
+    return value;
   }
 
   set(key, value) {

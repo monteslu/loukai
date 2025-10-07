@@ -1,5 +1,4 @@
-import { getAppInstance } from './appInstance.js';
-import { onWindowResize, offWindowEvent } from './utils/window-events.js';
+// TODO: State should be passed to renderer instead of accessing globals
 
 export class KaraokeRenderer {
     constructor(canvasId) {
@@ -310,12 +309,17 @@ export class KaraokeRenderer {
         requestAnimationFrame(() => resizeCanvas());
 
         // Resize on window resize
-        onWindowResize(resizeCanvas);
+        window.addEventListener('resize', resizeCanvas);
 
         // Store reference to remove listener on destroy
         this.resizeHandler = resizeCanvas;
     }
     
+    setSongMetadata(metadata) {
+        // Store song metadata for display when not playing
+        this.songMetadata = metadata || {};
+    }
+
     loadLyrics(lyricsData, songDuration = 0) {
         // Store original lyrics data for outro detection
         this.originalLyricsData = lyricsData || [];
@@ -678,9 +682,15 @@ export class KaraokeRenderer {
     }
     
     renderWebGLEffects() {
-        if (!this.effectsGL || !this.waveformPreferences.enableEffects) {
-            if (Math.random() < 0.01) { // Debug occasionally
-            }
+        if (!this.effectsGL) {
+            return;
+        }
+
+        // Clear effects canvas if disabled
+        if (!this.waveformPreferences.enableEffects) {
+            const gl = this.effectsGL;
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
             return;
         }
         
@@ -810,10 +820,7 @@ export class KaraokeRenderer {
     }
     
     isEffectDisabled(effectName) {
-        // Check if the effectsManager exists and has disabled effects
-        if (getAppInstance()?.effectsManager?.disabledEffects) {
-            return getAppInstance().effectsManager.disabledEffects.has(effectName);
-        }
+        // TODO: Get disabled effects from Context/props instead
         return false;
     }
 
@@ -1376,13 +1383,13 @@ export class KaraokeRenderer {
         const vocalsEnd = shouldProfile ? performance.now() : 0;
         this.drawMicrophoneWaveform(width, height);
         const micEnd = shouldProfile ? performance.now() : 0;
-        
-        // If song is loaded but not playing, show song info instead of lyrics
-        if (!this.isPlaying && getAppInstance() && getAppInstance().currentSong) {
-            this.drawSongInfo(width, height, getAppInstance().currentSong);
+
+        // Show song info when loaded but not playing
+        if (!this.isPlaying && this.songMetadata) {
+            this.drawSongInfo(width, height, this.songMetadata);
             return;
         }
-        
+
         if (!this.lyrics || this.lyrics.length === 0) {
             return;
         }
@@ -2338,7 +2345,7 @@ export class KaraokeRenderer {
         
         // Clean up resize listener
         if (this.resizeHandler) {
-            offWindowEvent('resize', this.resizeHandler);
+            window.removeEventListener('resize', this.resizeHandler);
         }
         
         // Destroy Butterchurn instance and ALL related components

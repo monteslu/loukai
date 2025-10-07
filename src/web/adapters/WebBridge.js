@@ -256,31 +256,57 @@ export class WebBridge extends BridgeInterface {
 
   // Waveform/Visualization Settings (for VisualizationSettings component)
   async getWaveformPreferences() {
-    const prefs = await this.getPreferences();
-    return prefs.waveformPreferences || {
-      enableWaveforms: true,
-      enableEffects: true,
-      randomEffectOnSong: false,
-      showUpcomingLyrics: true,
-      overlayOpacity: 0.7
-    };
+    try {
+      const response = await this._fetch('/settings/waveform');
+      return response.settings || {
+        enableWaveforms: true,
+        enableEffects: true,
+        randomEffectOnSong: false,
+        showUpcomingLyrics: true,
+        overlayOpacity: 0.7
+      };
+    } catch (error) {
+      console.error('Failed to fetch waveform preferences:', error);
+      return {
+        enableWaveforms: true,
+        enableEffects: true,
+        randomEffectOnSong: false,
+        showUpcomingLyrics: true,
+        overlayOpacity: 0.7
+      };
+    }
   }
 
   async saveWaveformPreferences(prefs) {
-    return await this.updateEffectsPreferences(prefs);
+    return await this._fetch('/settings/waveform', {
+      method: 'POST',
+      body: JSON.stringify(prefs)
+    });
   }
 
   async getAutotunePreferences() {
-    const prefs = await this.getPreferences();
-    return prefs.autoTunePreferences || {
-      enabled: false,
-      strength: 50,
-      speed: 20
-    };
+    try {
+      const response = await this._fetch('/settings/autotune');
+      return response.settings || {
+        enabled: false,
+        strength: 50,
+        speed: 20
+      };
+    } catch (error) {
+      console.error('Failed to fetch autotune preferences:', error);
+      return {
+        enabled: false,
+        strength: 50,
+        speed: 20
+      };
+    }
   }
 
   async saveAutotunePreferences(prefs) {
-    return await this.updateAutoTunePreferences(prefs);
+    return await this._fetch('/settings/autotune', {
+      method: 'POST',
+      body: JSON.stringify(prefs)
+    });
   }
 
   async setAutotuneEnabled(enabled) {

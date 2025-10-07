@@ -42,6 +42,7 @@ class KaiPlayerApp {
     this.positionTimer = null;
     this.libraryManager = null;
     this.cachedLibrary = null; // Store library cache independently
+    this.isQuitting = false; // Track if app is quitting to avoid duplicate cleanup
     this.canvasStreaming = {
       isStreaming: false,
       stream: null,
@@ -1766,7 +1767,11 @@ class KaiPlayerApp {
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
         // Create a one-time listener for the response
         const responseChannel = `${channel}-response`;
+
+        let timeoutId;
+
         const listener = (event, data) => {
+          clearTimeout(timeoutId);
           ipcMain.removeListener(responseChannel, listener);
           resolve(data);
         };
@@ -1776,7 +1781,7 @@ class KaiPlayerApp {
         this.mainWindow.webContents.send(channel);
 
         // Timeout after 5 seconds
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           ipcMain.removeListener(responseChannel, listener);
           resolve(null);
         }, 5000);
@@ -2148,9 +2153,21 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('🚨 Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
+// Ensure settings are saved before app quits
+app.on('before-quit', async (event) => {
+  if (!kaiApp.isQuitting) {
+    event.preventDefault();
+    kaiApp.isQuitting = true;
+    await kaiApp.cleanup();
+    app.quit();
+  }
+});
+
 app.on('window-all-closed', async () => {
   // Clean up web server and save state
-  await kaiApp.cleanup();
+  if (!kaiApp.isQuitting) {
+    await kaiApp.cleanup();
+  }
 
   // Quit the app when all windows are closed, even on macOS
   app.quit();

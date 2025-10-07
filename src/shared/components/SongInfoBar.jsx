@@ -35,7 +35,7 @@ export function SongInfoBar({
         )}
       </div>
       <div className="song-info-center">
-        <div className="song-info">
+        <div className="song-info-display">
           {formatIcon && <span className="format-icon">{formatIcon}</span>}
           <span className="song-display">{songDisplay}</span>
         </div>
