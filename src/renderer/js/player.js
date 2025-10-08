@@ -1,16 +1,20 @@
-class PlayerController {
-    constructor(audioEngine = null) {
-        this.audioEngine = audioEngine;
-        this.lyricsContainer = document.getElementById('lyricsContainer');
+import { KaraokeRenderer } from './karaokeRenderer.js';
+import { CDGPlayer } from './cdgPlayer.js';
 
-        // Initialize karaoke renderer for KAI format
+export class PlayerController {
+    constructor(kaiPlayer = null) {
+        this.kaiPlayer = kaiPlayer;
+        // lyricsContainer removed - KaraokeRenderer handles canvas-based lyrics now
+
+        // Initialize karaoke renderer for KAI format lyrics
         this.karaokeRenderer = new KaraokeRenderer('karaokeCanvas');
 
-        // Initialize CDG renderer for CDG format
-        this.cdgRenderer = new CDGRenderer('karaokeCanvas');
+        // Initialize CDG player for CDG format (audio + graphics)
+        this.cdgPlayer = new CDGPlayer('karaokeCanvas');
 
-        // Track current format
+        // Track current format and active player
         this.currentFormat = null; // 'kai' or 'cdg'
+        this.currentPlayer = null; // Reference to active PlayerInterface instance
 
         // Ensure canvas is properly sized after initialization
         setTimeout(() => {
@@ -19,20 +23,11 @@ class PlayerController {
             }
         }, 200);
 
-        this.currentTime = document.getElementById('currentTime');
-        this.totalTime = document.getElementById('totalTime');
-
-        // Progress bar elements
-        this.progressFill = document.getElementById('progressFill');
-        this.progressHandle = document.getElementById('progressHandle');
-        this.progressBar = document.querySelector('.progress-bar');
-
-        this.songDuration = 0;
-        this.currentPosition = 0;
-        this.lyrics = null;
+        // DOM element references removed - React PlayerControls handles time/progress display now
+        // Progress bar click-to-seek handled by React PlayerControls
+        // Time display handled by React PlayerControls
 
         this.isPlaying = false;
-        this.animationFrame = null;
 
         this.init();
     }
@@ -51,50 +46,43 @@ class PlayerController {
 
 
     setupEventListeners() {
-        // Progress bar click for seeking
-        if (this.progressBar) {
-            this.progressBar.addEventListener('click', (e) => {
-                this.seekToProgressPosition(e);
-            });
-        }
-        
-        // Transport controls
-        const restartBtn = document.getElementById('restartBtn');
-        const nextTrackBtn = document.getElementById('nextTrackBtn');
-        
-        // Restart and next track buttons are handled by main.js
+        // Progress bar click-to-seek now handled by React PlayerControls component
+        // Transport controls (play/pause/restart/next) handled by React TransportControlsWrapper
     }
 
     onSongLoaded(metadata) {
-        // Always reset timer to 0 first
-        this.currentPosition = 0;
-        
-        // Get real duration from audio engine if available, otherwise from metadata
-        if (this.audioEngine && this.audioEngine.getDuration) {
-            this.songDuration = this.audioEngine.getDuration();
-        } else {
-            this.songDuration = metadata?.duration || 0;
+        // Store song metadata for display
+        if (this.karaokeRenderer && metadata) {
+            this.karaokeRenderer.setSongMetadata({
+                title: metadata.title,
+                artist: metadata.artist,
+                requester: metadata.requester
+            });
         }
-        
+
+        // Get duration from player for karaokeRenderer
+        let duration = this.currentPlayer?.getDuration() || metadata?.duration || 0;
+
         // If still zero, try to estimate from lyrics end time as fallback
-        if (this.songDuration === 0 && metadata?.lyrics && Array.isArray(metadata.lyrics)) {
+        if (duration === 0 && metadata?.lyrics && Array.isArray(metadata.lyrics)) {
             let maxLyricTime = 0;
             for (const line of metadata.lyrics) {
                 const endTime = line.end || line.end_time || (line.start || line.time || 0) + 3;
                 maxLyricTime = Math.max(maxLyricTime, endTime);
             }
             if (maxLyricTime > 0) {
-                this.songDuration = maxLyricTime + 10; // Add some padding
+                duration = maxLyricTime + 10; // Add some padding
             }
         }
-        
-        this.lyrics = metadata?.lyrics || null;
-        
-        // Load lyrics into karaoke renderer with song duration
-        if (this.lyrics) {
-            this.karaokeRenderer.loadLyrics(this.lyrics, this.songDuration);
+
+        // Load lyrics into karaoke renderer
+        const lyrics = metadata?.lyrics || null;
+        if (lyrics) {
+            this.karaokeRenderer.loadLyrics(lyrics, duration);
+            // Initial render at position 0 to show title
+            this.karaokeRenderer.setCurrentTime(0);
         }
-        
+
         // Load vocals audio data for waveform visualization
         if (metadata?.audio?.sources) {
             
@@ -132,12 +120,10 @@ class PlayerController {
             }
         } else {
         }
-        
-        
-        // Update displays immediately to show reset timer and new duration
-        this.updateTimeDisplay();
-        this.updateProgressBar();
-        
+
+
+        // Display updates handled by React PlayerControls via IPC state
+
         // Ensure we're in stopped state
         this.pause();
     }
@@ -146,244 +132,100 @@ class PlayerController {
 
 
 
-    renderLyrics() {
-        if (!this.lyrics) {
-            this.lyricsContainer.innerHTML = '<div class="no-lyrics">No lyrics available</div>';
-            return;
-        }
-
-        this.lyricsContainer.innerHTML = '';
-        
-        if (Array.isArray(this.lyrics)) {
-            this.lyrics.forEach((line, index) => {
-                const lineElement = document.createElement('div');
-                lineElement.className = 'lyric-line';
-                lineElement.dataset.index = index;
-                
-                // Handle different KAI line formats
-                if (typeof line === 'object' && line !== null) {
-                    lineElement.dataset.time = line.time || line.start_time || 0;
-                    lineElement.textContent = line.text || line.lyrics || line.content || '';
-                } else {
-                    lineElement.dataset.time = index * 3; // Fallback timing
-                    lineElement.textContent = line || '';
-                }
-                
-                this.lyricsContainer.appendChild(lineElement);
-            });
-        } else if (typeof this.lyrics === 'string') {
-            const lines = this.lyrics.split('\n');
-            lines.forEach((line, index) => {
-                const lineElement = document.createElement('div');
-                lineElement.className = 'lyric-line';
-                lineElement.dataset.index = index;
-                lineElement.textContent = line;
-                this.lyricsContainer.appendChild(lineElement);
-            });
-        }
-    }
+    // renderLyrics() method removed - KaraokeRenderer handles canvas-based lyrics now
 
     updatePosition() {
-        // Get real position based on current format
-        if (this.currentFormat === 'cdg' && this.cdgRenderer) {
-            // CDG format - get time from CDG renderer's audio element
-            this.currentPosition = this.cdgRenderer.getCurrentTime();
-            this.songDuration = this.cdgRenderer.getDuration() || this.songDuration;
-        } else if (this.audioEngine && this.audioEngine.getCurrentTime) {
-            // KAI format - get time from audio engine
-            const engineTime = this.audioEngine.getCurrentTime();
-            this.currentPosition = engineTime;
-        } else {
-            // Fallback to increment
-            this.currentPosition += 0.1;
-        }
-        
-        // Stop playback when we reach the end of the song
-        if (this.songDuration > 0 && this.currentPosition >= this.songDuration) {
-            this.currentPosition = this.songDuration;
-            this.pause();
-        }
-        
-        this.updateTimeDisplay();
-        this.updateProgressBar();
-        this.updateKaraokeTime();
-    }
-
-    updateKaraokeTime() {
-        if (this.karaokeRenderer) {
-            this.karaokeRenderer.setCurrentTime(this.currentPosition);
-            if (Math.random() < 0.05) { // Debug occasionally
-            }
+        // Update karaokeRenderer for lyrics sync ONLY
+        // (PlayerInterface handles state broadcasting, song end detection, UI updates)
+        if (this.currentPlayer && this.karaokeRenderer) {
+            const position = this.currentPlayer.getCurrentPosition();
+            this.karaokeRenderer.setCurrentTime(position);
         }
     }
 
-    updateTimeDisplay() {
-        if (this.currentTime) {
-            this.currentTime.textContent = this.formatTime(this.currentPosition);
-        }
-        
-        if (this.totalTime) {
-            this.totalTime.textContent = this.formatTime(this.songDuration);
-        }
-    }
+    // updateTimeDisplay() method removed - React PlayerControls handles time display via IPC state
+    // updateProgressBar() method removed - React PlayerControls handles progress bar via IPC state
 
-
-    updateProgressBar() {
-        if (!this.songDuration || !this.progressFill || !this.progressHandle) return;
-        
-        const progress = (this.currentPosition / this.songDuration) * 100;
-        this.progressFill.style.width = progress + '%';
-        this.progressHandle.style.left = progress + '%';
-    }
-
-    updateActiveLyrics() {
-        if (!this.lyrics) return;
-        
-        const lyricLines = this.lyricsContainer.querySelectorAll('.lyric-line');
-        let activeLineFound = false;
-        
-        lyricLines.forEach((line, index) => {
-            const lineTime = parseFloat(line.dataset.time) || 0;
-            const nextLineTime = index < lyricLines.length - 1 ? 
-                parseFloat(lyricLines[index + 1].dataset.time) || Infinity : 
-                Infinity;
-            
-            // A line is active if current time is between this line's time and next line's time
-            const isActive = this.currentPosition >= lineTime && this.currentPosition < nextLineTime;
-            
-            line.classList.toggle('active', isActive);
-            
-            if (isActive && !activeLineFound) {
-                activeLineFound = true;
-                line.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'center'
-                });
-            }
-        });
-    }
-
-
-    seekToProgressPosition(event) {
-        if (!this.songDuration || !this.progressBar) return;
-        
-        const rect = this.progressBar.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const progress = Math.max(0, Math.min(1, x / rect.width));
-        const newPosition = progress * this.songDuration;
-        
-        this.setPosition(newPosition);
-    }
+    // updateActiveLyrics() method removed - KaraokeRenderer handles canvas-based lyrics now
+    // seekToProgressPosition() method removed - React PlayerControls handles click-to-seek now
 
     async setPosition(positionSec) {
-        this.currentPosition = Math.max(0, Math.min(this.songDuration, positionSec));
+        if (!this.currentPlayer) return;
 
-        if (this.currentFormat === 'cdg' && this.cdgRenderer) {
-            // CDG format - seek using CDG renderer
-            this.cdgRenderer.seek(this.currentPosition);
-        } else if (this.audioEngine) {
-            // KAI format - seek using audio engine
-            try {
-                await this.audioEngine.seek(this.currentPosition);
-            } catch (error) {
-                console.error('Seek error:', error);
-            }
+        // Bounds check using player's duration
+        const duration = this.currentPlayer.getDuration();
+        const boundedPosition = Math.max(0, Math.min(duration, positionSec));
+
+        // Seek player
+        try {
+            await this.currentPlayer.seek(boundedPosition);
+        } catch (error) {
+            console.error('Seek error:', error);
         }
 
-        // Update karaoke renderer's time position immediately after seeking
+        // Update karaoke renderer immediately for lyrics sync
         if (this.karaokeRenderer) {
-            this.karaokeRenderer.setCurrentTime(this.currentPosition);
+            this.karaokeRenderer.setCurrentTime(boundedPosition);
             // Reset the locked upcoming lyric so it recalculates based on new position
             this.karaokeRenderer.lockedUpcomingIndex = null;
         }
 
-        this.updateTimeDisplay();
-        this.updateProgressBar();
-        this.updateActiveLyrics();
+        // Player engine will broadcast new position via reportStateChange() for UI updates
     }
 
     async play() {
         this.isPlaying = true;
-        
+
         if (this.karaokeRenderer) {
             this.karaokeRenderer.setPlaying(true);
         }
-        
-        // Audio engine is already handled by main.js - don't call it again
+
+        // Play the actual audio
+        if (this.currentPlayer) {
+            await this.currentPlayer.play();
+        }
     }
 
     async pause() {
         this.isPlaying = false;
-        
+
         if (this.karaokeRenderer) {
             this.karaokeRenderer.setPlaying(false);
         }
-        
-        // Audio engine is already handled by main.js - don't call it again
-    }
 
-    formatTime(seconds) {
-        if (!seconds || isNaN(seconds)) return '0:00';
-        
-        const mins = Math.floor(seconds / 60);
-        const secs = Math.floor(seconds % 60);
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    }
-
-    generateDummyWaveform(duration) {
-        const sampleRate = 44100;
-        const samples = Math.floor(duration * sampleRate);
-        const data = new Float32Array(samples);
-        
-        for (let i = 0; i < samples; i++) {
-            const t = i / sampleRate;
-            const freq = 440 + Math.sin(t * 0.5) * 200;
-            data[i] = Math.sin(t * freq * 2 * Math.PI) * 0.3 * Math.exp(-t * 0.5);
+        // Pause the actual audio
+        if (this.currentPlayer) {
+            await this.currentPlayer.pause();
         }
-        
-        return data;
     }
 
-    resample(audioData, targetSamples) {
-        if (!audioData || audioData.length === 0) return [];
-        
-        const ratio = audioData.length / targetSamples;
-        const resampled = new Array(targetSamples);
-        
-        for (let i = 0; i < targetSamples; i++) {
-            const sourceIndex = Math.floor(i * ratio);
-            resampled[i] = audioData[sourceIndex] || 0;
-        }
-        
-        return resampled;
-    }
+    // Utility methods removed - no longer needed (formatTime handled by formatUtils.js)
+    // debugLoadVocals removed - no longer needed
 
-    // Debug method to manually try loading vocals from current song data
-    async debugLoadVocals() {
-        
-        if (this.audioEngine) {
-            
-            // Try different possible properties where song data might be stored
-            const possibleSongData = this.audioEngine.currentSong || this.audioEngine.songData || this.audioEngine.loadedSong;
-            
-            if (possibleSongData) {
-                
-                if (possibleSongData.audio && possibleSongData.audio.sources) {
-                    
-                    const vocalsSource = possibleSongData.audio.sources.find(source => 
-                        source.name === 'vocals' || 
-                        source.filename?.includes('vocals')
-                    );
-                    
-                    if (vocalsSource && vocalsSource.audioData) {
-                        await this.karaokeRenderer.setVocalsAudio(vocalsSource.audioData);
-                    } else {
-                    }
-                } else {
-                }
-            } else {
+    applyWaveformSettings(settings) {
+        // Apply settings to active renderer (KAI or CDG)
+        if (this.currentFormat === 'kai' && this.karaokeRenderer) {
+            // Update waveformPreferences object (used by renderer)
+            if (settings.enableWaveforms !== undefined) {
+                this.karaokeRenderer.waveformPreferences.enableWaveforms = settings.enableWaveforms;
             }
-        } else {
+            if (settings.enableEffects !== undefined) {
+                this.karaokeRenderer.waveformPreferences.enableEffects = settings.enableEffects;
+            }
+            if (settings.showUpcomingLyrics !== undefined) {
+                this.karaokeRenderer.waveformPreferences.showUpcomingLyrics = settings.showUpcomingLyrics;
+            }
+            if (settings.overlayOpacity !== undefined) {
+                this.karaokeRenderer.waveformPreferences.overlayOpacity = settings.overlayOpacity;
+            }
+        } else if (this.currentFormat === 'cdg' && this.cdgPlayer) {
+            // CDG player settings
+            if (settings.enableEffects !== undefined) {
+                this.cdgPlayer.setEffectsEnabled(settings.enableEffects);
+            }
+            if (settings.overlayOpacity !== undefined) {
+                this.cdgPlayer.overlayOpacity = settings.overlayOpacity;
+            }
         }
     }
 
@@ -391,11 +233,7 @@ class PlayerController {
         if (this.updateTimer) {
             clearInterval(this.updateTimer);
         }
-        
-        if (this.animationFrame) {
-            cancelAnimationFrame(this.animationFrame);
-        }
-        
+
         if (this.karaokeRenderer) {
             this.karaokeRenderer.destroy();
         }

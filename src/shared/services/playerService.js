@@ -12,7 +12,8 @@
  */
 export function play(mainApp) {
   if (mainApp.mainWindow && !mainApp.mainWindow.isDestroyed()) {
-    mainApp.mainWindow.webContents.send('admin:play');
+    // Send IPC event to renderer
+    mainApp.mainWindow.webContents.send('player:togglePlayback');
     return { success: true, message: 'Play command sent' };
   }
 
@@ -29,7 +30,8 @@ export function play(mainApp) {
  */
 export function pause(mainApp) {
   if (mainApp.mainWindow && !mainApp.mainWindow.isDestroyed()) {
-    mainApp.mainWindow.webContents.send('admin:play'); // Same button toggles play/pause
+    // Send IPC event to renderer
+    mainApp.mainWindow.webContents.send('player:togglePlayback');
     return { success: true, message: 'Pause command sent' };
   }
 
@@ -46,7 +48,8 @@ export function pause(mainApp) {
  */
 export function restart(mainApp) {
   if (mainApp.mainWindow && !mainApp.mainWindow.isDestroyed()) {
-    mainApp.mainWindow.webContents.send('admin:restart');
+    // Send IPC event to renderer
+    mainApp.mainWindow.webContents.send('player:restart');
     return { success: true, message: 'Restart command sent' };
   }
 
@@ -71,7 +74,8 @@ export function seek(mainApp, positionSec) {
   }
 
   if (mainApp.mainWindow && !mainApp.mainWindow.isDestroyed()) {
-    mainApp.mainWindow.webContents.send('player:seek', positionSec);
+    // Send IPC event to renderer with position parameter
+    mainApp.mainWindow.webContents.send('player:setPosition', positionSec);
     return { success: true, message: 'Seek command sent', position: positionSec };
   }
 
@@ -148,7 +152,7 @@ export async function playNext(mainApp) {
     const newQueue = mainApp.appState.getQueue();
     if (newQueue.length > 0) {
       const nextSong = newQueue[0];
-      await mainApp.loadKaiFile(nextSong.path);
+      await mainApp.loadKaiFile(nextSong.path, nextSong.id);
 
       return {
         success: true,

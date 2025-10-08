@@ -26,6 +26,7 @@ const api = {
   mixer: {
     setMasterGain: (bus, gainDb) => ipcRenderer.invoke('mixer:setMasterGain', bus, gainDb),
     toggleMasterMute: (bus) => ipcRenderer.invoke('mixer:toggleMasterMute', bus),
+    toggleMute: (stemId, bus) => ipcRenderer.invoke('mixer:toggleMute', stemId, bus),
 
     onStateChange: (callback) => ipcRenderer.on('mixer:state', callback),
     removeStateListener: (callback) => ipcRenderer.removeListener('mixer:state', callback),
@@ -39,7 +40,20 @@ const api = {
   player: {
     play: () => ipcRenderer.invoke('player:play'),
     pause: () => ipcRenderer.invoke('player:pause'),
-    seek: (positionSec) => ipcRenderer.invoke('player:seek', positionSec)
+    seek: (positionSec) => ipcRenderer.invoke('player:seek', positionSec),
+    restart: () => ipcRenderer.invoke('player:restart'),
+    next: () => ipcRenderer.invoke('player:next'),
+
+    onPlaybackState: (callback) => ipcRenderer.on('playback:state', callback),
+    removePlaybackListener: (callback) => ipcRenderer.removeListener('playback:state', callback),
+
+    // Events from main process for playback control
+    onTogglePlayback: (callback) => ipcRenderer.on('player:togglePlayback', callback),
+    onRestart: (callback) => ipcRenderer.on('player:restart', callback),
+    onSetPosition: (callback) => ipcRenderer.on('player:setPosition', callback),
+    removeTogglePlaybackListener: (callback) => ipcRenderer.removeListener('player:togglePlayback', callback),
+    removeRestartListener: (callback) => ipcRenderer.removeListener('player:restart', callback),
+    removeSetPositionListener: (callback) => ipcRenderer.removeListener('player:setPosition', callback)
   },
   
   autotune: {
@@ -50,12 +64,15 @@ const api = {
   song: {
     onLoaded: (callback) => ipcRenderer.on('song:loaded', callback),
     onData: (callback) => ipcRenderer.on('song:data', callback),
+    onChanged: (callback) => ipcRenderer.on('song:changed', callback),
     removeSongListener: (callback) => ipcRenderer.removeListener('song:loaded', callback),
     removeDataListener: (callback) => ipcRenderer.removeListener('song:data', callback),
+    removeChangedListener: (callback) => ipcRenderer.removeListener('song:changed', callback),
     getCurrentSong: () => ipcRenderer.invoke('song:getCurrentSong')
   },
   
   editor: {
+    loadKai: (filePath) => ipcRenderer.invoke('editor:loadKai', filePath),
     saveKai: (kaiData, originalPath) => ipcRenderer.invoke('editor:saveKai', kaiData, originalPath),
     reloadKai: (filePath) => ipcRenderer.invoke('editor:reloadKai', filePath)
   },
@@ -80,6 +97,7 @@ const api = {
     syncLibrary: () => ipcRenderer.invoke('library:syncLibrary'),
     getCachedSongs: () => ipcRenderer.invoke('library:getCachedSongs'),
     getSongInfo: (filePath) => ipcRenderer.invoke('library:getSongInfo', filePath),
+    search: (query) => ipcRenderer.invoke('library:search', query),
 
     onFolderSet: (callback) => ipcRenderer.on('library:folderSet', callback),
     removeFolderSetListener: (callback) => ipcRenderer.removeListener('library:folderSet', callback)
@@ -93,7 +111,9 @@ const api = {
     getSongRequests: () => ipcRenderer.invoke('webServer:getSongRequests'),
     approveRequest: (requestId) => ipcRenderer.invoke('webServer:approveRequest', requestId),
     rejectRequest: (requestId) => ipcRenderer.invoke('webServer:rejectRequest', requestId),
-    refreshCache: () => ipcRenderer.invoke('webServer:refreshCache')
+    refreshCache: () => ipcRenderer.invoke('webServer:refreshCache'),
+    setAdminPassword: (password) => ipcRenderer.invoke('webServer:setAdminPassword', password),
+    clearAllRequests: () => ipcRenderer.invoke('webServer:clearAllRequests')
   },
 
   settings: {
@@ -109,7 +129,12 @@ const api = {
     addSong: (queueItem) => ipcRenderer.invoke('queue:addSong', queueItem),
     removeSong: (itemId) => ipcRenderer.invoke('queue:removeSong', itemId),
     get: () => ipcRenderer.invoke('queue:get'),
-    clear: () => ipcRenderer.invoke('queue:clear')
+    clear: () => ipcRenderer.invoke('queue:clear'),
+    load: (itemId) => ipcRenderer.invoke('queue:load', itemId),
+    reorderQueue: (songId, newIndex) => ipcRenderer.invoke('queue:reorderQueue', songId, newIndex),
+
+    onUpdated: (callback) => ipcRenderer.on('queue:updated', callback),
+    removeUpdatedListener: (callback) => ipcRenderer.removeListener('queue:updated', callback)
   },
 
   effect: {
@@ -119,21 +144,39 @@ const api = {
     removePreviousListener: (callback) => ipcRenderer.removeListener('effect:previous', callback)
   },
 
-  admin: {
-    onPlay: (callback) => ipcRenderer.on('admin:play', callback),
-    onNext: (callback) => ipcRenderer.on('admin:next', callback),
-    onRestart: (callback) => ipcRenderer.on('admin:restart', callback),
-    removePlayListener: (callback) => ipcRenderer.removeListener('admin:play', callback),
-    removeNextListener: (callback) => ipcRenderer.removeListener('admin:next', callback),
-    removeRestartListener: (callback) => ipcRenderer.removeListener('admin:restart', callback)
+  effects: {
+    getList: () => ipcRenderer.invoke('effects:getList'),
+    select: (effectName) => ipcRenderer.invoke('effects:select', effectName),
+    toggle: (effectName, enabled) => ipcRenderer.invoke('effects:toggle', effectName, enabled),
+    next: () => ipcRenderer.invoke('effects:next'),
+    previous: () => ipcRenderer.invoke('effects:previous'),
+    random: () => ipcRenderer.invoke('effects:random'),
+
+    onChanged: (callback) => ipcRenderer.on('effects:changed', callback),
+    removeChangedListener: (callback) => ipcRenderer.removeListener('effects:changed', callback)
   },
+
+  preferences: {
+    setAutoTune: (prefs) => ipcRenderer.invoke('preferences:setAutoTune', prefs),
+    setMicrophone: (prefs) => ipcRenderer.invoke('preferences:setMicrophone', prefs),
+    setEffects: (prefs) => ipcRenderer.invoke('preferences:setEffects', prefs),
+
+    onUpdated: (callback) => ipcRenderer.on('preferences:updated', callback),
+    removeUpdatedListener: (callback) => ipcRenderer.removeListener('preferences:updated', callback)
+  },
+
+  // admin.onPlay/onNext/onRestart removed - web admin calls window.app methods directly via executeJavaScript
 
   renderer: {
     sendPlaybackState: (state) => ipcRenderer.send('renderer:playbackState', state),
     updatePlaybackState: (updates) => ipcRenderer.send('renderer:updatePlaybackState', updates),
     songLoaded: (songData) => ipcRenderer.send('renderer:songLoaded', songData),
     updateMixerState: (mixerState) => ipcRenderer.send('renderer:updateMixerState', mixerState),
-    updateEffectsState: (effectsState) => ipcRenderer.send('renderer:updateEffectsState', effectsState)
+    updateEffectsState: (effectsState) => ipcRenderer.send('renderer:updateEffectsState', effectsState),
+    sendEffectsList: (effects) => ipcRenderer.send('effects:getList-response', effects),
+    sendCurrentEffect: (effectName) => ipcRenderer.send('effects:getCurrent-response', effectName),
+    sendDisabledEffects: (disabled) => ipcRenderer.send('effects:getDisabled-response', disabled),
+    sendWebRTCResponse: (command, result) => ipcRenderer.send(`webrtc:${command}-response`, result)
   },
 
   events: {

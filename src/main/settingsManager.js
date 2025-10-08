@@ -6,21 +6,20 @@ class SettingsManager {
   constructor() {
     this.settingsPath = path.join(app.getPath('userData'), 'settings.json');
     this.settings = null;
+    this.saveTimeout = null;
+    this.isDirty = false;
   }
 
   async load() {
     try {
       const data = await fs.readFile(this.settingsPath, 'utf8');
       this.settings = JSON.parse(data);
-      console.log('📁 Settings loaded:', this.settings);
     } catch (error) {
       // Try to restore from backup if main file is corrupted
       const backupPath = this.settingsPath + '.backup';
       try {
-        console.warn('⚠️ Settings file corrupted or missing, attempting backup restore...');
         const backupData = await fs.readFile(backupPath, 'utf8');
         this.settings = JSON.parse(backupData);
-        console.log('✅ Settings restored from backup:', this.settings);
 
         // Save the restored settings back to main file
         await this.save();
@@ -31,13 +30,16 @@ class SettingsManager {
           lastOpenedFile: null,
           windowBounds: null
         };
-        console.log('📁 Using default settings (backup not available)');
       }
     }
     return this.settings;
   }
 
   async save() {
+    if (!this.isDirty) {
+      return; // No changes since last save
+    }
+
     try {
       // Validate that settings can be serialized to JSON
       const jsonString = JSON.stringify(this.settings, null, 2);
@@ -59,7 +61,7 @@ class SettingsManager {
       // Write directly
       await fs.writeFile(this.settingsPath, jsonString, 'utf8');
 
-      console.log('💾 Settings saved');
+      this.isDirty = false;
     } catch (error) {
       console.error('❌ Failed to save settings:', error);
       throw error; // Propagate error so caller knows save failed
@@ -70,7 +72,8 @@ class SettingsManager {
     if (!this.settings) {
       throw new Error('Settings not loaded. Call load() first.');
     }
-    return this.settings[key] !== undefined ? this.settings[key] : defaultValue;
+    const value = this.settings[key] !== undefined ? this.settings[key] : defaultValue;
+    return value;
   }
 
   set(key, value) {
@@ -78,8 +81,28 @@ class SettingsManager {
       throw new Error('Settings not loaded. Call load() first.');
     }
     this.settings[key] = value;
-    // Auto-save on changes
-    this.save();
+    this.isDirty = true;
+
+    // Debounce saves - wait 1 second after last change before saving
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+    }
+    this.saveTimeout = setTimeout(() => {
+      this.save();
+    }, 1000);
+  }
+
+  /**
+   * Force immediate save (used on app quit)
+   */
+  async saveNow() {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+      this.saveTimeout = null;
+    }
+    if (this.isDirty) {
+      await this.save();
+    }
   }
 
   getSongsFolder() {

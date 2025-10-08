@@ -5,3 +5,6 @@ package-lock.json
 *.mp4
 *.DS_Store
 
+# Build outputs
+src/renderer/dist/
+src/web/dist/

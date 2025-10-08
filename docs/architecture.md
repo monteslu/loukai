@@ -49,7 +49,6 @@ graph LR
     subgraph "Main Process Components"
         App[KaiPlayerApp<br/>main.js]
         State[AppState<br/>Canonical State]
-        Audio[AudioEngine<br/>Stub/Placeholder]
         Web[WebServer<br/>Express + Socket.io]
         Settings[SettingsManager<br/>Persistence]
         Persist[StatePersistence<br/>Auto-save]
@@ -57,7 +56,6 @@ graph LR
     end
 
     App --> State
-    App --> Audio
     App --> Web
     App --> Settings
     App --> Persist
@@ -85,131 +83,254 @@ graph LR
 - `KaiLoader` - Parses KAI format (ZIP with Opus stems + lyrics)
 - `CDGLoader` - Parses CDG format (MP3 + CDG graphics)
 
-### 2. Renderer Process (Browser/Web Audio API)
+### 2. Renderer Process (React + Web Audio API)
 
-Where the magic happens - real-time audio processing and UI.
+React-based UI with real-time audio processing.
 
 ```mermaid
 graph TB
-    subgraph "Renderer Process"
-        Main[main.js<br/>Entry Point]
-        Engine[AudioEngine<br/>Web Audio API]
-        Player[player.js<br/>Playback Control]
-        Mixer[mixer.js<br/>Gain Controls]
-        Editor[editor.js<br/>Waveform + Lyrics]
-        Effects[effects.js<br/>Butterchurn Viz]
-        Library[library.js<br/>Song Browser]
-        Queue[queue.js<br/>Queue Manager]
-        Coaching[coaching.js<br/>Pitch Tracking]
-        KaraokeRender[karaokeRenderer.js<br/>Lyrics Display]
-        CDGRender[cdgRenderer.js<br/>CDG Graphics]
+    subgraph "Renderer Process - React Architecture"
+        Root[AppRoot<br/>Context Providers]
+        App[App Component<br/>Main Layout]
+
+        subgraph "React Contexts"
+            PlayerCtx[PlayerContext]
+            AudioCtx[AudioContext]
+            SettingsCtx[SettingsContext]
+        end
+
+        subgraph "Custom Hooks"
+            AudioEngine[useAudioEngine<br/>KAIPlayer + PlayerController]
+            Settings[useSettingsPersistence<br/>Load/Save Settings]
+            WebRTC[useWebRTC<br/>Canvas Streaming]
+            Keyboard[useKeyboardShortcuts<br/>Global Shortcuts]
+        end
+
+        subgraph "Shared Components"
+            Library[LibraryPanel]
+            Effects[EffectsPanel]
+            VizSettings[VisualizationSettings]
+            QuickSearch[QuickSearch]
+            SongEditor[SongEditor]
+        end
+
+        subgraph "Renderer Wrappers"
+            EffectsWrapper[EffectsPanelWrapper<br/>IPC Bridge]
+            LibraryWrapper[LibraryPanelWrapper<br/>IPC Bridge]
+            TransportWrapper[TransportControlsWrapper]
+            MixerTab[MixerTab]
+            QueueTab[QueueTab]
+        end
+
+        subgraph "Audio Engine (Vanilla JS)"
+            KAIPlayer[KAIPlayer<br/>KAI Playback]
+            CDGPlayer[CDGPlayer<br/>CDG Playback]
+            PlayerController[PlayerController<br/>Unified Control]
+            KaraokeRenderer[KaraokeRenderer<br/>Canvas + Butterchurn]
+        end
+
+        subgraph "Bridge Pattern"
+            ElectronBridge[ElectronBridge<br/>IPC Abstraction]
+            BridgeInterface[BridgeInterface<br/>Abstract Base]
+        end
     end
 
-    Main --> Engine
-    Main --> Player
-    Main --> Mixer
-    Main --> Editor
-    Main --> Effects
-    Main --> Library
-    Main --> Queue
-    Main --> Coaching
-    Player --> KaraokeRender
-    Player --> CDGRender
+    Root --> PlayerCtx
+    Root --> AudioCtx
+    Root --> SettingsCtx
 
-    Engine -->|Controls| Player
-    Mixer -->|Controls| Engine
+    PlayerCtx --> AudioEngine
+    AudioCtx --> Settings
 
-    style Engine fill:#bbf,stroke:#333,stroke-width:2px
+    AudioEngine --> KAIPlayer
+    AudioEngine --> PlayerController
+    PlayerController --> KaraokeRenderer
+
+    App --> EffectsWrapper
+    App --> LibraryWrapper
+    App --> TransportWrapper
+
+    EffectsWrapper --> Effects
+    LibraryWrapper --> Library
+
+    EffectsWrapper --> ElectronBridge
+    LibraryWrapper --> ElectronBridge
+
+    ElectronBridge -.implements.-> BridgeInterface
+
+    style Root fill:#f9f,stroke:#333,stroke-width:2px
+    style KAIPlayer fill:#bbf,stroke:#333,stroke-width:2px
+    style ElectronBridge fill:#ffb,stroke:#333,stroke-width:2px
 ```
 
 **Key Responsibilities:**
-- Decode audio stems (Opus format via Web Audio API)
-- Real-time audio routing (vocals → IEM, music → PA)
-- Audio mixing (gain, mute, routing per stem)
-- Microphone input with auto-tune processing
-- Lyrics rendering (synchronized to audio position)
-- CDG rendering (legacy karaoke graphics)
-- Waveform visualization for editor
-- Pitch tracking and analysis (coaching mode)
-- Visual effects (Butterchurn audio visualizer)
+- **React UI Layer**:
+  - AppRoot provides contexts (Player, Audio, Settings)
+  - Custom hooks manage audio engine, settings persistence, WebRTC
+  - Shared components work in both Electron and web admin
+  - Renderer wrappers bridge React components to IPC
+- **Bridge Pattern**:
+  - BridgeInterface defines abstract API
+  - ElectronBridge implements for Electron (uses IPC)
+  - WebBridge implements for web admin (uses HTTP/Socket.io)
+  - Components receive bridge prop, don't know about transport layer
+- **Audio Engine** (unchanged vanilla JS):
+  - KAIPlayer: KAI format with stem separation
+  - CDGPlayer: CDG format with graphics
+  - PlayerController: Unified playback control
+  - KaraokeRenderer: Canvas rendering + Butterchurn effects
 
-### 3. Audio Engine Architecture
+### 3. Player Architecture
 
-The most critical component - dual-output routing with stem separation.
+Unified interface for multiple karaoke formats with format-specific implementations.
 
 ```mermaid
 graph TB
-    subgraph "Audio Sources"
-        VocalsStem[Vocals Stem<br/>AudioBuffer]
-        MusicStem[Music Stem<br/>AudioBuffer]
-        BassStem[Bass Stem<br/>AudioBuffer]
-        DrumsStem[Drums Stem<br/>AudioBuffer]
-        Mic[Microphone<br/>MediaStream]
+    subgraph "PlayerInterface Base Class"
+        Interface[Abstract Methods:<br/>play, pause, seek<br/>getCurrentPosition, getDuration<br/>loadSong, getFormat]
+        State[Common State:<br/>isPlaying, onSongEndedCallback<br/>stateReportInterval]
+        Methods[Common Methods:<br/>reportStateChange<br/>startStateReporting<br/>resetPosition<br/>_triggerSongEnd]
     end
 
-    subgraph "Processing Chain"
-        VocalsGain[Vocals Gain Node]
-        MusicGain[Music Gain Node]
-        BassGain[Bass Gain Node]
-        DrumsGain[Drums Gain Node]
-        MicGain[Mic Gain Node]
-        AutoTune[Auto-tune Worklet<br/>Optional]
+    subgraph "KAIPlayer Implementation"
+        KAISources[Audio Sources:<br/>Vocals, Music, Bass, Drums]
+        KAIRouting[Dual-Output Routing:<br/>IEM Bus, PA Bus]
+        KAIMic[Microphone + Auto-tune]
+        KAIDevices[Two Audio Contexts:<br/>IEM Device, PA Device]
     end
 
-    subgraph "Bus Routing"
-        IEMBus[IEM Master Bus<br/>Gain + Mono]
-        PABus[PA Master Bus<br/>Gain + Stereo]
+    subgraph "CDGPlayer Implementation"
+        CDGSources[Audio Source:<br/>MP3 AudioBuffer]
+        CDGGraphics[CDG Graphics:<br/>300x216 Canvas]
+        CDGDevice[Single Audio Context:<br/>PA Device Only]
+        CDGEffects[Background Effects:<br/>Butterchurn]
     end
 
-    subgraph "Output Devices"
-        IEMDevice[IEM Output Device<br/>Headphones/In-Ear]
-        PADevice[PA Output Device<br/>Speakers/Mixer]
-    end
+    Interface --> KAISources
+    Interface --> CDGSources
+    State --> KAISources
+    State --> CDGSources
+    Methods --> KAISources
+    Methods --> CDGSources
 
-    VocalsStem --> VocalsGain
-    MusicStem --> MusicGain
-    BassStem --> BassGain
-    DrumsStem --> DrumsGain
-    Mic --> MicGain
+    KAISources --> KAIRouting
+    KAIRouting --> KAIMic
+    KAIMic --> KAIDevices
 
-    VocalsGain -->|Route to IEM| IEMBus
-    MusicGain -->|Route to PA| PABus
-    BassGain -->|Route to PA| PABus
-    DrumsGain -->|Route to PA| PABus
+    CDGSources --> CDGGraphics
+    CDGGraphics --> CDGEffects
+    CDGEffects --> CDGDevice
 
-    MicGain --> AutoTune
-    AutoTune -->|Processed Vocals| PABus
-
-    IEMBus -->|AudioContext.setSinkId| IEMDevice
-    PABus -->|AudioContext.setSinkId| PADevice
-
-    style IEMBus fill:#fbb,stroke:#333,stroke-width:2px
-    style PABus fill:#bfb,stroke:#333,stroke-width:2px
-    style AutoTune fill:#ffb,stroke:#333,stroke-width:2px
+    style Interface fill:#ffb,stroke:#333,stroke-width:2px
+    style KAIDevices fill:#bbf,stroke:#333,stroke-width:2px
+    style CDGDevice fill:#bfb,stroke:#333,stroke-width:2px
 ```
 
-**Audio Flow:**
+**PlayerInterface Abstraction:**
 
-**Stems (from KAI file):**
-- **Vocals** → Individual Gain → **IEM Bus** → Headphones
-- **Music/Bass/Drums** → Individual Gain → **PA Bus** → Speakers
+The `PlayerInterface` base class provides a unified interface for all karaoke formats:
 
-**Microphone (singer's live voice):**
-- Mic Input → Mic Gain → Auto-tune (optional) → **PA Bus ONLY** → Speakers
-- **Never routed to IEM** - Singer should NOT hear their own mic in the monitors
+**Abstract Methods (must be implemented):**
+- `play()` - Start playback
+- `pause()` - Stop playback
+- `seek(position)` - Jump to specific time
+- `getCurrentPosition()` - Get current playback time
+- `getDuration()` - Get total song duration
+- `loadSong(songData)` - Load format-specific song data
+- `getFormat()` - Return format identifier ('kai', 'cdg', etc.)
 
-**Master Buses:**
-- **IEM Bus:** Mono, routed to in-ear monitors (reference vocals only from stems)
-- **PA Bus:** Stereo, routed to main speakers (music + processed live mic)
+**Common Implementations (inherited):**
+- `reportStateChange()` - Send position updates to web admin
+- `startStateReporting()` - Begin 100ms interval updates
+- `stopStateReporting()` - Stop interval updates
+- `resetPosition()` - Reset to beginning on song load
+- `onSongEnded(callback)` - Register song end handler
+- `_triggerSongEnd()` - Invoke song end callback
 
-**Why This Matters:**
-- Singer hears **reference vocals** clearly (no music drowning them out)
-- Singer does **NOT** hear their own mic (prevents latency, feedback, and distraction)
-- Audience hears professional mix (music + live mic, no reference vocals)
-- Auto-tune processing only affects what audience hears
-- Zero-latency monitoring for singer (pre-recorded stems, not live audio)
+**Format-Specific Implementations:**
 
-### 4. Web Server & Admin Interface
+**KAIPlayer (AI-Separated Stems):**
+- Decode Opus audio stems (vocals, music, bass, drums)
+- **Dual-output routing:**
+  - **Vocals** → Individual Gain → **IEM Bus** → Headphones
+  - **Music/Bass/Drums** → Individual Gain → **PA Bus** → Speakers
+- **Microphone (live voice):**
+  - Mic Input → Mic Gain → Auto-tune (optional) → **PA Bus ONLY**
+  - **Never routed to IEM** - Singer should NOT hear their own mic
+- Two AudioContext instances (IEM device, PA device)
+- Zero-latency monitoring for singer (pre-recorded stems)
+
+**CDGPlayer (Legacy Karaoke):**
+- Decode MP3 audio
+- Render CDG graphics (300x216 pixel canvas)
+- **Single-output routing:**
+  - MP3 → Gain Node → **PA Bus** → Speakers
+- Make CDG background transparent, overlay on Butterchurn effects
+- Single AudioContext (PA device only)
+- No IEM routing (traditional karaoke mode)
+
+### 4. Polymorphic Player Control
+
+The renderer uses a `currentPlayer` reference to eliminate format branching:
+
+```javascript
+// PlayerController sets currentPlayer when loading a song
+if (format === 'cdg') {
+    this.currentPlayer = this.cdgPlayer;
+} else {
+    this.currentPlayer = this.kaiPlayer;
+}
+this.currentPlayer.onSongEnded(() => this.handleSongEnded());
+
+// All playback control uses the same interface (no format checks!)
+async togglePlayback() {
+    if (this.isPlaying) {
+        await this.currentPlayer.pause();
+    } else {
+        await this.currentPlayer.play();
+    }
+}
+
+async seek(position) {
+    await this.currentPlayer.seek(position);
+}
+
+getDuration() {
+    return this.currentPlayer.getDuration();
+}
+```
+
+**Benefits:**
+- No `if (format === 'cdg')` checks scattered throughout code
+- Adding new formats (e.g., video) just requires extending PlayerInterface
+- Type-safe interface ensures all players have same methods
+- Bugs fixed once in PlayerInterface benefit all formats
+
+### PlayerFactory
+
+The `PlayerFactory` provides a clean way to instantiate players:
+
+```javascript
+// Create player based on format
+const player = PlayerFactory.create('cdg', { canvasId: 'karaokeCanvas' });
+
+// Check if format is supported
+if (PlayerFactory.isSupported('mp4')) {
+    // Video support available
+}
+
+// Get all supported formats
+const formats = PlayerFactory.getSupportedFormats(); // ['kai', 'cdg']
+```
+
+**Factory benefits:**
+- Centralized player instantiation
+- Automatic validation (checks for required options)
+- Helpful error messages for unsupported formats
+- Dynamic support detection (checks if MoviePlayer loaded)
+- Future-proof (adding formats just updates the factory)
+
+### 5. Web Server & Admin Interface
 
 Remote control and song request system with two distinct UIs.
 
@@ -322,7 +443,7 @@ sequenceDiagram
     participant Renderer
     participant Main
     participant Loader as KaiLoader
-    participant Engine as AudioEngine
+    participant Player as KAIPlayer
     participant Device as Audio Devices
 
     User->>Renderer: Click "Open File"
@@ -335,15 +456,15 @@ sequenceDiagram
     Loader->>Loader: Extract lyrics.json
     Loader->>Main: Return song data
     Main->>Renderer: IPC: song:data
-    Renderer->>Engine: Load stems
-    Engine->>Engine: Decode Opus → AudioBuffer
-    Engine->>Engine: Create source nodes
-    Engine->>Engine: Route vocals → IEM
-    Engine->>Engine: Route music → PA
-    Engine->>Device: Set sink IDs
+    Renderer->>Player: loadSong(songData)
+    Player->>Player: Decode Opus → AudioBuffer
+    Player->>Player: Create source nodes
+    Player->>Player: Route vocals → IEM
+    Player->>Player: Route music → PA
+    Player->>Device: Set sink IDs
     User->>Renderer: Click "Play"
-    Renderer->>Engine: play()
-    Engine->>Device: Start audio playback
+    Renderer->>Player: play()
+    Player->>Device: Start audio playback
     Device-->>User: Audio output (IEM + PA)
 ```
 
@@ -355,16 +476,16 @@ sequenceDiagram
     participant WebServer
     participant Main
     participant Renderer
-    participant Engine as AudioEngine
+    participant Player as KAIPlayer
 
     WebUI->>WebServer: Adjust PA gain slider
     WebServer->>WebServer: Validate & sanitize
     WebServer->>Main: Socket.io: mixer-update
     Main->>Main: Update AppState
     Main->>Renderer: IPC: mixer:setMasterGain
-    Renderer->>Engine: setMasterGain('PA', gainDb)
-    Engine->>Engine: Update PA master gain node
-    Engine-->>Renderer: Gain applied
+    Renderer->>Player: setMasterGain('PA', gainDb)
+    Player->>Player: Update PA master gain node
+    Player-->>Renderer: Gain applied
     Renderer->>Main: IPC: renderer:updateMixerState
     Main->>WebServer: Socket.io broadcast
     WebServer->>WebUI: mixer-update event
@@ -584,10 +705,13 @@ Artist - Song Title.zip
 - **Fuse.js** - Fuzzy search for song library
 
 ### Renderer Process
+- **React 18** - Complete UI framework
+- **Vite** - Build tool and dev server
+- **React Context API** - State management (Player, Audio, Settings)
+- **Custom Hooks** - Reusable logic (audio engine, settings, WebRTC)
 - **Web Audio API** - Real-time audio processing
 - **Opus Decoder** - Audio codec for stem files
 - **Butterchurn** - Audio visualizer (Milkdrop presets)
-- **Vanilla JavaScript** - UI (being migrated to React)
 - **Canvas API** - Waveforms, CDG, visual effects
 
 ### Web UI (User + Admin)
@@ -596,13 +720,17 @@ Artist - Song Title.zip
 - **Socket.io-client** - Real-time communication
 - **Fuse.js** - Client-side fuzzy search
 - **Role-based UI** - User UI (song requests) + Admin UI (full control)
+- **WebBridge** - HTTP/Socket.io adapter implementing BridgeInterface
 
-### Shared (In Progress)
+### Shared Components & Logic
 - **ESM Modules** - Universal JavaScript modules
+- **Bridge Pattern** - BridgeInterface, ElectronBridge, WebBridge
+- **Shared Components** - LibraryPanel, EffectsPanel, QuickSearch, etc.
+- **Service Layer** - effectsService, playerService, settingsService
 - **Pure Functions** - Audio/format utilities
 - **Constants** - IPC channels, defaults
 
-## Current Refactoring Status
+## Refactoring Status
 
 ### ✅ Phase 1: Main Process ESM Conversion (COMPLETE)
 - Converted all CommonJS `require()` to ESM `import`
@@ -611,29 +739,182 @@ Artist - Song Title.zip
 - Fixed `__dirname` equivalents for ESM
 - Eliminated all inline `require()` calls
 
-### ✅ Phase 2.1: Shared Infrastructure (COMPLETE)
-- Created `src/shared/` directory
+### ✅ Phase 2: Shared Infrastructure (COMPLETE)
+- Created `src/shared/` directory structure
 - Created `src/shared/constants.js` (IPC channels, defaults)
 - Created `src/shared/utils/audio.js` (dB conversions, stem detection)
 - Created `src/shared/utils/format.js` (time/file formatting)
+- Created service layer (effectsService, playerService, settingsService)
+- Shared components (LibraryPanel, EffectsPanel, QuickSearch, VisualizationSettings)
 
-### 🔄 Phase 2.2: Extract Business Logic (NEXT)
-- Extract queue management to `src/shared/utils/queue.js`
-- Extract song metadata parsing to `src/shared/utils/songMetadata.js`
-- Update main.js to import from shared
+### ✅ Phase 3: React Migration (COMPLETE)
+- Migrated Electron renderer from vanilla JS to React
+- Created React contexts (PlayerContext, AudioContext, SettingsContext)
+- Created custom hooks (useAudioEngine, useSettingsPersistence, useWebRTC)
+- Component-based architecture with proper separation of concerns
+- Removed global `window.*` pollution (except for audio engine integration)
 
-### 📋 Phase 2.3: Shared State Manager (FUTURE)
-- Create `src/shared/state/StateManager.js`
-- EventEmitter-based state container
-- Works in browser AND Node.js
+### ✅ Phase 4: Bridge Pattern (COMPLETE)
+- Created BridgeInterface abstract base class
+- Implemented ElectronBridge (IPC-based)
+- Implemented WebBridge (HTTP/Socket.io-based)
+- Shared components work seamlessly in both Electron and web admin
+- Complete transport layer abstraction
 
-### 📋 Phase 3-9: React Migration & Unified Business Logic (FUTURE)
-- Migrate Electron renderer to React
-- Share components between Electron and web UI
-- Remove global `window.*` pollution
-- **Unified business logic layer** - IPC and REST both call same shared functions
-- Consolidate IPC layer
-- Break circular dependencies
+### ✅ Phase 5: Unified Business Logic (IN PROGRESS)
+- **Completed:**
+  - effectsService.js - Effects management shared by IPC and REST
+  - playerService.js - Playback control shared by IPC and REST
+  - settingsService.js - Settings CRUD shared by IPC and REST
+- **Remaining:**
+  - Complete migration of all IPC handlers to use service layer
+  - Extract queue management to queueService.js
+  - Extract library scanning to libraryService.js
+
+### 📋 Phase 6: Testing & Polish (FUTURE)
+- Automated testing suite
+- Performance optimization
+- Error handling improvements
+- Documentation updates
+
+## Bridge Pattern Architecture
+
+A key architectural improvement is the Bridge Pattern, which abstracts the transport layer from UI components.
+
+### Bridge Interface
+
+All bridges implement the same interface, allowing shared components to work in both Electron and web environments:
+
+```typescript
+interface BridgeInterface {
+  // Player controls
+  play(): Promise<void>
+  pause(): Promise<void>
+  seek(position: number): Promise<void>
+  next(): Promise<void>
+  restart(): Promise<void>
+
+  // Library & search
+  searchSongs(query: string): Promise<{songs: Array}>
+  getSongsFolder(): Promise<string>
+  setSongsFolder(): Promise<void>
+
+  // Queue management
+  addToQueue(item: QueueItem): Promise<void>
+  removeFromQueue(id: string): Promise<void>
+  getQueue(): Promise<Array<QueueItem>>
+
+  // Effects control
+  selectEffect(name: string): Promise<void>
+  enableEffect(name: string): Promise<void>
+  disableEffect(name: string): Promise<void>
+
+  // Settings
+  getWaveformPreferences(): Promise<object>
+  saveWaveformPreferences(prefs: object): Promise<void>
+
+  // ... and more
+}
+```
+
+### ElectronBridge (IPC-based)
+
+Used in the Electron renderer process:
+
+```javascript
+export class ElectronBridge {
+  async play() {
+    return await window.kaiAPI.player.play();
+  }
+
+  async searchSongs(query) {
+    return await window.kaiAPI.library.search(query);
+  }
+
+  async addToQueue(item) {
+    return await window.kaiAPI.queue.addSong(item);
+  }
+
+  async selectEffect(name) {
+    return await window.kaiAPI.effects.select(name);
+  }
+}
+```
+
+### WebBridge (HTTP + Socket.io)
+
+Used in the web admin interface:
+
+```javascript
+export class WebBridge {
+  constructor(baseUrl = '/admin') {
+    this.baseUrl = baseUrl;
+    this.socket = io('/admin');
+  }
+
+  async play() {
+    await this._fetch('/playback/play', { method: 'POST' });
+  }
+
+  async searchSongs(query) {
+    return await this._fetch(`/library/search?q=${query}`);
+  }
+
+  async addToQueue(item) {
+    await this._fetch('/queue/add', {
+      method: 'POST',
+      body: JSON.stringify(item)
+    });
+  }
+
+  async selectEffect(name) {
+    await this._fetch('/effects/select', {
+      method: 'POST',
+      body: JSON.stringify({ effectName: name })
+    });
+  }
+}
+```
+
+### Shared Components
+
+Components receive a `bridge` prop and work identically in both environments:
+
+```javascript
+export function LibraryPanel({ bridge }) {
+  const [songs, setSongs] = useState([]);
+
+  const handleSearch = async (query) => {
+    // Works with BOTH ElectronBridge and WebBridge!
+    const result = await bridge.searchSongs(query);
+    setSongs(result.songs);
+  };
+
+  const handleAddToQueue = async (song) => {
+    // Transport-agnostic - bridge handles IPC vs HTTP
+    await bridge.addToQueue({
+      path: song.path,
+      title: song.title,
+      artist: song.artist
+    });
+  };
+
+  return (
+    <div>
+      <SearchInput onSearch={handleSearch} />
+      <SongList songs={songs} onAdd={handleAddToQueue} />
+    </div>
+  );
+}
+```
+
+### Benefits
+
+1. **Code Reuse** - Write component once, works in Electron and web
+2. **Transport Agnostic** - Components don't care about IPC vs HTTP
+3. **Testability** - Easy to mock bridge for testing
+4. **Type Safety** - Interface ensures consistency
+5. **Maintainability** - Change transport layer without touching components
 
 ## Unified Business Logic Architecture
 
@@ -768,20 +1049,26 @@ This keeps service functions pure while allowing transport-specific behavior (li
 
 ## Architecture Principles
 
-### Current Problems
-1. **"Vibe-coded"** - Inconsistent patterns, global state
-2. **Code duplication** - IPC and REST duplicate business logic
-3. **No shared modules** - Can't share code between renderer/web/main
-4. **IPC spaghetti** - 100+ handlers in one file with embedded logic
-5. **Multiple state sources** - No single source of truth
+### ✅ Achieved Principles
+1. **ESM everywhere** - Universal modules work in browser + Node.js
+2. **React everywhere** - Shared components between Electron and web UI
+3. **Bridge Pattern** - Transport layer abstraction (IPC vs HTTP)
+4. **Service Layer** - Shared business logic (effectsService, playerService, etc.)
+5. **React Context API** - Proper state management (no global pollution)
+6. **Custom Hooks** - Reusable logic (useAudioEngine, useSettingsPersistence)
 
-### Target Principles
-1. **ESM everywhere** - Universal modules (browser + Node.js)
-2. **React everywhere** - Shared components between UIs
-3. **Single source of truth** - AppState for all state
-4. **Dependency injection** - No global `window.*` objects
-5. **Unified business logic** - IPC and REST endpoints call same shared functions (no duplication)
-6. **Test continuously** - Never break working features
+### 🔄 In Progress
+1. **Complete service extraction** - All IPC handlers use service layer
+2. **Settings persistence** - Fully working with proper load order
+3. **Effects system** - Bidirectional sync between renderer and web admin
+4. **WebRTC streaming** - Canvas window with proper IPC handlers
+
+### 📋 Future Goals
+1. **Automated testing** - Unit tests for service layer
+2. **TypeScript migration** - Type safety across codebase
+3. **Performance optimization** - Profile and improve bottlenecks
+4. **Error boundaries** - React error handling
+5. **Plugin system** - Extensible effects and features
 
 ## Performance Considerations
 
@@ -864,8 +1151,65 @@ This keeps service functions pure while allowing transport-specific behavior (li
 
 ---
 
+## Recent Major Accomplishments (2024)
+
+### Complete React Migration
+- **100% React UI** - Migrated entire Electron renderer from vanilla JavaScript to React
+- **Context API Integration** - Proper state management with PlayerContext, AudioContext, SettingsContext
+- **Custom Hooks** - Reusable logic extracted to hooks (useAudioEngine, useSettingsPersistence, useWebRTC, useKeyboardShortcuts)
+- **Component Architecture** - Clean separation between shared components and renderer-specific wrappers
+
+### Bridge Pattern Implementation
+- **BridgeInterface** - Abstract base class defining common API
+- **ElectronBridge** - IPC-based implementation for Electron renderer
+- **WebBridge** - HTTP/Socket.io implementation for web admin
+- **Shared Components** - LibraryPanel, EffectsPanel, QuickSearch, VisualizationSettings work in both environments
+- **Zero Duplication** - Same React components used in Electron and web admin
+
+### Service Layer Architecture
+- **effectsService.js** - Shared effects management logic
+- **playerService.js** - Shared playback control logic
+- **settingsService.js** - Shared settings CRUD logic
+- **Thin Handlers** - IPC and REST endpoints are thin wrappers calling service layer
+- **Single Source of Truth** - Business logic in one place, no duplication
+
+### Effects System Overhaul
+- **Full Butterchurn Integration** - 100+ visual presets with categories
+- **Bidirectional Sync** - Current effect syncs between renderer and web admin
+- **Enable/Disable** - Per-effect enable/disable with persistence
+- **Next/Previous/Random** - Full control from both renderer and web admin
+- **IPC Response Pattern** - Proper request-response for effects list (serializable metadata only)
+
+### Settings Persistence Fixed
+- **Load Order** - Settings load before React effects run
+- **Debounced Saves** - 1-second debounce prevents excessive writes
+- **Proper Initialization** - `isLoadedRef` prevents premature saves on mount
+- **Full Persistence** - Waveform preferences, disabled effects, device settings all persist correctly
+
+### WebRTC Canvas Window
+- **canvas-app.js** - Proper module for canvas window receiver
+- **IPC Handlers** - Full WebRTC command handling (setupReceiver, setOffer, etc.)
+- **Main Window IPC** - useWebRTC hook registers sender IPC handlers
+- **No Controls** - Video element for WebRTC display but no visible controls
+- **Click to Fullscreen** - Canvas click toggles fullscreen mode
+
+### Code Quality Improvements
+- **.gitignore** - Build artifacts (dist folders) excluded from git
+- **No Code Duplication** - QuickSearch extracted to shared component
+- **Bridge Abstraction** - No direct `window` globals except where necessary (audio engine)
+- **Clean Logging** - Debug logging removed after fixes verified
+
 ## Conclusion
 
-Kai Player represents a novel approach to karaoke technology, combining AI stem separation with professional audio routing typically found in recording studios. While the original codebase suffered from "vibe coding" inconsistencies, the core functionality is innovative and valuable. The ongoing refactoring aims to preserve this innovation while establishing maintainable, scalable architecture for future development.
+Kai Player has evolved from a "vibe-coded" prototype into a well-architected, maintainable application. The recent React migration and bridge pattern implementation represent a major architectural milestone, enabling true code sharing between Electron and web interfaces.
 
-The dual-output routing (vocals → IEM, music → PA, mic → PA after auto-tune) enables genuine coaching scenarios where singers can hear reference vocals clearly while the audience hears a professional mix. This is the key differentiator that makes Kai Player more than just another karaoke app.
+The dual-output routing (vocals → IEM, music → PA, mic → PA after auto-tune) remains the key innovation that enables genuine coaching scenarios. With the new architecture in place, adding features, fixing bugs, and extending functionality is now significantly easier and more reliable.
+
+**Key Achievements:**
+- **Maintainable** - Clean separation of concerns, shared components, service layer
+- **Testable** - Pure functions, dependency injection, mockable bridges
+- **Scalable** - Add new features without duplicating code
+- **Consistent** - Same business logic for IPC and REST endpoints
+- **Modern** - React, ESM modules, hooks, contexts
+
+The foundation is now solid for future enhancements like automated testing, TypeScript migration, and advanced features.

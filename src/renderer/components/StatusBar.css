@@ -1,0 +1,39 @@
+.status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 24px;
+  background: #1a1a1a;
+  padding: 0 12px;
+  border-top: 1px solid #3a3a3a;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.status-left,
+.status-center,
+.status-right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.status-center {
+  justify-content: center;
+}
+
+.status-right {
+  justify-content: flex-end;
+  gap: 16px;
+}
+
+.web-url-display {
+  cursor: pointer;
+  color: #888;
+  transition: color 0.2s;
+}
+
+.web-url-display:hover {
+  color: #ccc;
+  text-decoration: underline;
+}

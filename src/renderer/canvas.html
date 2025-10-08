@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canvas Window</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #video {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            background: #111;
+            border: 1px solid #333;
+            cursor: pointer;
+        }
+
+        /* Native browser fullscreen styles */
+        #video:fullscreen {
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain; /* Maintain aspect ratio */
+            background: #000;
+            border: none;
+            cursor: pointer;
+        }
+
+        #video:-webkit-full-screen {
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+            background: #000;
+            border: none;
+            cursor: pointer;
+        }
+
+        /* Hide video controls completely */
+        #video::-webkit-media-controls {
+            display: none !important;
+        }
+
+        #video::-webkit-media-controls-enclosure {
+            display: none !important;
+        }
+
+        #video::-webkit-media-controls-panel {
+            display: none !important;
+        }
+
+        #video::-webkit-media-controls-play-button {
+            display: none !important;
+        }
+
+        #video::-webkit-media-controls-start-playback-button {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <video id="video" autoplay muted playsinline></video>
+
+    <!-- Load canvas application logic (not a module due to nodeIntegration) -->
+    <script src="js/canvas-app.js"></script>
+</body>
+</html>

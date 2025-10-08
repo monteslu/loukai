@@ -1,5 +1,6 @@
+// TODO: State should be passed to renderer instead of accessing globals
 
-class KaraokeRenderer {
+export class KaraokeRenderer {
     constructor(canvasId) {
         this.canvas = document.getElementById(canvasId);
         
@@ -41,6 +42,7 @@ class KaraokeRenderer {
         this.micDataArray = null;
         this.waveformData = new Uint8Array(1440).fill(128); // 6 seconds at 240Hz (1440 pixels) - mic rolling buffer (128 = silence)
         this.micGainNode = null; // For routing mic to speakers
+        this.inputDevice = 'default'; // Stored input device ID from preferences
         
         // Waveform preferences (will be set from main app)
         this.waveformPreferences = {
@@ -313,6 +315,11 @@ class KaraokeRenderer {
         this.resizeHandler = resizeCanvas;
     }
     
+    setSongMetadata(metadata) {
+        // Store song metadata for display when not playing
+        this.songMetadata = metadata || {};
+    }
+
     loadLyrics(lyricsData, songDuration = 0) {
         // Store original lyrics data for outro detection
         this.originalLyricsData = lyricsData || [];
@@ -675,9 +682,15 @@ class KaraokeRenderer {
     }
     
     renderWebGLEffects() {
-        if (!this.effectsGL || !this.waveformPreferences.enableEffects) {
-            if (Math.random() < 0.01) { // Debug occasionally
-            }
+        if (!this.effectsGL) {
+            return;
+        }
+
+        // Clear effects canvas if disabled
+        if (!this.waveformPreferences.enableEffects) {
+            const gl = this.effectsGL;
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
             return;
         }
         
@@ -807,10 +820,7 @@ class KaraokeRenderer {
     }
     
     isEffectDisabled(effectName) {
-        // Check if the effectsManager exists and has disabled effects
-        if (window.effectsManager && window.effectsManager.disabledEffects) {
-            return window.effectsManager.disabledEffects.has(effectName);
-        }
+        // TODO: Get disabled effects from Context/props instead
         return false;
     }
 
@@ -979,18 +989,15 @@ class KaraokeRenderer {
     
     async startMicrophoneCapture() {
         if (!this.waveformPreferences.enableMic) return;
-        
+
         try {
-            // Get the selected input device
-            const inputSelect = document.getElementById('inputDeviceSelect');
-            const selectedDevice = inputSelect.options[inputSelect.selectedIndex];
-            
+            // Use stored input device from preferences
             const constraints = {
-                audio: selectedDevice?.dataset.deviceId ? {
-                    deviceId: { exact: selectedDevice.dataset.deviceId }
+                audio: this.inputDevice ? {
+                    deviceId: { exact: this.inputDevice }
                 } : true
             };
-            
+
             this.micStream = await navigator.mediaDevices.getUserMedia(constraints);
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             this.analyser = this.audioContext.createAnalyser();
@@ -998,18 +1005,14 @@ class KaraokeRenderer {
             const source = this.audioContext.createMediaStreamSource(this.micStream);
             source.connect(this.analyser);
             
-            // Always create mic gain node, but only connect to speakers if enabled
+            // Create gain node for analysis only - NEVER route to speakers
+            // (kaiPlayer handles actual microphone audio routing to PA/IEM outputs)
             this.micGainNode = this.audioContext.createGain();
-            this.micGainNode.gain.setValueAtTime(0.5, this.audioContext.currentTime); // 50% volume
+            this.micGainNode.gain.setValueAtTime(0.5, this.audioContext.currentTime);
             source.connect(this.micGainNode);
-            
-            // Connect to speakers only if mic to speakers is enabled
-            if (this.waveformPreferences.micToSpeakers) {
-                this.micGainNode.connect(this.audioContext.destination);
-                // Mic routed to speakers
-            } else {
-                // Mic not routed to speakers
-            }
+
+            // DO NOT connect to speakers - this audioContext uses default output device
+            // and would bypass PA routing. kaiPlayer handles all mic-to-speaker routing.
             
             this.analyser.fftSize = 256;
             this.micDataArray = new Uint8Array(this.analyser.frequencyBinCount);
@@ -1232,36 +1235,10 @@ class KaraokeRenderer {
     
     setMicToSpeakers(enabled) {
         this.waveformPreferences.micToSpeakers = enabled;
-        
-        // Update audio routing if mic is active
-        if (this.micGainNode && this.audioContext) {
-            if (enabled) {
-                // Connect to speakers if not already connected
-                try {
-                    this.micGainNode.connect(this.audioContext.destination);
-                    // Mic connected to speakers
-                } catch (e) {
-                    // Mic already connected
-                }
-            } else {
-                // Disconnect from speakers
-                try {
-                    this.micGainNode.disconnect(this.audioContext.destination);
-                    // Mic disconnected from speakers
-                } catch (e) {
-                    // Mic was not connected
-                }
-            }
-        }
-        
-        // If mic is currently active, restart it with new routing
-        if (this.micStream && this.analyser) {
-            // Restarting mic with new routing
-            this.stopMicrophoneCapture();
-            setTimeout(() => {
-                this.startMicrophoneCapture();
-            }, 100);
-        }
+
+        // karaokeRenderer mic is ONLY for waveform visualization, NOT audio routing
+        // kaiPlayer handles all microphone-to-speaker routing to PA/IEM outputs
+        // This setting is stored for preferences sync but not used by karaokeRenderer
     }
     
     setMicEnabled(enabled) {
@@ -1406,13 +1383,13 @@ class KaraokeRenderer {
         const vocalsEnd = shouldProfile ? performance.now() : 0;
         this.drawMicrophoneWaveform(width, height);
         const micEnd = shouldProfile ? performance.now() : 0;
-        
-        // If song is loaded but not playing, show song info instead of lyrics
-        if (!this.isPlaying && window.appInstance && window.appInstance.currentSong) {
-            this.drawSongInfo(width, height, window.appInstance.currentSong);
+
+        // Show song info when loaded but not playing
+        if (!this.isPlaying && this.songMetadata) {
+            this.drawSongInfo(width, height, this.songMetadata);
             return;
         }
-        
+
         if (!this.lyrics || this.lyrics.length === 0) {
             return;
         }
@@ -2451,18 +2428,15 @@ class KaraokeRenderer {
     
     async ensureInputDeviceSelection() {
         try {
-            // Get saved input device preference from settings API
-            if (window.settingsAPI) {
-                const prefs = await window.settingsAPI.getDevicePreferences();
-                if (prefs && prefs.input) {
-                    const inputSelect = document.getElementById('inputDeviceSelect');
-                    if (inputSelect && prefs.input.id !== inputSelect.value) {
-                        inputSelect.value = prefs.input.id;
-                    }
+            // Load saved input device preference from settings API
+            if (window.kaiAPI.settings) {
+                const prefs = await window.kaiAPI.settings.get('devicePreferences');
+                if (prefs && prefs.input && prefs.input.id) {
+                    this.inputDevice = prefs.input.id;
                 }
             }
         } catch (error) {
-            console.warn('Failed to ensure input device selection:', error);
+            console.warn('Failed to load input device preference:', error);
         }
     }
     
@@ -2772,5 +2746,5 @@ class KaraokeRenderer {
     }
 }
 
-// Export to global scope for use by other scripts
-window.KaraokeRenderer = KaraokeRenderer;
+// Export removed - KaraokeRenderer is used by PlayerController
+// No longer attached to window global

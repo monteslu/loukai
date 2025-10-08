@@ -7,6 +7,7 @@ import fsPromises from 'fs/promises';
 import os from 'os';
 import yauzl from 'yauzl';
 import { io } from 'socket.io-client';
+import bcrypt from 'bcrypt';
 import AudioEngine from './audioEngine.js';
 import KaiLoader from '../utils/kaiLoader.js';
 import CDGLoader from '../utils/cdgLoader.js';
@@ -20,6 +21,8 @@ import * as libraryService from '../shared/services/libraryService.js';
 import * as playerService from '../shared/services/playerService.js';
 import * as requestsService from '../shared/services/requestsService.js';
 import * as serverSettingsService from '../shared/services/serverSettingsService.js';
+import * as effectsService from '../shared/services/effectsService.js';
+import { registerAllHandlers } from './handlers/index.js';
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -39,6 +42,7 @@ class KaiPlayerApp {
     this.positionTimer = null;
     this.libraryManager = null;
     this.cachedLibrary = null; // Store library cache independently
+    this.isQuitting = false; // Track if app is quitting to avoid duplicate cleanup
     this.canvasStreaming = {
       isStreaming: false,
       stream: null,
@@ -65,23 +69,23 @@ class KaiPlayerApp {
   }
 
   setupStateListeners() {
-    // When playback state changes, broadcast to web clients
+    // When playback state changes, broadcast to web clients AND renderer
     this.appState.on('playbackStateChanged', (playbackState, changes) => {
       if (this.webServer) {
         this.webServer.broadcastPlaybackState(playbackState);
       }
+      // Send to renderer for React components
+      this.sendToRenderer('playback:state', playbackState);
     });
 
-    // When current song changes, broadcast to web clients
+    // When current song changes, broadcast to web clients AND renderer
     this.appState.on('currentSongChanged', (song) => {
       if (this.webServer && song) {
-        this.webServer.broadcastSongLoaded({
-          songId: `${song.title} - ${song.artist}`,
-          title: song.title,
-          artist: song.artist,
-          duration: song.duration
-        });
+        // Pass the complete song object to preserve path and requester
+        this.webServer.broadcastSongLoaded(song);
       }
+      // Send to renderer for React components
+      this.sendToRenderer('song:changed', song);
     });
 
     // When queue changes, broadcast to web clients and renderer
@@ -98,24 +102,29 @@ class KaiPlayerApp {
       this.sendToRenderer('queue:updated', queue);
     });
 
-    // When mixer changes, broadcast to web clients
+    // When mixer changes, broadcast to web clients AND renderer
     this.appState.on('mixerChanged', (mixer) => {
       if (this.webServer) {
         this.webServer.io?.emit('mixer-update', mixer);
       }
+      // Send to renderer for React components
+      this.sendToRenderer('mixer:state', mixer);
     });
 
-    // When effects change, broadcast to web clients
+    // When effects change, broadcast to web clients AND renderer
     this.appState.on('effectsChanged', (effects) => {
+      // Get disabled effects from settings, not AppState
+      const waveformPrefs = this.settings.get('waveformPreferences', {});
+      const effectsWithCorrectDisabled = {
+        ...effects,
+        disabled: waveformPrefs.disabledEffects || []
+      };
+
       if (this.webServer) {
-        // Get disabled effects from settings, not AppState
-        const waveformPrefs = this.settings.get('waveformPreferences', {});
-        const effectsWithCorrectDisabled = {
-          ...effects,
-          disabled: waveformPrefs.disabledEffects || []
-        };
         this.webServer.io?.emit('effects-update', effectsWithCorrectDisabled);
       }
+      // Send to renderer for React components
+      this.sendToRenderer('effects:changed', effectsWithCorrectDisabled);
     });
 
     // When preferences change, broadcast to web clients AND renderer
@@ -268,239 +277,9 @@ class KaiPlayerApp {
       show: false
     });
 
-    const canvasHtml = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Canvas Window</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            background: #000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            overflow: hidden;
-        }
-        
-        #frame {
-            max-width: 100%;
-            max-height: 100%;
-            width: auto;
-            height: auto;
-            background: #111;
-            border: 1px solid #333;
-            cursor: pointer;
-        }
-        
-        /* Native browser fullscreen styles */
-        #frame:fullscreen {
-            width: 100vw;
-            height: 100vh;
-            object-fit: contain; /* Maintain aspect ratio */
-            background: #000;
-            border: none;
-            cursor: pointer;
-        }
-        
-        #frame:-webkit-full-screen {
-            width: 100vw;
-            height: 100vh;
-            object-fit: contain;
-            background: #000;
-            border: none;
-            cursor: pointer;
-        }
-    </style>
-</head>
-<body>
-    <video id="video" autoplay muted playsinline></video>
-    
-    <script>
-        const video = document.getElementById('video');
-        let isReceivingStream = false;
-        
-        function maintainAspectRatio() {
-            const windowWidth = window.innerWidth;
-            const windowHeight = window.innerHeight;
-            const aspectRatio = 16 / 9;
-            
-            let newWidth, newHeight;
-            
-            if (windowWidth / windowHeight > aspectRatio) {
-                // Window is too wide
-                newHeight = windowHeight;
-                newWidth = windowHeight * aspectRatio;
-            } else {
-                // Window is too tall
-                newWidth = windowWidth;
-                newHeight = windowWidth / aspectRatio;
-            }
-            
-            video.style.width = newWidth + 'px';
-            video.style.height = newHeight + 'px';
-        }
-        
-        // Initial sizing
-        maintainAspectRatio();
-        
-        // Listen for window resize
-        window.addEventListener('resize', maintainAspectRatio);
-        
-        // Listen for load event to ensure proper sizing
-        window.addEventListener('load', maintainAspectRatio);
-        
-        // Set up IPC to communicate with main process
-        const { ipcRenderer } = require('electron');
-        
-        // Fullscreen functionality
-        let isFullscreen = false;
-        
-        const toggleFullscreen = async () => {
-            console.log('Toggling fullscreen, current state:', !!document.fullscreenElement);
-            
-            try {
-                if (!document.fullscreenElement) {
-                    // Enter fullscreen - use the browser's native Fullscreen API
-                    await video.requestFullscreen();
-                    isFullscreen = true;
-                    console.log('✅ Entered fullscreen mode');
-                } else {
-                    // Exit fullscreen
-                    await document.exitFullscreen();
-                    isFullscreen = false;
-                    console.log('✅ Exited fullscreen mode');
-                }
-            } catch (error) {
-                console.error('❌ Fullscreen toggle failed:', error);
-            }
-        };
-        
-        // Click handler for video
-        video.addEventListener('click', toggleFullscreen);
-        
-        // Keyboard handlers
-        document.addEventListener('keydown', (e) => {
-            // Allow copy/paste and other system shortcuts to work normally
-            if (e.ctrlKey || e.metaKey) {
-                console.log('Allowing system shortcut:', e.key);
-                return; // Don't prevent default for system shortcuts
-            }
-            
-            // Fullscreen toggle keys
-            if (e.key === 'f' || e.key === 'F') {
-                e.preventDefault();
-                toggleFullscreen();
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                if (isFullscreen) {
-                    toggleFullscreen();
-                }
-            }
-        });
-        
-        // Make sure video doesn't capture focus inappropriately but allow clicks
-        video.style.outline = 'none';
-        video.tabIndex = -1; // Remove from tab order
-        video.style.cursor = 'pointer'; // Show it's clickable
-        
-        // Handle visibility changes
-        document.addEventListener('visibilitychange', () => {
-            console.log('👁️ Visibility changed:', document.hidden ? 'hidden' : 'visible');
-        });
-        
-        // Handle fullscreen changes
-        document.addEventListener('fullscreenchange', () => {
-            isFullscreen = !!document.fullscreenElement;
-            console.log('🖥️ Fullscreen changed:', isFullscreen ? 'ENTERED' : 'EXITED');
-            
-            // Log stream status to help debug freezing
-            if (video.srcObject) {
-                const stream = video.srcObject;
-                const tracks = stream.getVideoTracks();
-                console.log('📺 Stream tracks after fullscreen change:', tracks.length);
-                tracks.forEach((track, i) => {
-                    console.log('Track ' + i + ' enabled: ' + track.enabled + ' readyState: ' + track.readyState);
-                });
-            }
-        });
-        
-        document.addEventListener('fullscreenerror', (error) => {
-            console.error('❌ Fullscreen error:', error);
-        });
-        
-        // Handle window focus/blur
-        window.addEventListener('focus', () => {
-            console.log('🎯 Window focused');
-        });
-        
-        window.addEventListener('blur', () => {
-            console.log('😴 Window blurred');
-        });
-        
-        // Video event handlers to debug stream issues
-        video.addEventListener('loadedmetadata', () => {
-            console.log('🎬 Stream video metadata loaded:', video.videoWidth, 'x', video.videoHeight);
-            
-            // Check what the actual stream track settings are
-            if (video.srcObject) {
-                const stream = video.srcObject;
-                const tracks = stream.getVideoTracks();
-                if (tracks.length > 0) {
-                    const settings = tracks[0].getSettings();
-                    console.log('🔍 RECEIVED track settings:', settings.width, 'x', settings.height);
-                    
-                    if (settings.width !== 1920 || settings.height !== 1080) {
-                        console.error('❌ RECEIVED TRACK NOT 1080p! Got:', settings.width, 'x', settings.height);
-                    }
-                }
-            }
-            
-            maintainAspectRatio();
-            
-            if (!isReceivingStream) {
-                isReceivingStream = true;
-                console.log('📺 Started receiving WebRTC stream');
-            }
-        });
-        
-        video.addEventListener('playing', () => {
-            console.log('▶️ Video started playing');
-        });
-        
-        video.addEventListener('pause', () => {
-            console.log('⏸️ Video paused');
-        });
-        
-        video.addEventListener('ended', () => {
-            console.log('⏹️ Video ended');
-        });
-        
-        video.addEventListener('error', (e) => {
-            console.error('❌ Video error:', e, video.error);
-        });
-        
-        // Signal to main process that child window is ready for streaming
-        window.addEventListener('load', () => {
-            console.log('Child window fully loaded, signaling ready for streaming');
-            ipcRenderer.send('canvas:childReady');
-        });
-        
-        console.log('📺 Child window WebRTC receiver script loaded');
-    </script>
-</body>
-</html>
-    `;
-
-    this.canvasWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(canvasHtml)}`);
+    // Load canvas.html file instead of inline HTML
+    const canvasHtmlPath = path.join(__dirname, '../renderer/canvas.html');
+    this.canvasWindow.loadFile(canvasHtmlPath);
 
     this.canvasWindow.once('ready-to-show', () => {
       this.canvasWindow.show();
@@ -513,10 +292,7 @@ class KaiPlayerApp {
       
       // Stop painting to capture canvas (but keep canvas and stream alive)
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.webContents.executeJavaScript(`
-          window.streamingToChild = false;
-          console.log('🔴 Stopped painting to capture canvas - child window closed');
-        `).catch(err => console.log('Window cleanup error:', err));
+        this.mainWindow.webContents.send('webrtc:stopPainting');
       }
       
       this.canvasWindow = null;
@@ -525,6 +301,50 @@ class KaiPlayerApp {
     if (this.isDev) {
       this.canvasWindow.webContents.openDevTools();
     }
+  }
+
+  /**
+   * Helper: Send IPC command to main renderer and wait for response
+   * Replaces executeJavaScript pattern with proper IPC messaging
+   */
+  async sendWebRTCCommand(command, ...args) {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        ipcMain.removeListener(`webrtc:${command}-response`, responseHandler);
+        reject(new Error(`WebRTC command timeout: ${command}`));
+      }, 10000); // 10 second timeout
+
+      const responseHandler = (event, result) => {
+        clearTimeout(timeout);
+        ipcMain.removeListener(`webrtc:${command}-response`, responseHandler);
+        resolve(result);
+      };
+
+      ipcMain.once(`webrtc:${command}-response`, responseHandler);
+      this.mainWindow.webContents.send(`webrtc:${command}`, ...args);
+    });
+  }
+
+  /**
+   * Helper: Send IPC command to canvas window and wait for response
+   * Replaces executeJavaScript pattern with proper IPC messaging for receiver
+   */
+  async sendCanvasWebRTCCommand(command, ...args) {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        ipcMain.removeListener(`webrtc:${command}-response`, responseHandler);
+        reject(new Error(`Canvas WebRTC command timeout: ${command}`));
+      }, 10000); // 10 second timeout
+
+      const responseHandler = (event, result) => {
+        clearTimeout(timeout);
+        ipcMain.removeListener(`webrtc:${command}-response`, responseHandler);
+        resolve(result);
+      };
+
+      ipcMain.once(`webrtc:${command}-response`, responseHandler);
+      this.canvasWindow.webContents.send(`webrtc:${command}`, ...args);
+    });
   }
 
   async startCanvasStreaming() {
@@ -540,204 +360,16 @@ class KaiPlayerApp {
 
     try {
       console.log('Starting WebRTC canvas streaming...');
-      
-      // Set up WebRTC sender in main window
-      const senderResult = await this.mainWindow.webContents.executeJavaScript(`
-        (() => {
-          try {
-            console.log('🎬 Setting up WebRTC sender');
-            
-            const canvas = document.getElementById('karaokeCanvas');
-            if (!canvas) {
-              return { success: false, error: 'Canvas not found' };
-            }
-            
-            
-            // Get or create persistent offscreen canvas for streaming
-            let captureCanvas = window.streamCaptureCanvas;
-            if (!captureCanvas) {
-              captureCanvas = document.createElement('canvas');
-              captureCanvas.width = 1920;
-              captureCanvas.height = 1080;
-              captureCanvas.style.display = 'none';
-              document.body.appendChild(captureCanvas);
-              window.streamCaptureCanvas = captureCanvas;
-              // Create the MediaStream from this canvas (once)
-              window.captureStream = captureCanvas.captureStream(60);
-              
-              // Check if track is actually 1920x1080
-              const track = window.captureStream.getVideoTracks()[0];
-              const settings = track.getSettings();
-              console.log('🔍 Capture stream resolution:', settings.width, 'x', settings.height);
-              
-              if (settings.width !== 1920 || settings.height !== 1080) {
-                console.error('❌ CAPTURE STREAM NOT 1080p! Actual:', settings.width, 'x', settings.height);
-              }
-            }
-            
-            // Start painting to the offscreen canvas now that child window is open
-            const captureCtx = captureCanvas.getContext('2d');
-            
-            const copyFrame = () => {
-              if (window.streamingToChild) {
-                captureCtx.drawImage(canvas, 0, 0, 1920, 1080);
-                requestAnimationFrame(copyFrame);
-              }
-            };
-            window.streamingToChild = true;
-            copyFrame();
-            
-            // Return the existing stream
-            const stream = window.captureStream;
-            
-            if (stream.getVideoTracks().length === 0) {
-              return { success: false, error: 'No video track' };
-            }
-            
-            // Create RTCPeerConnection with optimized settings for local streaming
-            const pc = new RTCPeerConnection({
-              iceServers: [], // No ICE servers needed for local connection
-              iceCandidatePoolSize: 10,
-              bundlePolicy: 'balanced',
-              rtcpMuxPolicy: 'require',
-              // Disable adaptive bitrate to prevent downscaling
-              sdpSemantics: 'unified-plan'
-            });
-            
-            // Add stream tracks with transceivers for better control
-            stream.getTracks().forEach(track => {
-              console.log('➕ Adding track:', track.kind);
-              
-              if (track.kind === 'video') {
-                // Apply constraints to force 1920x1080
-                track.applyConstraints({
-                  width: { exact: 1920 },
-                  height: { exact: 1080 },
-                  frameRate: { exact: 60 }
-                }).then(() => {
-                  console.log('🎯 Applied 1920x1080 constraints to track');
-                }).catch(err => {
-                  console.error('❌ Failed to apply constraints:', err);
-                });
-              }
-              
-              const transceiver = pc.addTransceiver(track, {
-                direction: 'sendonly',
-                streams: [stream]
-              });
-              
-              // Configure for high quality, low compression
-              if (track.kind === 'video') {
-                const sender = transceiver.sender;
-                
-                // Set encoding parameters to maintain resolution
-                const setEncodingParams = async () => {
-                  try {
-                    const params = sender.getParameters();
-                    
-                    // Critical: Tell WebRTC to maintain resolution over frame rate
-                    params.degradationPreference = 'maintain-resolution';
-                    
-                    if (params.encodings && params.encodings.length > 0) {
-                      // Force no downscaling and high bitrate
-                      params.encodings[0].maxBitrate = 50000000; // 50 Mbps
-                      params.encodings[0].maxFramerate = 60;
-                      params.encodings[0].scaleResolutionDownBy = 1.0; // No downscaling
-                      params.encodings[0].minBitrate = 10000000; // Min 10 Mbps
-                    }
-                    
-                    await sender.setParameters(params);
-                    console.log('🎯 Set maintain-resolution + no downscaling');
-                  } catch (error) {
-                    console.error('❌ Failed to set encoding parameters:', error);
-                  }
-                };
-                
-                // Apply immediately
-                setEncodingParams();
-                
-                // Apply again after connection to ensure it sticks
-                setTimeout(setEncodingParams, 2000);
-                setTimeout(setEncodingParams, 5000);
-              }
-            });
-            
-            // Handle ICE candidates
-            pc.onicecandidate = (event) => {
-              if (event.candidate) {
-                console.log('🧊 Sender ICE candidate');
-                window.kaiAPI.canvas.sendICECandidate('sender', {
-                  candidate: event.candidate.candidate,
-                  sdpMid: event.candidate.sdpMid,
-                  sdpMLineIndex: event.candidate.sdpMLineIndex
-                });
-              }
-            };
-            
-            // Store references
-            window.senderPC = pc;
-            window.canvasStream = stream;
-            
-            console.log('✅ Sender setup complete');
-            return { success: true };
-          } catch (error) {
-            console.error('❌ Sender error:', error);
-            return { success: false, error: error.message };
-          }
-        })();
-      `);
-      
+
+      // Set up WebRTC sender in main window via IPC
+      const senderResult = await this.sendWebRTCCommand('setupSender');
+
       if (!senderResult.success) {
         throw new Error('Sender setup failed: ' + senderResult.error);
       }
       
-      // Set up WebRTC receiver in child window
-      const receiverResult = await this.canvasWindow.webContents.executeJavaScript(`
-        (() => {
-          try {
-            console.log('🎬 Setting up WebRTC receiver');
-            
-            const video = document.getElementById('video');
-            
-            // Create RTCPeerConnection optimized for local 1080p streaming
-            const pc = new RTCPeerConnection({
-              iceServers: [], // No ICE servers needed for local connection
-              iceCandidatePoolSize: 10,
-              bundlePolicy: 'balanced',
-              rtcpMuxPolicy: 'require'
-            });
-            
-            // Handle ICE candidates
-            pc.onicecandidate = (event) => {
-              if (event.candidate) {
-                console.log('🧊 Receiver ICE candidate');
-                const { ipcRenderer } = require('electron');
-                ipcRenderer.invoke('canvas:sendICECandidate', 'receiver', {
-                  candidate: event.candidate.candidate,
-                  sdpMid: event.candidate.sdpMid,
-                  sdpMLineIndex: event.candidate.sdpMLineIndex
-                });
-              }
-            };
-            
-            // Handle incoming stream
-            pc.ontrack = (event) => {
-              console.log('🎥 Received stream');
-              video.srcObject = event.streams[0];
-              console.log('📺 Connected stream to video');
-            };
-            
-            // Store reference
-            window.receiverPC = pc;
-            
-            console.log('✅ Receiver setup complete');
-            return { success: true };
-          } catch (error) {
-            console.error('❌ Receiver error:', error);
-            return { success: false, error: error.message };
-          }
-        })();
-      `);
+      // Set up WebRTC receiver in child window via IPC
+      const receiverResult = await this.sendCanvasWebRTCCommand('setupReceiver');
       
       if (!receiverResult.success) {
         throw new Error('Receiver setup failed: ' + receiverResult.error);
@@ -759,78 +391,11 @@ class KaiPlayerApp {
     
     let offer;
     try {
-      // Create offer in sender (main window)
+      // Create offer in sender (main window) via IPC
       console.log('📤 Creating offer in sender...');
-      
-      offer = await this.mainWindow.webContents.executeJavaScript(`
-        (async () => {
-          try {
-            console.log('📋 Creating offer...');
-            
-            // Force CPU-efficient codec for 1080p streaming
-            const transceivers = window.senderPC.getTransceivers();
-            transceivers.forEach(transceiver => {
-              if (transceiver.sender && transceiver.sender.track && transceiver.sender.track.kind === 'video') {
-                const capabilities = RTCRtpSender.getCapabilities('video');
-                console.log('📺 Available video codecs:', capabilities.codecs.map(c => c.mimeType));
-                
-                // Prioritize codecs for CPU efficiency and quality:
-                // 1. H.264 Baseline (hardware accelerated, low CPU)
-                // 2. VP8 (simple, good for local streaming)
-                // 3. AV1 (if hardware supported)
-                const preferredCodecs = capabilities.codecs.filter(codec => {
-                  // H.264 Baseline profile (most CPU efficient)
-                  if (codec.mimeType.includes('H264') && 
-                      codec.sdpFmtpLine?.includes('profile-level-id=42e01f')) {
-                    return true;
-                  }
-                  // VP8 (simple and efficient)
-                  if (codec.mimeType.includes('VP8')) {
-                    return true;
-                  }
-                  return false;
-                }).sort((a, b) => {
-                  // H.264 Baseline first, then VP8
-                  if (a.mimeType.includes('H264')) return -1;
-                  if (b.mimeType.includes('H264')) return 1;
-                  return 0;
-                });
-                
-                if (preferredCodecs.length > 0) {
-                  transceiver.setCodecPreferences(preferredCodecs);
-                  console.log('🎯 Set preferred codec for 1080p:', preferredCodecs[0].mimeType);
-                } else {
-                  console.warn('⚠️ No preferred codecs found, using default');
-                }
-              }
-            });
-            
-            const offer = await window.senderPC.createOffer({
-              offerToReceiveVideo: false,
-              voiceActivityDetection: false
-            });
-            console.log('📋 Offer created');
-            
-            console.log('🔧 Setting local description...');
-            await window.senderPC.setLocalDescription(offer);
-            console.log('✅ Local description set on sender');
-            
-            console.log('🔧 Using original SDP - relying on encoding parameters for quality');
-            
-            // Return only the serializable parts
-            return {
-              type: offer.type,
-              sdp: offer.sdp
-            };
-          } catch (error) {
-            console.error('❌ Error in sender offer creation:', error);
-            return { error: error.message, stack: error.stack };
-          }
-        })();
-      `);
-      
-      console.log('🔄 executeJavaScript completed, checking offer...');
-      
+
+      offer = await this.sendWebRTCCommand('createOffer');
+
       if (offer.error) {
         throw new Error('Sender error: ' + offer.error);
       }
@@ -849,81 +414,25 @@ class KaiPlayerApp {
         throw new Error('Child window is not available');
       }
       
+      // Check if receiver is ready via IPC
       console.log('🔍 Checking if child window is ready...');
-      const childReady = await this.canvasWindow.webContents.executeJavaScript(`
-        // Quick test to see if child window is responsive
-        (function() {
-          console.log('🏓 Child window ping test');
-          return { ready: true, hasReceiverPC: !!window.receiverPC };
-        })();
-      `);
-      
+      const childReady = await this.sendCanvasWebRTCCommand('checkReceiverReady');
       console.log('🏓 Child window status:', childReady);
-      
+
       if (!childReady.hasReceiverPC) {
         throw new Error('Receiver PC not found in child window');
       }
+
+      // Set offer in receiver and create answer via IPC
+      const answer = await this.sendCanvasWebRTCCommand('setOfferAndCreateAnswer', offer);
+
+      if (answer.error) {
+        throw new Error('Receiver answer error: ' + answer.error);
+      }
       
-      // Set offer in receiver (child window) and create answer
-      const offerData = JSON.stringify(offer);
-      const answer = await this.canvasWindow.webContents.executeJavaScript(`
-        (async () => {
-          try {
-            const offer = ${offerData};
-            console.log('📥 Received offer in child window:', offer.type);
-            
-            if (!window.receiverPC) {
-              throw new Error('receiverPC not available');
-            }
-            
-            console.log('🔧 Setting remote description...');
-            await window.receiverPC.setRemoteDescription(offer);
-            console.log('✅ Remote description set on receiver');
-            
-            console.log('📋 Creating answer...');
-            const answer = await window.receiverPC.createAnswer();
-            console.log('📋 Answer created:', answer.type, answer.sdp.length, 'chars');
-            
-            console.log('🔧 Setting local description on receiver...');
-            await window.receiverPC.setLocalDescription(answer);
-            console.log('✅ Local description set on receiver');
-            
-            // Return only the serializable parts
-            return {
-              type: answer.type,
-              sdp: answer.sdp
-            };
-          } catch (error) {
-            console.error('❌ Error in receiver answer creation:', error);
-            console.error('❌ Error details:', error.message, error.stack);
-            throw error;
-          }
-        })();
-      `);
-      
+      // Set answer in sender via IPC
       console.log('📤 Setting answer in sender...');
-      // Set answer in sender  
-      const answerData = JSON.stringify(answer);
-      await this.mainWindow.webContents.executeJavaScript(`
-        (async () => {
-          try {
-            const answer = ${answerData};
-            console.log('📥 Received answer in sender:', answer.type);
-            
-            console.log('🔧 Setting remote description on sender...');
-            await window.senderPC.setRemoteDescription(answer);
-            console.log('✅ Remote description set on sender');
-            
-            // Log final connection state
-            console.log('📡 Final sender connection state:', window.senderPC.connectionState);
-            console.log('🧊 Final sender ICE state:', window.senderPC.iceConnectionState);
-            
-          } catch (error) {
-            console.error('❌ Error setting answer in sender:', error);
-            throw error;
-          }
-        })();
-      `);
+      await this.sendWebRTCCommand('setAnswer', answer);
       
       console.log('✅ WebRTC peer connection handshake complete');
       
@@ -939,21 +448,9 @@ class KaiPlayerApp {
 
   async checkConnectionStatus() {
     try {
-      const senderStatus = await this.mainWindow.webContents.executeJavaScript(`
-        ({
-          connectionState: window.senderPC.connectionState,
-          iceConnectionState: window.senderPC.iceConnectionState,
-          iceGatheringState: window.senderPC.iceGatheringState
-        })
-      `);
+      const senderStatus = await this.sendWebRTCCommand('getSenderStatus');
       
-      const receiverStatus = await this.canvasWindow.webContents.executeJavaScript(`
-        ({
-          connectionState: window.receiverPC.connectionState,
-          iceConnectionState: window.receiverPC.iceConnectionState,
-          iceGatheringState: window.receiverPC.iceGatheringState
-        })
-      `);
+      const receiverStatus = await this.sendCanvasWebRTCCommand('getReceiverStatus');
       
       console.log('📊 Connection Status:');
       console.log('  Sender:', senderStatus);
@@ -970,38 +467,14 @@ class KaiPlayerApp {
     try {
       console.log('Stopping canvas streaming...');
       
-      // Cleanup sender (main window)
+      // Cleanup sender (main window) via IPC
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        await this.mainWindow.webContents.executeJavaScript(`
-          if (window.senderPC) {
-            try { 
-              window.senderPC.close(); 
-              window.senderPC = null;
-            } catch(e) {
-              console.error('Error closing sender PC:', e);
-            }
-          }
-          // Don't stop tracks from persistent stream - just disconnect from peer connection
-          if (window.canvasStream) {
-            console.log('📺 Disconnecting from persistent stream (keeping stream alive)');
-            window.canvasStream = null;
-          }
-          window.streamingToChild = false;
-        `);
+        this.mainWindow.webContents.send('webrtc:cleanupSender');
       }
       
-      // Cleanup receiver (child window)
+      // Cleanup receiver (child window) via IPC
       if (this.canvasWindow && !this.canvasWindow.isDestroyed()) {
-        await this.canvasWindow.webContents.executeJavaScript(`
-          if (window.receiverPC) {
-            try { 
-              window.receiverPC.close(); 
-              window.receiverPC = null;
-            } catch(e) {
-              console.error('Error closing receiver PC:', e);
-            }
-          }
-        `);
+        this.canvasWindow.webContents.send('webrtc:cleanupReceiver');
       }
       
       this.canvasStreaming.isStreaming = false;
@@ -1204,573 +677,9 @@ class KaiPlayerApp {
   }
 
   setupIPC() {
-    ipcMain.handle('app:getVersion', () => {
-      return app.getVersion();
-    });
-
-    ipcMain.handle('file:openKai', async () => {
-      const result = await dialog.showOpenDialog(this.mainWindow, {
-        filters: [
-          { name: 'KAI Files', extensions: ['kai'] }
-        ],
-        properties: ['openFile']
-      });
-
-      if (!result.canceled && result.filePaths.length > 0) {
-        return await this.loadKaiFile(result.filePaths[0]);
-      }
-      return null;
-    });
-
-    ipcMain.handle('file:loadKaiFromPath', async (event, filePath) => {
-      return await this.loadKaiFile(filePath);
-    });
-
-    ipcMain.handle('audio:getDevices', () => {
-      return this.audioEngine ? this.audioEngine.getDevices() : [];
-    });
-
-    ipcMain.handle('audio:enumerateDevices', async () => {
-      // This will be called from renderer to get real device list
-      return [];
-    });
-
-    ipcMain.handle('audio:setDevice', (event, deviceType, deviceId) => {
-      if (this.audioEngine) {
-        return this.audioEngine.setDevice(deviceType, deviceId);
-      }
-      return false;
-    });
-
-    ipcMain.handle('mixer:toggleMute', (event, stemId, bus) => {
-      if (this.audioEngine) {
-        return this.audioEngine.toggleMute(stemId, bus);
-      }
-      return false;
-    });
-
-    ipcMain.handle('mixer:toggleSolo', (event, stemId) => {
-      if (this.audioEngine) {
-        return this.audioEngine.toggleSolo(stemId);
-      }
-      return false;
-    });
-
-    ipcMain.handle('mixer:setGain', (event, stemId, gainDb) => {
-      if (this.audioEngine) {
-        return this.audioEngine.setGain(stemId, gainDb);
-      }
-      return false;
-    });
-
-    ipcMain.handle('mixer:applyPreset', (event, presetId) => {
-      if (this.audioEngine) {
-        return this.audioEngine.applyPreset(presetId);
-      }
-      return false;
-    });
-
-    ipcMain.handle('mixer:recallScene', (event, sceneId) => {
-      if (this.audioEngine) {
-        return this.audioEngine.recallScene(sceneId);
-      }
-      return false;
-    });
-
-    ipcMain.handle('player:play', () => {
-      if (this.audioEngine) {
-        return this.audioEngine.play();
-      }
-      return false;
-    });
-
-    ipcMain.handle('player:pause', () => {
-      if (this.audioEngine) {
-        return this.audioEngine.pause();
-      }
-      return false;
-    });
-
-    ipcMain.handle('player:seek', (event, positionSec) => {
-      if (this.audioEngine) {
-        return this.audioEngine.seek(positionSec);
-      }
-      return false;
-    });
-
-    ipcMain.handle('autotune:setEnabled', (event, enabled) => {
-      if (this.audioEngine) {
-        return this.audioEngine.setAutotuneEnabled(enabled);
-      }
-      return false;
-    });
-
-    ipcMain.handle('autotune:setSettings', (event, settings) => {
-      if (this.audioEngine) {
-        return this.audioEngine.setAutotuneSettings(settings);
-      }
-      return false;
-    });
-
-    ipcMain.handle('editor:saveKai', async (event, kaiData, originalPath) => {
-      try {
-        console.log('Save KAI file request:', originalPath);
-        console.log('Updated lyrics:', kaiData.lyrics.length, 'lines');
-        
-        // Use KaiWriter to save the updated lyrics back to the KAI file
-        const result = await KaiWriter.save(kaiData, originalPath);
-        
-        if (result.success) {
-          console.log('KAI file saved successfully');
-          return { success: true };
-        } else {
-          console.error('Failed to save KAI file:', result.error);
-          return { success: false, error: result.error };
-        }
-      } catch (error) {
-        console.error('Failed to save KAI file:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    ipcMain.handle('editor:reloadKai', async (event, filePath) => {
-      try {
-        console.log('Reload KAI file request:', filePath);
-        
-        // Reload the KAI file using the existing loadKaiFile method
-        const result = await this.loadKaiFile(filePath);
-        
-        if (result && result.success) {
-          console.log('KAI file reloaded successfully');
-          return { success: true };
-        } else {
-          console.error('Failed to reload KAI file');
-          return { success: false, error: 'Failed to reload file' };
-        }
-      } catch (error) {
-        console.error('Failed to reload KAI file:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    ipcMain.handle('window:openCanvas', () => {
-      this.createCanvasWindow();
-      return { success: true };
-    });
-
-    ipcMain.handle('canvas:startStreaming', () => {
-      this.startCanvasStreaming();
-      return { success: true };
-    });
-
-    ipcMain.handle('canvas:stopStreaming', () => {
-      this.stopCanvasStreaming();
-      return { success: true };
-    });
-
-    ipcMain.handle('canvas:sendImageData', (event, imageDataArray, width, height) => {
-      if (this.canvasWindow && !this.canvasWindow.isDestroyed()) {
-        this.canvasWindow.webContents.send('canvas:receiveImageData', imageDataArray, width, height);
-      }
-    });
-
-    ipcMain.on('canvas:childReady', () => {
-      console.log('Child window ready, starting canvas streaming');
-      // Small delay to ensure everything is fully initialized
-      setTimeout(() => {
-        this.startCanvasStreaming();
-      }, 100);
-    });
-
-    ipcMain.handle('canvas:sendICECandidate', (event, source, candidate) => {
-      console.log('🧊 Relaying ICE candidate from', source);
-      if (source === 'sender') {
-        // Send to receiver
-        if (this.canvasWindow && !this.canvasWindow.isDestroyed()) {
-          this.canvasWindow.webContents.executeJavaScript(`
-            if (window.receiverPC) {
-              const candidate = new RTCIceCandidate(${JSON.stringify(candidate)});
-              window.receiverPC.addIceCandidate(candidate);
-              console.log('🧊 Added ICE candidate to receiver');
-            }
-          `);
-        }
-      } else if (source === 'receiver') {
-        // Send to sender
-        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-          this.mainWindow.webContents.executeJavaScript(`
-            if (window.senderPC) {
-              const candidate = new RTCIceCandidate(${JSON.stringify(candidate)});
-              window.senderPC.addIceCandidate(candidate);
-              console.log('🧊 Added ICE candidate to sender');
-            }
-          `);
-        }
-      }
-    });
-
-    ipcMain.handle('canvas:toggleFullscreen', (event, shouldBeFullscreen) => {
-      if (this.canvasWindow && !this.canvasWindow.isDestroyed()) {
-        console.log('🖥️ Toggling canvas window fullscreen:', shouldBeFullscreen);
-        this.canvasWindow.setFullScreen(shouldBeFullscreen);
-        return { success: true, fullscreen: shouldBeFullscreen };
-      }
-      return { success: false, error: 'Canvas window not available' };
-    });
-
-    ipcMain.handle('canvas:sendFrame', (event, dataUrl) => {
-      if (this.canvasWindow && !this.canvasWindow.isDestroyed()) {
-        this.canvasWindow.webContents.send('canvas:receiveFrame', dataUrl);
-      }
-    });
-
-    // Library management - using shared libraryService
-    ipcMain.handle('library:getSongsFolder', () => {
-      return libraryService.getSongsFolder(this);
-    });
-
-    ipcMain.handle('library:setSongsFolder', async () => {
-      await this.promptForSongsFolder();
-      return this.settings.getSongsFolder();
-    });
-
-    ipcMain.handle('library:getCachedSongs', async () => {
-      return libraryService.getCachedSongs(this);
-    });
-
-    ipcMain.handle('library:scanFolder', async () => {
-      const result = await libraryService.scanLibrary(this, (progress) => {
-        this.sendToRenderer('library:scanProgress', progress);
-      });
-
-      if (result.success) {
-        // Update web server cache
-        if (this.webServer) {
-          this.webServer.cachedSongs = result.files;
-          this.webServer.songsCacheTime = Date.now();
-          this.webServer.fuse = null; // Reset Fuse.js - will rebuild on next search
-        }
-
-        // Save to disk cache
-        const songsFolder = this.settings.getSongsFolder();
-        const cacheFile = path.join(app.getPath('userData'), 'library-cache.json');
-        try {
-          await fsPromises.writeFile(cacheFile, JSON.stringify({
-            songsFolder,
-            files: result.files,
-            cachedAt: new Date().toISOString()
-          }), 'utf8');
-          console.log('💾 Library cache saved to disk');
-        } catch (err) {
-          console.error('Failed to save library cache:', err);
-        }
-      }
-
-      return result;
-    });
-
-    ipcMain.handle('library:syncLibrary', async () => {
-      const result = await libraryService.syncLibrary(this, (progress) => {
-        this.sendToRenderer('library:scanProgress', progress);
-      });
-
-      if (result.success) {
-        // Update web server cache
-        if (this.webServer) {
-          this.webServer.cachedSongs = result.files;
-          this.webServer.songsCacheTime = Date.now();
-          this.webServer.fuse = null;
-        }
-
-        // Save to disk cache
-        const songsFolder = this.settings.getSongsFolder();
-        const cacheFile = path.join(app.getPath('userData'), 'library-cache.json');
-        try {
-          await fsPromises.writeFile(cacheFile, JSON.stringify({
-            songsFolder,
-            files: result.files,
-            cachedAt: new Date().toISOString()
-          }), 'utf8');
-        } catch (err) {
-          console.error('Failed to save library cache:', err);
-        }
-
-        // Return with 'songs' key for renderer compatibility
-        return {
-          ...result,
-          songs: result.files
-        };
-      }
-
-      return result;
-    });
-
-    ipcMain.handle('library:getSongInfo', async (event, filePath) => {
-      const result = await libraryService.getSongInfo(this, filePath);
-
-      // For compatibility with existing code, wrap result if needed
-      if (result.success && result.song) {
-        // Get file size if not already present
-        if (!result.song.fileSize) {
-          try {
-            const stats = await fsPromises.stat(filePath);
-            result.song.fileSize = stats.size;
-          } catch (statError) {
-            result.song.fileSize = 0;
-          }
-        }
-        return result.song;
-      }
-
-      return result;
-    });
-
-    // Shell operations
-    ipcMain.handle('shell:openExternal', async (event, url) => {
-      const { shell } = await import('electron');
-      await shell.openExternal(url);
-    });
-
-    // Web Server Management
-    ipcMain.handle('webServer:getPort', () => {
-      return this.getWebServerPort();
-    });
-
-    ipcMain.handle('webServer:getUrl', () => {
-      return this.webServer?.getServerUrl() || null;
-    });
-
-    ipcMain.handle('webServer:getSettings', () => {
-      if (this.webServer) {
-        const result = serverSettingsService.getServerSettings(this.webServer);
-        return result.success ? result.settings : null;
-      }
-      return null;
-    });
-
-    ipcMain.handle('webServer:updateSettings', (event, settings) => {
-      if (this.webServer) {
-        return serverSettingsService.updateServerSettings(this.webServer, settings);
-      }
-      return { success: false, error: 'Web server not available' };
-    });
-
-    ipcMain.handle('webServer:getSongRequests', () => {
-      if (this.webServer) {
-        const result = requestsService.getRequests(this.webServer);
-        return result.success ? result.requests : [];
-      }
-      return [];
-    });
-
-    ipcMain.handle('webServer:approveRequest', async (event, requestId) => {
-      if (this.webServer) {
-        return await requestsService.approveRequest(this.webServer, requestId);
-      }
-      return { success: false, error: 'Web server not available' };
-    });
-
-    ipcMain.handle('webServer:rejectRequest', async (event, requestId) => {
-      if (this.webServer) {
-        return await requestsService.rejectRequest(this.webServer, requestId);
-      }
-      return { success: false, error: 'Web server not available' };
-    });
-
-    ipcMain.handle('webServer:refreshCache', async () => {
-      try {
-        if (this.webServer) {
-          await this.webServer.refreshSongsCache();
-          return { success: true };
-        } else {
-          return { error: 'Web server not available' };
-        }
-      } catch (error) {
-        return { error: error.message };
-      }
-    });
-
-    // Queue Management - using shared queueService
-    ipcMain.handle('queue:addSong', async (event, queueItem) => {
-      const result = queueService.addSongToQueue(this.appState, queueItem);
-
-      // Update legacy songQueue for compatibility
-      this.songQueue = result.queue;
-
-      // If queue was empty, automatically load and start playing the first song
-      if (result.success && result.wasEmpty) {
-        console.log(`🎵 Queue was empty, auto-loading "${queueItem.title}"`);
-        try {
-          await this.loadKaiFile(queueItem.path);
-          console.log('✅ Successfully auto-loaded song from queue');
-        } catch (error) {
-          console.error('❌ Failed to auto-load song from queue:', error);
-        }
-      }
-
-      return result;
-    });
-
-    ipcMain.handle('queue:removeSong', async (event, itemId) => {
-      const result = queueService.removeSongFromQueue(this.appState, itemId);
-
-      // Update legacy songQueue for compatibility
-      if (result.success) {
-        this.songQueue = result.queue;
-      }
-
-      return result;
-    });
-
-    ipcMain.handle('queue:get', () => {
-      return queueService.getQueue(this.appState);
-    });
-
-    ipcMain.handle('queue:clear', async () => {
-      const result = queueService.clearQueue(this.appState);
-
-      // Update legacy songQueue for compatibility
-      this.songQueue = [];
-
-      return result;
-    });
-
-    // Song management IPC handlers
-    ipcMain.handle('song:getCurrentSong', () => {
-      if (this.currentSong && this.currentSong.metadata) {
-        return {
-          path: this.currentSong.metadata.path || this.currentSong.filePath,
-          title: this.currentSong.metadata.title,
-          artist: this.currentSong.metadata.artist
-        };
-      }
-      return null;
-    });
-
-    // Effects management IPC handlers
-    ipcMain.handle('effects:getList', async () => {
-      try {
-        // Send message to renderer to get effects list
-        return await this.sendToRendererAndWait('effects:getList');
-      } catch (error) {
-        console.error('Failed to get effects list:', error);
-        return [];
-      }
-    });
-
-    ipcMain.handle('effects:getCurrent', async () => {
-      try {
-        return await this.sendToRendererAndWait('effects:getCurrent');
-      } catch (error) {
-        console.error('Failed to get current effect:', error);
-        return null;
-      }
-    });
-
-    ipcMain.handle('effects:getDisabled', async () => {
-      try {
-        return await this.sendToRendererAndWait('effects:getDisabled');
-      } catch (error) {
-        console.error('Failed to get disabled effects:', error);
-        return [];
-      }
-    });
-
-    ipcMain.handle('effects:select', async (event, effectName) => {
-      try {
-        this.sendToRenderer('effects:select', effectName);
-        return { success: true };
-      } catch (error) {
-        console.error('Failed to select effect:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    ipcMain.handle('effects:toggle', async (event, effectName, enabled) => {
-      try {
-        this.sendToRenderer('effects:toggle', { effectName, enabled });
-        return { success: true };
-      } catch (error) {
-        console.error('Failed to toggle effect:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // Settings management IPC handlers
-    ipcMain.handle('settings:get', (event, key, defaultValue = null) => {
-      return this.settings.get(key, defaultValue);
-    });
-
-    ipcMain.handle('settings:set', (event, key, value) => {
-      this.settings.set(key, value);
-
-      // Broadcast settings changes to web admin clients
-      if (this.webServer && this.webServer.io) {
-        if (key === 'waveformPreferences') {
-          this.webServer.io.to('admin-clients').emit('settings:waveform', value);
-
-          // If disabled effects changed, also emit effects update
-          if (value.disabledEffects !== undefined) {
-            this.webServer.io.emit('effects-update', {
-              disabled: value.disabledEffects
-            });
-          }
-        } else if (key === 'autoTunePreferences') {
-          this.webServer.io.to('admin-clients').emit('settings:autotune', value);
-        }
-      }
-
-      return { success: true };
-    });
-
-    ipcMain.handle('settings:getAll', () => {
-      return this.settings.settings;
-    });
-
-    ipcMain.handle('settings:updateBatch', (event, updates) => {
-      try {
-        for (const [key, value] of Object.entries(updates)) {
-          this.settings.settings[key] = value;
-        }
-        this.settings.save();
-        return { success: true };
-      } catch (error) {
-        return { success: false, error: error.message };
-      }
-    });
-
-    // Renderer playback state updates (legacy - keeping for compatibility)
-    ipcMain.on('renderer:playbackState', (event, state) => {
-      // Store the renderer playback state for position broadcasting
-      this.rendererPlaybackState = state;
-    });
-
-    // NEW: Renderer state updates to AppState
-    ipcMain.on('renderer:updatePlaybackState', (event, updates) => {
-      this.appState.updatePlaybackState(updates);
-    });
-
-    ipcMain.on('renderer:songLoaded', (event, songData) => {
-      this.appState.setCurrentSong(songData);
-      // Also update legacy currentSong for compatibility
-      this.currentSong = {
-        metadata: songData,
-        filePath: songData.path
-      };
-    });
-
-    ipcMain.on('renderer:updateMixerState', (event, mixerState) => {
-      this.appState.updateMixerState(mixerState);
-    });
-
-    ipcMain.on('renderer:updateEffectsState', (event, effectsState) => {
-      this.appState.updateEffectsState(effectsState);
-    });
-
-    // Add handler to get current app state
-    ipcMain.handle('app:getState', () => {
-      return this.appState.getSnapshot();
-    });
+    // All IPC handlers have been organized into handler modules
+    // See: src/main/handlers/
+    registerAllHandlers(this);
   }
 
   async scanForKaiFiles(folderPath) {
@@ -2188,12 +1097,12 @@ class KaiPlayerApp {
     });
   }
 
-  async loadKaiFile(filePath) {
+  async loadKaiFile(filePath, queueItemId = null) {
     // Detect format and load accordingly
     const format = await this.detectSongFormat(filePath);
 
     if (format.type === 'cdg') {
-      return this.loadCDGFile(filePath, format.cdgPath, format.format);
+      return this.loadCDGFile(filePath, format.cdgPath, format.format, queueItemId);
     }
 
     // Default: KAI format
@@ -2208,6 +1117,21 @@ class KaiPlayerApp {
       }
 
       this.currentSong = kaiData;
+
+      // Update AppState with new song (this resets position to 0)
+      // Set isLoading: true initially, will be cleared when song fully loads
+      const songData = {
+        path: filePath,
+        title: kaiData.metadata?.title || 'Unknown',
+        artist: kaiData.metadata?.artist || 'Unknown',
+        duration: kaiData.metadata?.duration || 0,
+        requester: kaiData.requester || 'KJ',
+        isLoading: true,  // Song is being loaded
+        format: 'kai',  // Format for display icon
+        queueItemId: queueItemId  // Track which queue item (for duplicate songs)
+      };
+      this.appState.setCurrentSong(songData);
+
       console.log('Sending to renderer:', {
         metadata: kaiData.metadata,
         hasMetadata: !!kaiData.metadata
@@ -2215,9 +1139,9 @@ class KaiPlayerApp {
       this.sendToRenderer('song:loaded', kaiData.metadata || {});
       this.sendToRenderer('song:data', kaiData);
 
-      // Broadcast song loaded to web clients via Socket.IO
+      // Broadcast song loaded to web clients via Socket.IO (use songData, not kaiData!)
       if (this.webServer) {
-        this.webServer.broadcastSongLoaded(kaiData);
+        this.webServer.broadcastSongLoaded(songData);
       }
 
       // Notify queue manager that this song is now current
@@ -2266,22 +1190,37 @@ class KaiPlayerApp {
     return { type: 'kai', format: 'kai', cdgPath: null };
   }
 
-  async loadCDGFile(mp3Path, cdgPath, format) {
+  async loadCDGFile(mp3Path, cdgPath, format, queueItemId = null) {
     try {
-      console.log('💿 Loading CDG file:', { mp3Path, cdgPath, format });
+      console.log('💿 Loading CDG file:', { mp3Path, cdgPath, format, queueItemId });
       const cdgData = await CDGLoader.load(mp3Path, cdgPath, format);
 
       // TODO: Load CDG into audio engine (different path than KAI)
       // For now, just set current song and notify renderer
 
       this.currentSong = cdgData;
+
+      // Update AppState with current song info
+      // Set isLoading: true initially, will be cleared when song fully loads
+      const songData = {
+        path: mp3Path,
+        title: cdgData.metadata?.title || 'Unknown',
+        artist: cdgData.metadata?.artist || 'Unknown',
+        duration: cdgData.metadata?.duration || 0,
+        requester: cdgData.requester || 'KJ',
+        isLoading: true,  // Song is being loaded
+        format: format,  // Format for display icon (cdg-pair, cdg-archive, etc)
+        queueItemId: queueItemId  // Track which queue item (for duplicate songs)
+      };
+      this.appState.setCurrentSong(songData);
+
       console.log('💿 CDG loaded, sending to renderer');
       this.sendToRenderer('song:loaded', cdgData.metadata || {});
       this.sendToRenderer('song:data', cdgData);
 
-      // Broadcast song loaded to web clients
+      // Broadcast song loaded to web clients (use songData, not cdgData!)
       if (this.webServer) {
-        this.webServer.broadcastSongLoaded(cdgData);
+        this.webServer.broadcastSongLoaded(songData);
       }
 
       // Notify queue manager
@@ -2370,7 +1309,8 @@ class KaiPlayerApp {
       this.sendToRenderer('library:scanProgress', { current: 0, total: totalFiles });
 
       // Now process files with metadata extraction and progress updates
-      const files = await this.scanForKaiFilesWithProgress(songsFolder, totalFiles);
+      // Pass null for progressCallback since this.sendToRenderer() is called directly in the method
+      const files = await this.scanForKaiFilesWithProgress(songsFolder, totalFiles, null);
       console.log(`✅ Library scan complete: ${files.length} songs found`);
 
       // Store in main process
@@ -2677,7 +1617,7 @@ class KaiPlayerApp {
     return files;
   }
 
-  async scanForKaiFilesWithProgress(folderPath, totalFiles) {
+  async scanForKaiFilesWithProgress(folderPath, totalFiles, progressCallback) {
     let processedCount = 0;
     const files = [];
     const processedPaths = new Set();
@@ -2687,10 +1627,19 @@ class KaiPlayerApp {
       const now = Date.now();
       // Throttle to max once per second to avoid overwhelming the renderer
       if (force || now - lastProgressReport >= 1000) {
-        this.sendToRenderer('library:scanProgress', {
+        const progressData = {
           current: processedCount,
           total: totalFiles
-        });
+        };
+
+        // Send to renderer
+        this.sendToRenderer('library:scanProgress', progressData);
+
+        // Call progress callback if provided (for libraryService)
+        if (progressCallback) {
+          progressCallback(progressData);
+        }
+
         lastProgressReport = now;
       }
     };
@@ -2818,7 +1767,11 @@ class KaiPlayerApp {
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
         // Create a one-time listener for the response
         const responseChannel = `${channel}-response`;
+
+        let timeoutId;
+
         const listener = (event, data) => {
+          clearTimeout(timeoutId);
           ipcMain.removeListener(responseChannel, listener);
           resolve(data);
         };
@@ -2828,7 +1781,7 @@ class KaiPlayerApp {
         this.mainWindow.webContents.send(channel);
 
         // Timeout after 5 seconds
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           ipcMain.removeListener(responseChannel, listener);
           resolve(null);
         }, 5000);
@@ -2999,9 +1952,10 @@ class KaiPlayerApp {
 
     // If queue was empty, automatically load and start playing the first song
     if (result.wasEmpty) {
-      console.log(`🎵 Queue was empty, auto-loading "${queueItem.title}"`);
+      console.log(`🎵 Queue was empty, auto-loading "${result.queueItem.title}"`);
       try {
-        await this.loadKaiFile(queueItem.path);
+        // Use the returned queueItem which has the generated ID
+        await this.loadKaiFile(result.queueItem.path, result.queueItem.id);
         console.log('✅ Successfully auto-loaded song from queue');
       } catch (error) {
         console.error('❌ Failed to auto-load song from queue:', error);
@@ -3176,6 +2130,11 @@ class KaiPlayerApp {
       this.webServer.stop();
     }
 
+    // Save settings immediately before exiting
+    if (this.settings) {
+      await this.settings.saveNow();
+    }
+
     // Save state before exiting
     if (this.statePersistence) {
       await this.statePersistence.cleanup();
@@ -3194,9 +2153,21 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('🚨 Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
+// Ensure settings are saved before app quits
+app.on('before-quit', async (event) => {
+  if (!kaiApp.isQuitting) {
+    event.preventDefault();
+    kaiApp.isQuitting = true;
+    await kaiApp.cleanup();
+    app.quit();
+  }
+});
+
 app.on('window-all-closed', async () => {
   // Clean up web server and save state
-  await kaiApp.cleanup();
+  if (!kaiApp.isQuitting) {
+    await kaiApp.cleanup();
+  }
 
   // Quit the app when all windows are closed, even on macOS
   app.quit();

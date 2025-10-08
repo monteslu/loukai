@@ -1,0 +1,88 @@
+/* AudioDeviceSettings styles */
+
+.audio-settings-section {
+  margin: 20px 0;
+  padding: 20px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.audio-settings-section h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 15px 0;
+  font-size: 1.1em;
+  color: var(--text-primary);
+}
+
+.refresh-btn {
+  background: var(--accent-primary);
+  border: none;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.2s;
+}
+
+.refresh-btn:hover {
+  background: var(--accent-hover);
+}
+
+.device-selector {
+  margin: 12px 0;
+}
+
+.device-selector label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: 0.9em;
+}
+
+.device-selector select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.95em;
+  cursor: pointer;
+}
+
+.device-selector select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.device-selector input[type="checkbox"] {
+  margin-right: 8px;
+}
+
+.waveform-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.audio-checkbox {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.audio-checkbox input[type="checkbox"] {
+  margin-right: 8px;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.audio-checkbox span {
+  font-size: 0.95em;
+}
