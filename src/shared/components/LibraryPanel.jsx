@@ -427,9 +427,9 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
   const allLetters = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), '#'];
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-3 overflow-hidden">
+    <div className="flex flex-col h-full gap-3 overflow-hidden">
       {/* Header Controls */}
-      <div className="flex flex-col gap-2 pb-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+      <div className="flex flex-col gap-2 pb-3 border-b border-gray-200 dark:border-gray-700 shrink-0">
         <div className="flex gap-2 flex-wrap items-center">
           {showSetFolder && (
             <button
@@ -495,7 +495,7 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
 
       {/* Alphabet Navigation */}
       {!searchTerm && !scanProgress && (
-        <div className="flex flex-col gap-2 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-md flex-shrink-0">
+        <div className="flex flex-col gap-2 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-md shrink-0">
           <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">
             Browse by Artist:
           </div>
@@ -609,7 +609,7 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
 
           {/* Pagination */}
           {totalPages > 1 && !scanProgress && (
-            <div className="flex items-center justify-center gap-3 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-md text-sm flex-shrink-0">
+            <div className="flex items-center justify-center gap-3 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-md text-sm shrink-0">
               <button
                 className="px-4 py-1.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-gray-900 dark:text-white cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-750 disabled:opacity-40 disabled:cursor-not-allowed"
                 onClick={() => setCurrentPage(currentPage - 1)}
