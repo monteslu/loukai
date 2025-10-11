@@ -4,6 +4,7 @@
  * Contains the complete UI layout with all tabs and components
  */
 
+import { useState, useEffect } from 'react';
 import { LibraryPanel } from '../../shared/components/LibraryPanel.jsx';
 import { EffectsPanelWrapper } from './EffectsPanelWrapper.jsx';
 import { RequestsListWrapper } from './RequestsListWrapper.jsx';
@@ -19,6 +20,59 @@ import { VisualizationSettings } from '../../shared/components/VisualizationSett
 import { toggleCanvasFullscreen } from '../hooks/useKeyboardShortcuts.js';
 
 export function App({ bridge }) {
+  const [requests, setRequests] = useState([]);
+
+  // Load and subscribe to requests
+  useEffect(() => {
+    const loadRequests = async () => {
+      try {
+        const requestsList = await window.kaiAPI.webServer.getSongRequests();
+        setRequests(requestsList || []);
+      } catch (error) {
+        console.error('Failed to load requests:', error);
+      }
+    };
+
+    loadRequests();
+
+    // Auto-refresh every 5 seconds
+    const interval = setInterval(loadRequests, 5000);
+
+    // Listen for real-time updates
+    if (window.kaiAPI?.events) {
+      const onNewRequest = (event, request) => {
+        console.log('📨 New song request:', request);
+        loadRequests();
+      };
+
+      const onApproved = (event, request) => {
+        console.log('✅ Request approved:', request);
+        loadRequests();
+      };
+
+      const onRejected = (event, request) => {
+        console.log('❌ Request rejected:', request);
+        loadRequests();
+      };
+
+      window.kaiAPI.events.on('songRequest:new', onNewRequest);
+      window.kaiAPI.events.on('songRequest:approved', onApproved);
+      window.kaiAPI.events.on('songRequest:rejected', onRejected);
+
+      return () => {
+        clearInterval(interval);
+        window.kaiAPI.events.removeListener('songRequest:new', onNewRequest);
+        window.kaiAPI.events.removeListener('songRequest:approved', onApproved);
+        window.kaiAPI.events.removeListener('songRequest:rejected', onRejected);
+      };
+    }
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Calculate pending requests count
+  const pendingCount = requests.filter((r) => r.status === 'pending').length;
+
   return (
     <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
       {/* Song Info Bar */}
@@ -37,7 +91,7 @@ export function App({ bridge }) {
         {/* Center Content */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Tab Navigation */}
-          <TabNavigation requestsCount={0} />
+          <TabNavigation requestsCount={pendingCount} />
 
           {/* Tab Content */}
           <div className="flex-1 overflow-auto">

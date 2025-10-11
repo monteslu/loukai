@@ -9,20 +9,6 @@ import { RequestsList } from '../../shared/components/RequestsList.jsx';
 export function RequestsListWrapper() {
   const [requests, setRequests] = useState([]);
 
-  // Update badge when requests change
-  useEffect(() => {
-    const badge = document.getElementById('requestsBadge');
-    if (badge) {
-      const pendingCount = requests.filter(r => r.status === 'pending').length;
-      if (pendingCount > 0) {
-        badge.textContent = pendingCount;
-        badge.style.display = 'inline-flex';
-      } else {
-        badge.style.display = 'none';
-      }
-    }
-  }, [requests]);
-
   useEffect(() => {
     loadRequests();
 
@@ -88,11 +74,5 @@ export function RequestsListWrapper() {
     }
   };
 
-  return (
-    <RequestsList
-      requests={requests}
-      onApprove={handleApprove}
-      onReject={handleReject}
-    />
-  );
+  return <RequestsList requests={requests} onApprove={handleApprove} onReject={handleReject} />;
 }
