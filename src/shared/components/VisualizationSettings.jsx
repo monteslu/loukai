@@ -7,27 +7,26 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import './VisualizationSettings.css';
 
 export function VisualizationSettings({
   bridge,
   waveformSettings: externalWaveform = null,
   autotuneSettings: externalAutotune = null,
   onWaveformChange = null,
-  onAutotuneChange = null
+  onAutotuneChange = null,
 }) {
   const [waveformSettings, setWaveformSettings] = useState({
     enableWaveforms: true,
     enableEffects: true,
     randomEffectOnSong: false,
     showUpcomingLyrics: true,
-    overlayOpacity: 0.7
+    overlayOpacity: 0.7,
   });
 
   const [autotuneSettings, setAutotuneSettings] = useState({
     enabled: false,
     strength: 50,
-    speed: 20
+    speed: 20,
   });
 
   // Load preferences on mount
@@ -38,12 +37,12 @@ export function VisualizationSettings({
       try {
         const waveform = await bridge.getWaveformPreferences?.();
         if (waveform) {
-          setWaveformSettings(prev => ({ ...prev, ...waveform }));
+          setWaveformSettings((prev) => ({ ...prev, ...waveform }));
         }
 
         const autotune = await bridge.getAutotunePreferences?.();
         if (autotune) {
-          setAutotuneSettings(prev => ({ ...prev, ...autotune }));
+          setAutotuneSettings((prev) => ({ ...prev, ...autotune }));
         }
       } catch (error) {
         console.error('Failed to load preferences:', error);
@@ -56,13 +55,13 @@ export function VisualizationSettings({
   // Sync with external settings (from socket events in web UI)
   useEffect(() => {
     if (externalWaveform) {
-      setWaveformSettings(prev => ({ ...prev, ...externalWaveform }));
+      setWaveformSettings((prev) => ({ ...prev, ...externalWaveform }));
     }
   }, [externalWaveform]);
 
   useEffect(() => {
     if (externalAutotune) {
-      setAutotuneSettings(prev => ({ ...prev, ...externalAutotune }));
+      setAutotuneSettings((prev) => ({ ...prev, ...externalAutotune }));
     }
   }, [externalAutotune]);
 
@@ -71,11 +70,11 @@ export function VisualizationSettings({
     if (!bridge) return;
 
     const unsubWaveform = bridge.onSettingsChanged?.('waveform', (settings) => {
-      setWaveformSettings(prev => ({ ...prev, ...settings }));
+      setWaveformSettings((prev) => ({ ...prev, ...settings }));
     });
 
     const unsubAutotune = bridge.onSettingsChanged?.('autotune', (settings) => {
-      setAutotuneSettings(prev => ({ ...prev, ...settings }));
+      setAutotuneSettings((prev) => ({ ...prev, ...settings }));
     });
 
     return () => {
@@ -126,50 +125,57 @@ export function VisualizationSettings({
   };
 
   return (
-    <div className="visualization-settings">
+    <div className="p-4 space-y-6">
       {/* Waveform Options */}
-      <div className="settings-section">
-        <h3>Waveform Options</h3>
-        <div className="waveform-controls">
-          <label className="setting-checkbox">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Waveform Options</h3>
+        <div className="space-y-3">
+          <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
               checked={waveformSettings.enableWaveforms}
               onChange={(e) => handleWaveformChange('enableWaveforms', e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
             />
-            <span>Enable Waveforms</span>
+            <span className="text-gray-900 dark:text-gray-100">Enable Waveforms</span>
           </label>
 
-          <label className="setting-checkbox">
+          <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
               checked={waveformSettings.enableEffects}
               onChange={(e) => handleWaveformChange('enableEffects', e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
             />
-            <span>Enable Background Effects</span>
+            <span className="text-gray-900 dark:text-gray-100">Enable Background Effects</span>
           </label>
 
-          <label className="setting-checkbox">
+          <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
               checked={waveformSettings.randomEffectOnSong}
               onChange={(e) => handleWaveformChange('randomEffectOnSong', e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
             />
-            <span>Random Effect on New Song</span>
+            <span className="text-gray-900 dark:text-gray-100">Random Effect on New Song</span>
           </label>
 
-          <label className="setting-checkbox">
+          <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
               checked={waveformSettings.showUpcomingLyrics}
               onChange={(e) => handleWaveformChange('showUpcomingLyrics', e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
             />
-            <span>Show Upcoming Lyrics</span>
+            <span className="text-gray-900 dark:text-gray-100">Show Upcoming Lyrics</span>
           </label>
 
-          <div className="slider-control">
-            <label>
-              Overlay Opacity: <span className="slider-value">{waveformSettings.overlayOpacity.toFixed(2)}</span>
+          <div className="space-y-2">
+            <label className="flex items-center justify-between text-gray-900 dark:text-gray-100">
+              <span>Overlay Opacity:</span>
+              <span className="font-mono text-sm">
+                {waveformSettings.overlayOpacity.toFixed(2)}
+              </span>
             </label>
             <input
               type="range"
@@ -178,27 +184,30 @@ export function VisualizationSettings({
               step="0.01"
               value={waveformSettings.overlayOpacity}
               onChange={(e) => handleWaveformChange('overlayOpacity', parseFloat(e.target.value))}
+              className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
             />
           </div>
         </div>
       </div>
 
       {/* Auto-Tune Settings */}
-      <div className="settings-section">
-        <h3>Auto-Tune</h3>
-        <div className="autotune-controls">
-          <label className="setting-checkbox">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Auto-Tune</h3>
+        <div className="space-y-3">
+          <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
               checked={autotuneSettings.enabled}
               onChange={(e) => handleAutotuneChange('enabled', e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
             />
-            <span>Enable Auto-Tune</span>
+            <span className="text-gray-900 dark:text-gray-100">Enable Auto-Tune</span>
           </label>
 
-          <div className="slider-control">
-            <label>
-              Strength: <span className="slider-value">{autotuneSettings.strength}%</span>
+          <div className="space-y-2">
+            <label className="flex items-center justify-between text-gray-900 dark:text-gray-100">
+              <span>Strength:</span>
+              <span className="font-mono text-sm">{autotuneSettings.strength}%</span>
             </label>
             <input
               type="range"
@@ -206,12 +215,14 @@ export function VisualizationSettings({
               max="100"
               value={autotuneSettings.strength}
               onChange={(e) => handleAutotuneChange('strength', parseInt(e.target.value))}
+              className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
             />
           </div>
 
-          <div className="slider-control">
-            <label>
-              Speed: <span className="slider-value">{autotuneSettings.speed}</span>
+          <div className="space-y-2">
+            <label className="flex items-center justify-between text-gray-900 dark:text-gray-100">
+              <span>Speed:</span>
+              <span className="font-mono text-sm">{autotuneSettings.speed}</span>
             </label>
             <input
               type="range"
@@ -219,6 +230,7 @@ export function VisualizationSettings({
               max="100"
               value={autotuneSettings.speed}
               onChange={(e) => handleAutotuneChange('speed', parseInt(e.target.value))}
+              className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
             />
           </div>
         </div>

@@ -1,0 +1,68 @@
+/* Tailwind CSS directives */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom layer for web-specific components */
+@layer components {
+  /* Button base styles */
+  .btn {
+    @apply px-4 py-2 rounded-md font-medium transition-all duration-200;
+    @apply bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-600;
+    @apply hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply bg-blue-600 dark:bg-blue-500 border-blue-600 dark:border-blue-500 text-white;
+    @apply hover:bg-blue-700 dark:hover:bg-blue-600;
+  }
+
+  .btn-secondary {
+    @apply bg-transparent text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700;
+    @apply hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+
+  .btn-xs {
+    @apply px-2 py-0.5 text-xs min-h-[24px];
+  }
+
+  /* Input styles */
+  .input {
+    @apply w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md;
+    @apply text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 transition-colors;
+    @apply focus:outline-none focus:border-blue-600 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500;
+  }
+
+  /* Card styles */
+  .card {
+    @apply bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-5;
+  }
+
+  /* Badge styles */
+  .badge {
+    @apply inline-flex items-center justify-center min-w-[20px] h-5 px-1.5;
+    @apply bg-red-600 text-white rounded-full text-[11px] font-semibold leading-none;
+  }
+}
+
+/* Dark mode base styles */
+body {
+  @apply bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white;
+}
+
+/* Custom scrollbar styles */
+::-webkit-scrollbar {
+  @apply w-2 h-2;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 dark:bg-gray-800 rounded;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 dark:bg-gray-600 rounded hover:bg-gray-400 dark:hover:bg-gray-500;
+}

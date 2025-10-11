@@ -93,7 +93,7 @@ export function registerWebServerHandlers(mainApp) {
   });
 
   // Clear all song requests
-  ipcMain.handle('webServer:clearAllRequests', async () => {
+  ipcMain.handle('webServer:clearAllRequests', () => {
     if (mainApp.webServer) {
       return requestsService.clearRequests(mainApp.webServer);
     }

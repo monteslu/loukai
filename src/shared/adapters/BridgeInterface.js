@@ -12,148 +12,148 @@
 export class BridgeInterface {
   // ===== Player Controls =====
 
-  async play() {
-    throw new Error('play() not implemented');
+  play() {
+    return Promise.reject(new Error('play() not implemented'));
   }
 
-  async pause() {
-    throw new Error('pause() not implemented');
+  pause() {
+    return Promise.reject(new Error('pause() not implemented'));
   }
 
-  async restart() {
-    throw new Error('restart() not implemented');
+  restart() {
+    return Promise.reject(new Error('restart() not implemented'));
   }
 
-  async seek(positionSec) {
-    throw new Error('seek() not implemented');
+  seek(_positionSec) {
+    return Promise.reject(new Error('seek() not implemented'));
   }
 
-  async getPlaybackState() {
-    throw new Error('getPlaybackState() not implemented');
+  getPlaybackState() {
+    return Promise.reject(new Error('getPlaybackState() not implemented'));
   }
 
   // ===== Queue Management =====
 
-  async getQueue() {
-    throw new Error('getQueue() not implemented');
+  getQueue() {
+    return Promise.reject(new Error('getQueue() not implemented'));
   }
 
-  async addToQueue(song) {
-    throw new Error('addToQueue() not implemented');
+  addToQueue(_song) {
+    return Promise.reject(new Error('addToQueue() not implemented'));
   }
 
-  async removeFromQueue(id) {
-    throw new Error('removeFromQueue() not implemented');
+  removeFromQueue(_id) {
+    return Promise.reject(new Error('removeFromQueue() not implemented'));
   }
 
-  async clearQueue() {
-    throw new Error('clearQueue() not implemented');
+  clearQueue() {
+    return Promise.reject(new Error('clearQueue() not implemented'));
   }
 
-  async reorderQueue(fromIndex, toIndex) {
-    throw new Error('reorderQueue() not implemented');
+  reorderQueue(_fromIndex, _toIndex) {
+    return Promise.reject(new Error('reorderQueue() not implemented'));
   }
 
-  async playNext() {
-    throw new Error('playNext() not implemented');
+  playNext() {
+    return Promise.reject(new Error('playNext() not implemented'));
   }
 
   // ===== Mixer Controls =====
 
-  async getMixerState() {
-    throw new Error('getMixerState() not implemented');
+  getMixerState() {
+    return Promise.reject(new Error('getMixerState() not implemented'));
   }
 
-  async setMasterGain(bus, gainDb) {
-    throw new Error('setMasterGain() not implemented');
+  setMasterGain(_bus, _gainDb) {
+    return Promise.reject(new Error('setMasterGain() not implemented'));
   }
 
-  async toggleMasterMute(bus) {
-    throw new Error('toggleMasterMute() not implemented');
+  toggleMasterMute(_bus) {
+    return Promise.reject(new Error('toggleMasterMute() not implemented'));
   }
 
-  async setMasterMute(bus, muted) {
-    throw new Error('setMasterMute() not implemented');
+  setMasterMute(_bus, _muted) {
+    return Promise.reject(new Error('setMasterMute() not implemented'));
   }
 
   // ===== Effects Controls =====
 
-  async getEffects() {
-    throw new Error('getEffects() not implemented');
+  getEffects() {
+    return Promise.reject(new Error('getEffects() not implemented'));
   }
 
-  async selectEffect(effectName) {
-    throw new Error('selectEffect() not implemented');
+  selectEffect(_effectName) {
+    return Promise.reject(new Error('selectEffect() not implemented'));
   }
 
-  async toggleEffect(effectName, enabled) {
-    throw new Error('toggleEffect() not implemented');
+  toggleEffect(_effectName, _enabled) {
+    return Promise.reject(new Error('toggleEffect() not implemented'));
   }
 
-  async nextEffect() {
-    throw new Error('nextEffect() not implemented');
+  nextEffect() {
+    return Promise.reject(new Error('nextEffect() not implemented'));
   }
 
-  async previousEffect() {
-    throw new Error('previousEffect() not implemented');
+  previousEffect() {
+    return Promise.reject(new Error('previousEffect() not implemented'));
   }
 
-  async randomEffect() {
-    throw new Error('randomEffect() not implemented');
+  randomEffect() {
+    return Promise.reject(new Error('randomEffect() not implemented'));
   }
 
   // ===== Library Management =====
 
-  async getLibrary() {
-    throw new Error('getLibrary() not implemented');
+  getLibrary() {
+    return Promise.reject(new Error('getLibrary() not implemented'));
   }
 
-  async scanLibrary() {
-    throw new Error('scanLibrary() not implemented');
+  scanLibrary() {
+    return Promise.reject(new Error('scanLibrary() not implemented'));
   }
 
-  async searchSongs(query) {
-    throw new Error('searchSongs() not implemented');
+  searchSongs(_query) {
+    return Promise.reject(new Error('searchSongs() not implemented'));
   }
 
-  async loadSongForEditing(path) {
-    throw new Error('loadSongForEditing() not implemented');
+  loadSongForEditing(_path) {
+    return Promise.reject(new Error('loadSongForEditing() not implemented'));
   }
 
-  async saveSongEdits(updates) {
-    throw new Error('saveSongEdits() not implemented');
+  saveSongEdits(_updates) {
+    return Promise.reject(new Error('saveSongEdits() not implemented'));
   }
 
   // ===== Preferences =====
 
-  async getPreferences() {
-    throw new Error('getPreferences() not implemented');
+  getPreferences() {
+    return Promise.reject(new Error('getPreferences() not implemented'));
   }
 
-  async updateAutoTunePreferences(prefs) {
-    throw new Error('updateAutoTunePreferences() not implemented');
+  updateAutoTunePreferences(_prefs) {
+    return Promise.reject(new Error('updateAutoTunePreferences() not implemented'));
   }
 
-  async updateMicrophonePreferences(prefs) {
-    throw new Error('updateMicrophonePreferences() not implemented');
+  updateMicrophonePreferences(_prefs) {
+    return Promise.reject(new Error('updateMicrophonePreferences() not implemented'));
   }
 
-  async updateEffectsPreferences(prefs) {
-    throw new Error('updateEffectsPreferences() not implemented');
+  updateEffectsPreferences(_prefs) {
+    return Promise.reject(new Error('updateEffectsPreferences() not implemented'));
   }
 
   // ===== Song Requests =====
 
-  async getRequests() {
-    throw new Error('getRequests() not implemented');
+  getRequests() {
+    return Promise.reject(new Error('getRequests() not implemented'));
   }
 
-  async approveRequest(requestId) {
-    throw new Error('approveRequest() not implemented');
+  approveRequest(_requestId) {
+    return Promise.reject(new Error('approveRequest() not implemented'));
   }
 
-  async rejectRequest(requestId) {
-    throw new Error('rejectRequest() not implemented');
+  rejectRequest(_requestId) {
+    return Promise.reject(new Error('rejectRequest() not implemented'));
   }
 
   // ===== State Subscriptions =====
@@ -164,7 +164,7 @@ export class BridgeInterface {
    * @param {Function} callback - Callback function (receives updated state)
    * @returns {Function} Unsubscribe function
    */
-  onStateChange(domain, callback) {
+  onStateChange(_domain, _callback) {
     throw new Error('onStateChange() not implemented');
   }
 
@@ -173,7 +173,7 @@ export class BridgeInterface {
    * @param {string} domain - State domain
    * @param {Function} callback - Callback to remove
    */
-  offStateChange(domain, callback) {
+  offStateChange(_domain, _callback) {
     throw new Error('offStateChange() not implemented');
   }
 

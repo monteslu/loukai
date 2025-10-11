@@ -10,7 +10,7 @@ class CDGLoader {
    * @param {string} format - 'cdg-pair' or 'cdg-archive'
    * @returns {Promise<Object>} CDG data object compatible with KAI structure
    */
-  static async load(mp3Path, cdgPath, format) {
+  static load(mp3Path, cdgPath, format) {
     if (format === 'cdg-pair') {
       return this.loadCDGPair(mp3Path, cdgPath);
     } else if (format === 'cdg-archive') {
@@ -39,18 +39,18 @@ class CDGLoader {
         format: 'cdg',
         metadata,
         audio: {
-          mp3: new Uint8Array(mp3Buffer),  // Convert to Uint8Array for IPC
-          mp3Path: mp3Path  // Keep path for streaming
+          mp3: new Uint8Array(mp3Buffer), // Convert to Uint8Array for IPC
+          mp3Path: mp3Path, // Keep path for streaming
         },
         cdg: {
-          data: new Uint8Array(cdgBuffer),  // Convert to Uint8Array for IPC
-          path: cdgPath
+          data: new Uint8Array(cdgBuffer), // Convert to Uint8Array for IPC
+          path: cdgPath,
         },
         meta: {
-          duration: null,  // Will be determined when audio loads
-          stems: []  // CDG has no separate stems
+          duration: null, // Will be determined when audio loads
+          stems: [], // CDG has no separate stems
         },
-        originalFilePath: mp3Path
+        originalFilePath: mp3Path,
       };
     } catch (error) {
       throw new Error(`Failed to load CDG pair: ${error.message}`);
@@ -60,7 +60,7 @@ class CDGLoader {
   /**
    * Load CDG from .kar or .zip archive
    */
-  static async loadCDGArchive(archivePath) {
+  static loadCDGArchive(archivePath) {
     return new Promise((resolve, reject) => {
       yauzl.open(archivePath, { lazyEntries: true }, (err, zipfile) => {
         if (err) {
@@ -72,7 +72,7 @@ class CDGLoader {
           mp3: null,
           cdg: null,
           mp3FileName: null,
-          cdgFileName: null
+          cdgFileName: null,
         };
 
         zipfile.readEntry();
@@ -132,18 +132,18 @@ class CDGLoader {
               format: 'cdg',
               metadata,
               audio: {
-                mp3: new Uint8Array(extractedData.mp3),  // Convert to Uint8Array for IPC
-                mp3Path: archivePath  // Use archive path as reference
+                mp3: new Uint8Array(extractedData.mp3), // Convert to Uint8Array for IPC
+                mp3Path: archivePath, // Use archive path as reference
               },
               cdg: {
-                data: new Uint8Array(extractedData.cdg),  // Convert to Uint8Array for IPC
-                path: archivePath
+                data: new Uint8Array(extractedData.cdg), // Convert to Uint8Array for IPC
+                path: archivePath,
               },
               meta: {
                 duration: null,
-                stems: []
+                stems: [],
               },
-              originalFilePath: archivePath
+              originalFilePath: archivePath,
             });
           } catch (error) {
             reject(error);
@@ -163,7 +163,7 @@ class CDGLoader {
   static parseFilenameMetadata(baseName) {
     const metadata = {
       title: baseName,
-      artist: ''
+      artist: '',
     };
 
     // Try to parse "Artist - Title" format

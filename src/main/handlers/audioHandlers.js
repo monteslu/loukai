@@ -17,7 +17,7 @@ export function registerAudioHandlers(mainApp) {
   });
 
   // Enumerate audio devices
-  ipcMain.handle(AUDIO_CHANNELS.ENUMERATE_DEVICES, async () => {
+  ipcMain.handle(AUDIO_CHANNELS.ENUMERATE_DEVICES, () => {
     // This will be called from renderer to get real device list
     return [];
   });

@@ -76,18 +76,31 @@ export class ElectronBridge extends BridgeInterface {
     return state.mixer;
   }
 
-  async setMasterGain(bus, gainDb) {
-    return await this.api.mixer.setMasterGain(bus, gainDb);
+  setMasterGain(bus, gainDb) {
+    // Apply locally - kaiPlayer will report back to main process via reportMixerState()
+    const kaiPlayer = window.app?.player?.kaiPlayer;
+    if (kaiPlayer) {
+      return kaiPlayer.setMasterGain(bus, gainDb);
+    }
+    return { success: false, error: 'Audio engine not initialized' };
   }
 
-  async toggleMasterMute(bus) {
-    return await this.api.mixer.toggleMasterMute(bus);
+  toggleMasterMute(bus) {
+    // Apply locally - kaiPlayer will report back to main process via reportMixerState()
+    const kaiPlayer = window.app?.player?.kaiPlayer;
+    if (kaiPlayer) {
+      return kaiPlayer.toggleMasterMute(bus);
+    }
+    return { success: false, error: 'Audio engine not initialized' };
   }
 
-  async setMasterMute(bus, muted) {
-    // This method might not exist on kaiAPI yet - use toggleMasterMute for now
-    // TODO: Add to preload.js if needed
-    return await this.api.mixer.toggleMasterMute(bus);
+  setMasterMute(bus, muted) {
+    // Apply locally - kaiPlayer will report back to main process via reportMixerState()
+    const kaiPlayer = window.app?.player?.kaiPlayer;
+    if (kaiPlayer) {
+      return kaiPlayer.setMasterMute(bus, muted);
+    }
+    return { success: false, error: 'Audio engine not initialized' };
   }
 
   async toggleMute(stemId, bus) {
@@ -105,11 +118,12 @@ export class ElectronBridge extends BridgeInterface {
       }
 
       // Request permission first to get device labels
-      await navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(stream => {
-          stream.getTracks().forEach(track => track.stop());
+      await navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then((stream) => {
+          stream.getTracks().forEach((track) => track.stop());
         })
-        .catch(err => {
+        .catch((err) => {
           console.warn('Microphone permission denied:', err);
         });
 
@@ -121,14 +135,18 @@ export class ElectronBridge extends BridgeInterface {
           audioDevices.push({
             id: device.deviceId,
             deviceId: device.deviceId,
-            label: device.label || `${device.kind === 'audiooutput' ? 'Speaker' : 'Microphone'} ${index + 1}`,
-            name: device.label || `${device.kind === 'audiooutput' ? 'Speaker' : 'Microphone'} ${index + 1}`,
+            label:
+              device.label ||
+              `${device.kind === 'audiooutput' ? 'Speaker' : 'Microphone'} ${index + 1}`,
+            name:
+              device.label ||
+              `${device.kind === 'audiooutput' ? 'Speaker' : 'Microphone'} ${index + 1}`,
             maxInputChannels: device.kind === 'audioinput' ? 2 : 0,
             maxOutputChannels: device.kind === 'audiooutput' ? 2 : 0,
             defaultSampleRate: 48000,
             hostApi: 'Web Audio API',
             deviceKind: device.kind,
-            groupId: device.groupId
+            groupId: device.groupId,
           });
         }
       });
@@ -141,7 +159,34 @@ export class ElectronBridge extends BridgeInterface {
   }
 
   async setAudioDevice(deviceType, deviceId) {
-    return await this.api.audio.setDevice(deviceType, deviceId);
+    console.log(`🎧 Setting ${deviceType} device to:`, deviceId);
+
+    // Notify main process (for persistence)
+    await this.api.audio.setDevice(deviceType, deviceId);
+
+    // Apply to kaiPlayer immediately (if it exists)
+    const kaiPlayer = window.app?.player?.kaiPlayer;
+    if (kaiPlayer && (deviceType === 'PA' || deviceType === 'IEM')) {
+      try {
+        await kaiPlayer.setOutputDevice(deviceType, deviceId);
+        console.log(`✅ Applied ${deviceType} device change to kaiPlayer`);
+      } catch (error) {
+        console.error(`❌ Failed to apply ${deviceType} device to kaiPlayer:`, error);
+      }
+    } else if (kaiPlayer && deviceType === 'input') {
+      try {
+        // For input device, restart microphone with new device
+        kaiPlayer.inputDevice = deviceId;
+        if (kaiPlayer.mixerState.enableMic) {
+          await kaiPlayer.startMicrophoneInput(deviceId);
+        }
+        console.log(`✅ Applied input device change to kaiPlayer`);
+      } catch (error) {
+        console.error(`❌ Failed to apply input device to kaiPlayer:`, error);
+      }
+    }
+
+    return { success: true };
   }
 
   async getDevicePreferences() {
@@ -160,6 +205,7 @@ export class ElectronBridge extends BridgeInterface {
   }
 
   async saveAudioSettings(settings) {
+    // Save to disk
     if (settings.iemMonoVocals !== undefined) {
       await this.api.settings.set('iemMonoVocals', settings.iemMonoVocals);
     }
@@ -169,8 +215,25 @@ export class ElectronBridge extends BridgeInterface {
     if (settings.enableMic !== undefined) {
       await this.api.settings.set('enableMic', settings.enableMic);
     }
-    // Settings saved - will be applied on app/player restart
-    console.log('✅ Audio settings saved:', settings);
+
+    // Apply settings to kaiPlayer in real-time (if it exists)
+    const kaiPlayer = window.app?.player?.kaiPlayer;
+    if (kaiPlayer) {
+      if (settings.iemMonoVocals !== undefined) {
+        kaiPlayer.setIEMMonoVocals(settings.iemMonoVocals);
+        console.log('🎧 Applied IEM mono vocals:', settings.iemMonoVocals);
+      }
+      if (settings.micToSpeakers !== undefined) {
+        kaiPlayer.setMicToSpeakers(settings.micToSpeakers);
+        console.log('🎧 Applied mic to speakers:', settings.micToSpeakers);
+      }
+      if (settings.enableMic !== undefined) {
+        kaiPlayer.setEnableMic(settings.enableMic);
+        console.log('🎧 Applied enable mic:', settings.enableMic);
+      }
+    }
+
+    console.log('✅ Audio settings saved and applied:', settings);
   }
 
   // ===== Effects Controls =====
@@ -257,18 +320,19 @@ export class ElectronBridge extends BridgeInterface {
     const songData = result.data;
 
     // Create blob URLs for audio files (for Audio element playback)
-    const audioFiles = songData.audio?.sources?.map(source => {
-      // Create blob URL from audioData buffer
-      const blob = new Blob([source.audioData], { type: 'audio/mpeg' });
-      const downloadUrl = URL.createObjectURL(blob);
+    const audioFiles =
+      songData.audio?.sources?.map((source) => {
+        // Create blob URL from audioData buffer
+        const blob = new Blob([source.audioData], { type: 'audio/mpeg' });
+        const downloadUrl = URL.createObjectURL(blob);
 
-      return {
-        name: source.name,
-        filename: source.filename,
-        audioData: source.audioData, // Keep raw data for waveform analysis
-        downloadUrl: downloadUrl // Blob URL for Audio element
-      };
-    }) || [];
+        return {
+          name: source.name,
+          filename: source.filename,
+          audioData: source.audioData, // Keep raw data for waveform analysis
+          downloadUrl: downloadUrl, // Blob URL for Audio element
+        };
+      }) || [];
 
     // Return in the format expected by SongEditor
     return {
@@ -278,8 +342,8 @@ export class ElectronBridge extends BridgeInterface {
         metadata: songData.metadata || {},
         lyrics: songData.lyrics || [],
         audioFiles: audioFiles,
-        songJson: songData.originalSongJson || {}
-      }
+        songJson: songData.originalSongJson || {},
+      },
     };
   }
 
@@ -295,9 +359,9 @@ export class ElectronBridge extends BridgeInterface {
           album: metadata.album,
           year: metadata.year,
           genre: metadata.genre,
-          key: metadata.key
+          key: metadata.key,
         },
-        lyrics: lyrics
+        lyrics: lyrics,
       };
 
       // Include meta if rejections/suggestions were updated
@@ -305,25 +369,25 @@ export class ElectronBridge extends BridgeInterface {
         songData.meta = { corrections: {} };
 
         if (metadata.rejections !== undefined) {
-          songData.meta.corrections.rejected = metadata.rejections.map(r => ({
+          songData.meta.corrections.rejected = metadata.rejections.map((r) => ({
             line: r.line_num,
             start: r.start_time,
             end: r.end_time,
             old: r.old_text,
             new: r.new_text,
             reason: r.reason,
-            word_retention: r.retention_rate
+            word_retention: r.retention_rate,
           }));
         }
 
         if (metadata.suggestions !== undefined) {
-          songData.meta.corrections.missing_lines_suggested = metadata.suggestions.map(s => ({
+          songData.meta.corrections.missing_lines_suggested = metadata.suggestions.map((s) => ({
             suggested_text: s.suggested_text,
             start: s.start_time,
             end: s.end_time,
             confidence: s.confidence,
             reason: s.reason,
-            pitch_activity: s.pitch_activity
+            pitch_activity: s.pitch_activity,
           }));
         }
       }
@@ -360,7 +424,7 @@ export class ElectronBridge extends BridgeInterface {
       enableEffects: true,
       randomEffectOnSong: false,
       showUpcomingLyrics: true,
-      overlayOpacity: 0.7
+      overlayOpacity: 0.7,
     });
   }
 
@@ -371,7 +435,7 @@ export class ElectronBridge extends BridgeInterface {
       enableEffects: prefs.enableEffects,
       randomEffectOnSong: prefs.randomEffectOnSong,
       showUpcomingLyrics: prefs.showUpcomingLyrics,
-      overlayOpacity: prefs.overlayOpacity
+      overlayOpacity: prefs.overlayOpacity,
     };
 
     const result = await this.api.settings.set('waveformPreferences', cleanPrefs);
@@ -386,7 +450,7 @@ export class ElectronBridge extends BridgeInterface {
     return await this.api.settings.get('autoTunePreferences', {
       enabled: false,
       strength: 50,
-      speed: 20
+      speed: 20,
     });
   }
 
@@ -395,7 +459,7 @@ export class ElectronBridge extends BridgeInterface {
     const cleanPrefs = {
       enabled: prefs.enabled,
       strength: prefs.strength,
-      speed: prefs.speed
+      speed: prefs.speed,
     };
 
     const result = await this.api.settings.set('autoTunePreferences', cleanPrefs);
@@ -422,8 +486,8 @@ export class ElectronBridge extends BridgeInterface {
   // Subscribe to settings changes from external sources (e.g., web admin)
   onSettingsChanged(type, callback) {
     const eventMap = {
-      'waveform': 'waveform:settingsChanged',
-      'autotune': 'autotune:settingsChanged'
+      waveform: 'waveform:settingsChanged',
+      autotune: 'autotune:settingsChanged',
     };
 
     const eventName = eventMap[type];
@@ -525,7 +589,7 @@ export class ElectronBridge extends BridgeInterface {
     // Use IPC event instead of polling
     const handler = (event, queue) => {
       // Get current song from app state
-      this.api.app.getState().then(state => {
+      this.api.app.getState().then((state) => {
         callback({ queue, currentSong: state.currentSong });
       });
     };
@@ -577,12 +641,13 @@ export class ElectronBridge extends BridgeInterface {
 
   // ===== Lifecycle =====
 
-  async connect() {
+  connect() {
     // Already connected via IPC - nothing to do
     console.log('✅ ElectronBridge connected');
+    return Promise.resolve();
   }
 
-  async disconnect() {
+  disconnect() {
     // Cleanup is now handled by the cleanup functions returned from each subscription
     // Components should call the cleanup functions when they unmount
     console.log('✅ ElectronBridge disconnected');

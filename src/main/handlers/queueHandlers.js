@@ -35,7 +35,7 @@ export function registerQueueHandlers(mainApp) {
   });
 
   // Remove song from queue (with legacy songQueue sync)
-  ipcMain.handle(QUEUE_CHANNELS.REMOVE_SONG, async (event, itemId) => {
+  ipcMain.handle(QUEUE_CHANNELS.REMOVE_SONG, (event, itemId) => {
     const result = queueService.removeSongFromQueue(mainApp.appState, itemId);
 
     // Update legacy songQueue for compatibility
@@ -52,7 +52,7 @@ export function registerQueueHandlers(mainApp) {
   });
 
   // Clear queue (with legacy songQueue sync)
-  ipcMain.handle(QUEUE_CHANNELS.CLEAR, async () => {
+  ipcMain.handle(QUEUE_CHANNELS.CLEAR, () => {
     const result = queueService.clearQueue(mainApp.appState);
 
     // Update legacy songQueue for compatibility
@@ -62,7 +62,7 @@ export function registerQueueHandlers(mainApp) {
   });
 
   // Reorder queue (with legacy songQueue sync)
-  ipcMain.handle('queue:reorderQueue', async (event, songId, newIndex) => {
+  ipcMain.handle('queue:reorderQueue', (event, songId, newIndex) => {
     const result = queueService.reorderQueue(mainApp.appState, songId, newIndex);
 
     // Update legacy songQueue for compatibility

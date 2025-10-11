@@ -50,6 +50,40 @@ export function useAudioEngine() {
     };
   }, [kaiPlayer, setKaiPlayer, setPlayer]);
 
+  // Handle mixer changes from main process (web admin or other sources)
+  useEffect(() => {
+    if (!kaiPlayer || !window.kaiAPI?.mixer) return;
+
+    const handleSetMasterGain = (event, { bus, gainDb }) => {
+      console.log(`🎚️ Received mixer:setMasterGain from main: ${bus} = ${gainDb}dB`);
+      kaiPlayer.setMasterGain(bus, gainDb);
+    };
+
+    const handleToggleMasterMute = (event, { bus, muted }) => {
+      // IMPORTANT: Despite the event name being "toggle", the event includes the explicit muted value
+      // Don't call toggleMasterMute() as that would toggle again - use setMasterMute()
+      console.log(`🎚️ Received mixer:toggleMasterMute from main: ${bus} = ${muted}`);
+      kaiPlayer.setMasterMute(bus, muted);
+    };
+
+    const handleSetMasterMute = (event, { bus, muted }) => {
+      console.log(`🎚️ Received mixer:setMasterMute from main: ${bus} = ${muted}`);
+      kaiPlayer.setMasterMute(bus, muted);
+    };
+
+    window.kaiAPI.mixer.onSetMasterGain(handleSetMasterGain);
+    window.kaiAPI.mixer.onToggleMasterMute(handleToggleMasterMute);
+    window.kaiAPI.mixer.onSetMasterMute(handleSetMasterMute);
+
+    console.log('✅ Mixer IPC listeners registered');
+
+    // Note: Cleanup would require preload.js to expose removeListener methods
+    // These are long-lived listeners so cleanup is not critical
+    return () => {
+      console.log('🧹 Mixer IPC listeners cleanup');
+    };
+  }, [kaiPlayer]);
+
   // Handle song loading events
   useEffect(() => {
     if (!player || !kaiPlayer || !window.kaiAPI?.song) return;
@@ -68,7 +102,7 @@ export function useAudioEngine() {
         }
       },
       updateStatus: (msg) => console.log('📊', msg),
-      updateEffectDisplay: () => {} // TODO: implement if needed
+      updateEffectDisplay: () => {}, // TODO: implement if needed
     };
 
     const handleSongLoaded = async (event, metadata) => {
@@ -97,8 +131,8 @@ export function useAudioEngine() {
       console.log('🎵 Song data received:', songData.format, songData.originalFilePath);
 
       // Check if this is the same song
-      const isSameSong = appState.currentSong &&
-                         appState.currentSong.originalFilePath === songData.originalFilePath;
+      const isSameSong =
+        appState.currentSong && appState.currentSong.originalFilePath === songData.originalFilePath;
 
       appState.currentSong = songData;
 

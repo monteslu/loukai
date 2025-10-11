@@ -9,7 +9,6 @@
 import React, { useState, useEffect } from 'react';
 import { QueueList } from '../../shared/components/QueueList.jsx';
 import { QuickSearch } from '../../shared/components/QuickSearch.jsx';
-import './QueueTab.css';
 
 export function QueueTab({ bridge }) {
   const [queue, setQueue] = useState([]);
@@ -24,7 +23,7 @@ export function QueueTab({ bridge }) {
       // Update current index if current song changed
       if (queueData.currentSong && queueData.currentSong.queueItemId) {
         const queue = queueData.queue || [];
-        const index = queue.findIndex(item => item.id === queueData.currentSong.queueItemId);
+        const index = queue.findIndex((item) => item.id === queueData.currentSong.queueItemId);
         setCurrentIndex(index);
       } else {
         setCurrentIndex(-1);
@@ -32,12 +31,13 @@ export function QueueTab({ bridge }) {
     });
 
     // Fetch initial state
-    bridge.getQueue?.()
-      .then(data => {
+    bridge
+      .getQueue?.()
+      .then((data) => {
         setQueue(data.queue || []);
         if (data.currentSong && data.currentSong.queueItemId) {
           const queue = data.queue || [];
-          const index = queue.findIndex(item => item.id === data.currentSong.queueItemId);
+          const index = queue.findIndex((item) => item.id === data.currentSong.queueItemId);
           setCurrentIndex(index);
         } else {
           setCurrentIndex(-1);
@@ -54,8 +54,13 @@ export function QueueTab({ bridge }) {
 
     const unsubscribe = bridge.onCurrentSongChanged?.((song) => {
       if (song && song.queueItemId) {
-        console.log('🎵 Matching by queueItemId:', song.queueItemId, 'in queue:', queue.map(q => q.id));
-        const index = queue.findIndex(item => item.id === song.queueItemId);
+        console.log(
+          '🎵 Matching by queueItemId:',
+          song.queueItemId,
+          'in queue:',
+          queue.map((q) => q.id)
+        );
+        const index = queue.findIndex((item) => item.id === song.queueItemId);
         console.log('  → Found at index:', index);
         setCurrentIndex(index);
       } else {
@@ -83,7 +88,7 @@ export function QueueTab({ bridge }) {
     }
   };
 
-  const handleShuffleQueue = async () => {
+  const handleShuffleQueue = () => {
     // TODO: Add shuffle to bridge
     console.warn('Shuffle not implemented in bridge yet');
   };
@@ -93,7 +98,7 @@ export function QueueTab({ bridge }) {
   };
 
   return (
-    <div className="queue-tab-container">
+    <div className="flex flex-col flex-1 gap-2 p-2 box-border min-h-0 overflow-hidden">
       <QuickSearch bridge={bridge} requester="KJ" />
 
       {/* Queue list */}

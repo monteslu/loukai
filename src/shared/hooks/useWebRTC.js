@@ -92,11 +92,6 @@ export function useWebRTC() {
     return await webrtcManagerRef.current.setAnswer(answer);
   };
 
-  const stopPainting = () => {
-    if (!webrtcManagerRef.current) return;
-    webrtcManagerRef.current.stopPainting();
-  };
-
   const getSenderStatus = () => {
     if (!webrtcManagerRef.current) return null;
     return webrtcManagerRef.current.getSenderStatus();
@@ -116,7 +111,6 @@ export function useWebRTC() {
     setupSender,
     createOffer,
     setAnswer,
-    stopPainting,
     getSenderStatus,
     addICECandidate,
     cleanupSender,

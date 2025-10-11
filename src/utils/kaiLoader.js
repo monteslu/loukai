@@ -1,9 +1,8 @@
 import yauzl from 'yauzl';
-import fs from 'fs';
 import path from 'path';
 
 class KaiLoader {
-  static async load(kaiFilePath) {
+  static load(kaiFilePath) {
     return new Promise((resolve, reject) => {
       yauzl.open(kaiFilePath, { lazyEntries: true }, (err, zipfile) => {
         if (err) {
@@ -16,7 +15,7 @@ class KaiLoader {
           audio: null,
           lyrics: null,
           features: {},
-          audioFiles: new Map()
+          audioFiles: new Map(),
         };
 
         zipfile.readEntry();
@@ -68,13 +67,15 @@ class KaiLoader {
         const songJson = JSON.parse(buffer.toString('utf8'));
         console.log('KAI song.json structure:', {
           keys: Object.keys(songJson),
-          audio: songJson.audio ? {
-            keys: Object.keys(songJson.audio),
-            sources: songJson.audio.sources ? songJson.audio.sources.length : 'undefined'
-          } : 'undefined',
-          song: songJson.song ? Object.keys(songJson.song) : 'undefined'
+          audio: songJson.audio
+            ? {
+                keys: Object.keys(songJson.audio),
+                sources: songJson.audio.sources ? songJson.audio.sources.length : 'undefined',
+              }
+            : 'undefined',
+          song: songJson.song ? Object.keys(songJson.song) : 'undefined',
         });
-        
+
         extractedData.songJson = songJson;
         extractedData.audio = songJson.audio;
         extractedData.meta = songJson.meta;
@@ -83,7 +84,11 @@ class KaiLoader {
       } else if (fileName.startsWith('features/') && fileName.endsWith('.json')) {
         const featureName = path.basename(fileName, '.json');
         extractedData.features[featureName] = JSON.parse(buffer.toString('utf8'));
-      } else if (fileName.endsWith('.mp3') || fileName.endsWith('.wav') || fileName.endsWith('.flac')) {
+      } else if (
+        fileName.endsWith('.mp3') ||
+        fileName.endsWith('.wav') ||
+        fileName.endsWith('.flac')
+      ) {
         const audioName = path.basename(fileName, path.extname(fileName));
         extractedData.audioFiles.set(audioName, buffer);
       }
@@ -120,7 +125,7 @@ class KaiLoader {
         console.warn('Audio source missing filename, skipping:', source);
         continue;
       }
-      
+
       const audioName = path.basename(filename, path.extname(filename));
       if (!data.audioFiles.has(audioName)) {
         console.warn(`Warning: Audio file ${filename} referenced but not found in KAI archive`);
@@ -138,65 +143,68 @@ class KaiLoader {
         key: data.song.key || 'C',
         tempo: data.song.tempo || 120,
         genre: data.song.genre || '',
-        year: data.song.year || null
+        year: data.song.year || null,
       },
-      
+
       meta: data.meta || {},
-      
+
       audio: {
-        sources: data.audio.sources.map(source => {
-          const filename = source.filename || source.file || source.path;
-          if (!filename) return null;
-          
-          return {
-            name: source.name || path.basename(filename, path.extname(filename)),
-            filename: filename,
-            gain: source.gain || 0,
-            pan: source.pan || 0,
-            solo: source.solo || false,
-            mute: source.mute || false,
-            audioData: data.audioFiles.get(
-              path.basename(filename, path.extname(filename))
-            ) || null
-          };
-        }).filter(source => source !== null),
-        
+        sources: data.audio.sources
+          .map((source) => {
+            const filename = source.filename || source.file || source.path;
+            if (!filename) return null;
+
+            return {
+              name: source.name || path.basename(filename, path.extname(filename)),
+              filename: filename,
+              gain: source.gain || 0,
+              pan: source.pan || 0,
+              solo: source.solo || false,
+              mute: source.mute || false,
+              audioData:
+                data.audioFiles.get(path.basename(filename, path.extname(filename))) || null,
+            };
+          })
+          .filter((source) => source !== null),
+
         presets: this.generatePresets(data.audio.sources),
-        
+
         timing: {
           offsetSec: data.audio.timing?.offset_sec || 0,
-          encoderDelaySamples: data.audio.encoder_delay_samples || 0
+          encoderDelaySamples: data.audio.encoder_delay_samples || 0,
         },
-        
-        profile: data.audio.profile || 'stereo'
+
+        profile: data.audio.profile || 'stereo',
       },
-      
+
       // Sort lyrics by start time to ensure proper playback order
-      lyrics: data.lyrics ? [...data.lyrics].sort((a, b) => {
-        const aStart = a.start || a.time || a.start_time || 0;
-        const bStart = b.start || b.time || b.start_time || 0;
-        return aStart - bStart;
-      }) : null,
-      
+      lyrics: data.lyrics
+        ? [...data.lyrics].sort((a, b) => {
+            const aStart = a.start || a.time || a.start_time || 0;
+            const bStart = b.start || b.time || b.start_time || 0;
+            return aStart - bStart;
+          })
+        : null,
+
       features: {
         notesRef: data.features.notes_ref || null,
         vocalsF0: data.features.vocals_f0 || null,
         onsets: data.features.onsets || null,
-        tempo: data.features.tempo || null
+        tempo: data.features.tempo || null,
       },
-      
+
       coaching: {
         enabled: true,
         pitchTolerance: 50,
         timingTolerance: 0.1,
-        stabilityThreshold: 20
+        stabilityThreshold: 20,
       },
 
       // Preserve the complete song object for additional metadata like rejections
       song: data.song,
 
       // Preserve original song.json for editor access to all metadata
-      originalSongJson: data.songJson
+      originalSongJson: data.songJson,
     };
 
     return processedData;
@@ -208,7 +216,7 @@ class KaiLoader {
         id: 'original',
         name: 'Original',
         description: 'All tracks enabled',
-        settings: {}
+        settings: {},
       },
       {
         id: 'karaoke',
@@ -217,20 +225,18 @@ class KaiLoader {
         settings: {
           mutes: {
             PA: { vocals: true },
-            IEM: { vocals: false }
-          }
-        }
-      }
+            IEM: { vocals: false },
+          },
+        },
+      },
     ];
 
-    const hasVocals = sources.some(s => 
-      s.name?.toLowerCase().includes('vocal') || 
-      s.filename?.toLowerCase().includes('vocal')
+    const hasVocals = sources.some(
+      (s) => s.name?.toLowerCase().includes('vocal') || s.filename?.toLowerCase().includes('vocal')
     );
-    
-    const hasDrums = sources.some(s => 
-      s.name?.toLowerCase().includes('drum') || 
-      s.filename?.toLowerCase().includes('drum')
+
+    const hasDrums = sources.some(
+      (s) => s.name?.toLowerCase().includes('drum') || s.filename?.toLowerCase().includes('drum')
     );
 
     if (hasVocals) {
@@ -241,9 +247,9 @@ class KaiLoader {
         settings: {
           mutes: {
             PA: { vocals: true },
-            IEM: { vocals: true }
-          }
-        }
+            IEM: { vocals: true },
+          },
+        },
       });
     }
 
@@ -255,9 +261,9 @@ class KaiLoader {
         settings: {
           mutes: {
             PA: { drums: true },
-            IEM: { drums: true }
-          }
-        }
+            IEM: { drums: true },
+          },
+        },
       });
     }
 
@@ -265,12 +271,17 @@ class KaiLoader {
   }
 
   static getStemProfile(sources) {
-    const stemNames = sources.map(s => s.name?.toLowerCase() || 
-      path.basename(s.filename, path.extname(s.filename)).toLowerCase()
+    const stemNames = sources.map(
+      (s) =>
+        s.name?.toLowerCase() || path.basename(s.filename, path.extname(s.filename)).toLowerCase()
     );
-    
-    if (stemNames.includes('vocals') && stemNames.includes('drums') && 
-        stemNames.includes('bass') && stemNames.includes('other')) {
+
+    if (
+      stemNames.includes('vocals') &&
+      stemNames.includes('drums') &&
+      stemNames.includes('bass') &&
+      stemNames.includes('other')
+    ) {
       return 'full_band';
     } else if (stemNames.includes('vocals') && stemNames.includes('accompaniment')) {
       return 'vocal_accompaniment';

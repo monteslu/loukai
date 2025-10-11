@@ -16,7 +16,12 @@
     "build:win": "npm run build:all && electron-builder --win",
     "build:mac": "npm run build:all && electron-builder --mac",
     "rebuild": "electron-rebuild",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write \"src/**/*.{js,jsx,json,css,md}\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx,json,css,md}\"",
+    "prepare": "husky"
   },
   "keywords": [
     "karaoke",
@@ -29,10 +34,23 @@
   "author": "Loukai Team",
   "license": "AGPL-3.0",
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.2.0",
-    "electron-builder": "^24.0.0",
+    "@eslint/js": "^9.37.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "autoprefixer": "^10.4.21",
+    "electron-builder": "^26.0.12",
     "electron-rebuild": "^3.2.9",
-    "vite": "^5.0.0"
+    "eslint": "^9.37.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "globals": "^16.4.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.4",
+    "postcss": "^8.5.6",
+    "prettier": "^3.6.2",
+    "tailwindcss": "^3.4.18",
+    "vite": "^7.1.9"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
@@ -46,8 +64,8 @@
     "fuse.js": "^7.1.0",
     "music-metadata": "^11.9.0",
     "node-id3": "^0.2.9",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "ws": "^8.13.0",
@@ -96,5 +114,14 @@
       "target": "dmg",
       "icon": "static/images/logo.png"
     }
+  },
+  "lint-staged": {
+    "src/**/*.{js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "src/**/*.{json,css,md}": [
+      "prettier --write"
+    ]
   }
 }

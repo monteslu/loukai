@@ -15,7 +15,7 @@ export function LineDetailCanvas({
   vocalsWaveform,
   songDuration,
   currentPosition,
-  isPlaying
+  isPlaying,
 }) {
   const canvasRef = useRef(null);
 
@@ -65,14 +65,13 @@ export function LineDetailCanvas({
       ctx.lineTo(x, height);
       ctx.stroke();
     }
-
   }, [selectedLine, vocalsWaveform, songDuration, currentPosition, isPlaying]);
 
   // Draw waveform segment for the selected line (stretched to full canvas width)
   const drawWaveformSegment = (ctx, waveform, startTime, endTime, totalDuration, width, height) => {
     if (!waveform || waveform.length === 0) return;
 
-    const lineDuration = endTime - startTime;
+    const _lineDuration = endTime - startTime;
     const samplesPerSecond = waveform.length / totalDuration;
     const startSample = Math.floor(startTime * samplesPerSecond);
     const endSample = Math.floor(endTime * samplesPerSecond);
@@ -91,7 +90,7 @@ export function LineDetailCanvas({
     for (let i = 0; i < lineWaveform.length; i++) {
       const x = (i / lineWaveform.length) * width;
       const value = lineWaveform[i];
-      const y = centerY - (value * scale);
+      const y = centerY - value * scale;
 
       if (i === 0) {
         ctx.moveTo(x, y);
@@ -107,7 +106,7 @@ export function LineDetailCanvas({
     for (let i = 0; i < lineWaveform.length; i++) {
       const x = (i / lineWaveform.length) * width;
       const value = lineWaveform[i];
-      const y = centerY + (value * scale);
+      const y = centerY + value * scale;
 
       if (i === 0) {
         ctx.moveTo(x, y);
@@ -133,7 +132,7 @@ export function LineDetailCanvas({
 
     // Rectangle dimensions relative to canvas height (same as song canvas)
     const rectMargin = height * 0.05; // 5% margin from top/bottom
-    const rectHeight = height - (rectMargin * 2); // Use most of canvas height
+    const rectHeight = height - rectMargin * 2; // Use most of canvas height
 
     // Use green color for word rectangles (different from line colors)
     const fillColor = 'rgba(0, 255, 100, 0.35)';
@@ -156,17 +155,12 @@ export function LineDetailCanvas({
   };
 
   return (
-    <div className="lyrics-waveform-container">
+    <div className="w-full">
       <canvas
         ref={canvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
-        style={{
-          width: '100%',
-          height: 'auto',
-          cursor: 'crosshair',
-          display: 'block'
-        }}
+        className="w-full h-auto cursor-crosshair block"
       />
     </div>
   );

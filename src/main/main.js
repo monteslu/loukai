@@ -1,17 +1,14 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
-import path from 'path';
+import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 import fs from 'fs';
 import fsPromises from 'fs/promises';
 import os from 'os';
 import yauzl from 'yauzl';
 import { io } from 'socket.io-client';
-import bcrypt from 'bcrypt';
 import AudioEngine from './audioEngine.js';
 import KaiLoader from '../utils/kaiLoader.js';
 import CDGLoader from '../utils/cdgLoader.js';
-import KaiWriter from '../utils/kaiWriter.js';
 import SettingsManager from './settingsManager.js';
 import WebServer from './webServer.js';
 import AppState from './appState.js';
@@ -19,9 +16,7 @@ import StatePersistence from './statePersistence.js';
 import * as queueService from '../shared/services/queueService.js';
 import * as libraryService from '../shared/services/libraryService.js';
 import * as playerService from '../shared/services/playerService.js';
-import * as requestsService from '../shared/services/requestsService.js';
 import * as serverSettingsService from '../shared/services/serverSettingsService.js';
-import * as effectsService from '../shared/services/effectsService.js';
 import { registerAllHandlers } from './handlers/index.js';
 
 // ESM equivalent of __dirname
@@ -49,13 +44,13 @@ class KaiPlayerApp {
       reader: null,
       port: null,
       inflight: 0,
-      MAX_INFLIGHT: 2
+      MAX_INFLIGHT: 2,
     };
 
     // Store renderer playback state for position broadcasting
     this.rendererPlaybackState = {
       isPlaying: false,
-      currentTime: 0
+      currentTime: 0,
     };
 
     // Canonical application state
@@ -70,7 +65,7 @@ class KaiPlayerApp {
 
   setupStateListeners() {
     // When playback state changes, broadcast to web clients AND renderer
-    this.appState.on('playbackStateChanged', (playbackState, changes) => {
+    this.appState.on('playbackStateChanged', (playbackState, _changes) => {
       if (this.webServer) {
         this.webServer.broadcastPlaybackState(playbackState);
       }
@@ -94,7 +89,7 @@ class KaiPlayerApp {
       if (this.webServer) {
         this.webServer.io?.emit('queue-update', {
           queue,
-          currentSong: this.appState.state.currentSong
+          currentSong: this.appState.state.currentSong,
         });
       }
 
@@ -117,7 +112,7 @@ class KaiPlayerApp {
       const waveformPrefs = this.settings.get('waveformPreferences', {});
       const effectsWithCorrectDisabled = {
         ...effects,
-        disabled: waveformPrefs.disabledEffects || []
+        disabled: waveformPrefs.disabledEffects || [],
       };
 
       if (this.webServer) {
@@ -173,14 +168,14 @@ class KaiPlayerApp {
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
-        preload: path.join(__dirname, 'preload.js')
+        preload: path.join(__dirname, 'preload.js'),
       },
-      title: 'Loukai'
+      title: 'Loukai',
     });
 
     const rendererPath = path.join(__dirname, '../renderer/index.html');
     this.mainWindow.loadFile(rendererPath);
-    
+
     // Set dock icon on macOS
     if (process.platform === 'darwin') {
       const iconPath = path.join(process.cwd(), 'static', 'images', 'logo.png');
@@ -198,7 +193,8 @@ class KaiPlayerApp {
 
     // Prevent JavaScript errors from showing as alert dialogs
     this.mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-      if (level === 3) { // Error level
+      if (level === 3) {
+        // Error level
         console.error(`🚨 Renderer error at ${sourceId}:${line}:`, message);
         event.preventDefault();
       }
@@ -271,10 +267,10 @@ class KaiPlayerApp {
       minHeight: 360,
       webPreferences: {
         nodeIntegration: true,
-        contextIsolation: false
+        contextIsolation: false,
       },
       title: 'Canvas Window',
-      show: false
+      show: false,
     });
 
     // Load canvas.html file instead of inline HTML
@@ -289,12 +285,6 @@ class KaiPlayerApp {
     this.canvasWindow.on('closed', () => {
       console.log('🔴 Child window closed, stopping streaming and cleanup');
       this.stopCanvasStreaming();
-      
-      // Stop painting to capture canvas (but keep canvas and stream alive)
-      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.webContents.send('webrtc:stopPainting');
-      }
-      
       this.canvasWindow = null;
     });
 
@@ -307,7 +297,7 @@ class KaiPlayerApp {
    * Helper: Send IPC command to main renderer and wait for response
    * Replaces executeJavaScript pattern with proper IPC messaging
    */
-  async sendWebRTCCommand(command, ...args) {
+  sendWebRTCCommand(command, ...args) {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         ipcMain.removeListener(`webrtc:${command}-response`, responseHandler);
@@ -329,7 +319,7 @@ class KaiPlayerApp {
    * Helper: Send IPC command to canvas window and wait for response
    * Replaces executeJavaScript pattern with proper IPC messaging for receiver
    */
-  async sendCanvasWebRTCCommand(command, ...args) {
+  sendCanvasWebRTCCommand(command, ...args) {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         ipcMain.removeListener(`webrtc:${command}-response`, responseHandler);
@@ -351,7 +341,7 @@ class KaiPlayerApp {
     if (this.canvasStreaming.isStreaming || !this.canvasWindow || !this.mainWindow) {
       return;
     }
-    
+
     // Only proceed if child window is still open and not destroyed
     if (this.canvasWindow.isDestroyed()) {
       console.log('❌ Child window destroyed, cannot start streaming');
@@ -367,20 +357,19 @@ class KaiPlayerApp {
       if (!senderResult.success) {
         throw new Error('Sender setup failed: ' + senderResult.error);
       }
-      
+
       // Set up WebRTC receiver in child window via IPC
       const receiverResult = await this.sendCanvasWebRTCCommand('setupReceiver');
-      
+
       if (!receiverResult.success) {
         throw new Error('Receiver setup failed: ' + receiverResult.error);
       }
-      
+
       // Establish WebRTC connection
       await this.establishWebRTCConnection();
-      
+
       this.canvasStreaming.isStreaming = true;
       console.log('✅ WebRTC canvas streaming started successfully');
-      
     } catch (error) {
       console.error('Canvas streaming setup error:', error);
     }
@@ -388,7 +377,7 @@ class KaiPlayerApp {
 
   async establishWebRTCConnection() {
     console.log('🤝 Starting WebRTC handshake...');
-    
+
     let offer;
     try {
       // Create offer in sender (main window) via IPC
@@ -399,21 +388,21 @@ class KaiPlayerApp {
       if (offer.error) {
         throw new Error('Sender error: ' + offer.error);
       }
-      
+
       console.log('✅ Offer creation successful, moving to receiver...');
     } catch (error) {
       console.error('❌ Failed to create offer:', error);
       throw error;
     }
-    
+
     try {
       console.log('📥 Setting offer in receiver and creating answer...');
-      
+
       // First check if child window is ready
       if (!this.canvasWindow || this.canvasWindow.isDestroyed()) {
         throw new Error('Child window is not available');
       }
-      
+
       // Check if receiver is ready via IPC
       console.log('🔍 Checking if child window is ready...');
       const childReady = await this.sendCanvasWebRTCCommand('checkReceiverReady');
@@ -429,18 +418,17 @@ class KaiPlayerApp {
       if (answer.error) {
         throw new Error('Receiver answer error: ' + answer.error);
       }
-      
+
       // Set answer in sender via IPC
       console.log('📤 Setting answer in sender...');
       await this.sendWebRTCCommand('setAnswer', answer);
-      
+
       console.log('✅ WebRTC peer connection handshake complete');
-      
+
       // Wait a bit for ICE connection to establish
       setTimeout(() => {
         this.checkConnectionStatus();
       }, 2000);
-      
     } catch (error) {
       console.error('❌ Failed to establish WebRTC connection:', error);
     }
@@ -449,37 +437,35 @@ class KaiPlayerApp {
   async checkConnectionStatus() {
     try {
       const senderStatus = await this.sendWebRTCCommand('getSenderStatus');
-      
+
       const receiverStatus = await this.sendCanvasWebRTCCommand('getReceiverStatus');
-      
+
       console.log('📊 Connection Status:');
       console.log('  Sender:', senderStatus);
       console.log('  Receiver:', receiverStatus);
-      
     } catch (error) {
       console.error('Error checking connection status:', error);
     }
   }
 
-  async stopCanvasStreaming() {
+  stopCanvasStreaming() {
     if (!this.canvasStreaming.isStreaming) return;
 
     try {
       console.log('Stopping canvas streaming...');
-      
+
       // Cleanup sender (main window) via IPC
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
         this.mainWindow.webContents.send('webrtc:cleanupSender');
       }
-      
+
       // Cleanup receiver (child window) via IPC
       if (this.canvasWindow && !this.canvasWindow.isDestroyed()) {
         this.canvasWindow.webContents.send('webrtc:cleanupReceiver');
       }
-      
+
       this.canvasStreaming.isStreaming = false;
       console.log('Canvas streaming stopped');
-      
     } catch (error) {
       console.error('Error stopping canvas streaming:', error);
     }
@@ -495,16 +481,14 @@ class KaiPlayerApp {
             accelerator: 'CmdOrCtrl+O',
             click: async () => {
               const result = await dialog.showOpenDialog(this.mainWindow, {
-                filters: [
-                  { name: 'KAI Files', extensions: ['kai'] }
-                ],
-                properties: ['openFile']
+                filters: [{ name: 'KAI Files', extensions: ['kai'] }],
+                properties: ['openFile'],
               });
 
               if (!result.canceled && result.filePaths.length > 0) {
                 await this.loadKaiFile(result.filePaths[0]);
               }
-            }
+            },
           },
           { type: 'separator' },
           {
@@ -512,9 +496,9 @@ class KaiPlayerApp {
             accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
             click: () => {
               app.quit();
-            }
-          }
-        ]
+            },
+          },
+        ],
       },
       {
         label: 'View',
@@ -526,15 +510,15 @@ class KaiPlayerApp {
               if (focusedWindow) {
                 focusedWindow.reload();
               }
-            }
+            },
           },
           {
             label: 'Toggle Developer Tools',
             accelerator: process.platform === 'darwin' ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
             click: (item, focusedWindow) => {
               console.log('Menu: Toggle Developer Tools clicked', {
-                hasFocusedWindow: !!focusedWindow,
-                windowType: focusedWindow?.getTitle()
+                hasFocusedWindow: Boolean(focusedWindow),
+                windowType: focusedWindow?.getTitle(),
               });
 
               // Use mainWindow directly if no focused window
@@ -555,7 +539,7 @@ class KaiPlayerApp {
               } else {
                 console.error('No window available for DevTools toggle');
               }
-            }
+            },
           },
           { type: 'separator' },
           {
@@ -565,7 +549,7 @@ class KaiPlayerApp {
               if (focusedWindow) {
                 focusedWindow.webContents.setZoomLevel(0);
               }
-            }
+            },
           },
           {
             label: 'Zoom In',
@@ -575,7 +559,7 @@ class KaiPlayerApp {
                 const currentZoom = focusedWindow.webContents.getZoomLevel();
                 focusedWindow.webContents.setZoomLevel(currentZoom + 0.5);
               }
-            }
+            },
           },
           {
             label: 'Zoom Out',
@@ -585,10 +569,10 @@ class KaiPlayerApp {
                 const currentZoom = focusedWindow.webContents.getZoomLevel();
                 focusedWindow.webContents.setZoomLevel(currentZoom - 0.5);
               }
-            }
-          }
-        ]
-      }
+            },
+          },
+        ],
+      },
     ];
 
     // macOS specific menu adjustments
@@ -598,28 +582,28 @@ class KaiPlayerApp {
         submenu: [
           {
             label: 'About ' + app.getName(),
-            role: 'about'
+            role: 'about',
           },
           { type: 'separator' },
           {
             label: 'Services',
             role: 'services',
-            submenu: []
+            submenu: [],
           },
           { type: 'separator' },
           {
             label: 'Hide ' + app.getName(),
             accelerator: 'Command+H',
-            role: 'hide'
+            role: 'hide',
           },
           {
             label: 'Hide Others',
             accelerator: 'Command+Shift+H',
-            role: 'hideothers'
+            role: 'hideothers',
           },
           {
             label: 'Show All',
-            role: 'unhide'
+            role: 'unhide',
           },
           { type: 'separator' },
           {
@@ -627,9 +611,9 @@ class KaiPlayerApp {
             accelerator: 'Command+Q',
             click: () => {
               app.quit();
-            }
-          }
-        ]
+            },
+          },
+        ],
       });
 
       // Window menu for macOS
@@ -639,14 +623,14 @@ class KaiPlayerApp {
           {
             label: 'Minimize',
             accelerator: 'CmdOrCtrl+M',
-            role: 'minimize'
+            role: 'minimize',
           },
           {
             label: 'Close',
             accelerator: 'CmdOrCtrl+W',
-            role: 'close'
-          }
-        ]
+            role: 'close',
+          },
+        ],
       });
     }
 
@@ -658,7 +642,7 @@ class KaiPlayerApp {
     try {
       this.audioEngine = new AudioEngine();
       this.audioEngine.initialize();
-      
+
       this.audioEngine.on('xrun', (count) => {
         this.sendToRenderer('audio:xrun', count);
       });
@@ -670,7 +654,6 @@ class KaiPlayerApp {
       this.audioEngine.on('mixChanged', (mixState) => {
         this.sendToRenderer('mixer:state', mixState);
       });
-
     } catch (error) {
       console.error('Failed to initialize audio engine:', error);
     }
@@ -698,12 +681,15 @@ class KaiPlayerApp {
         const baseName = entry.name.substring(0, entry.name.lastIndexOf('.'));
 
         if (entry.isDirectory()) {
-          // Recursively scan subdirectories
+          // Recursively scan subdirectories - intentional sequential processing
+          // eslint-disable-next-line no-await-in-loop
           const subFiles = await this.scanForKaiFiles(fullPath);
           files.push(...subFiles);
         } else if (lowerName.endsWith('.kai')) {
-          // KAI format
+          // KAI format - sequential file I/O to avoid overwhelming filesystem
+          // eslint-disable-next-line no-await-in-loop
           const stats = await fsPromises.stat(fullPath);
+          // eslint-disable-next-line no-await-in-loop
           const metadata = await this.extractKaiMetadata(fullPath);
 
           files.push({
@@ -713,12 +699,17 @@ class KaiPlayerApp {
             modified: stats.mtime,
             folder: path.relative(this.settings.getSongsFolder(), folderPath) || '.',
             format: 'kai',
-            ...metadata
+            ...metadata,
           });
-        } else if (lowerName.endsWith('.kar') || (lowerName.endsWith('.zip') && !lowerName.endsWith('.kai.zip'))) {
-          // CDG archive format (.kar or .zip)
+        } else if (
+          lowerName.endsWith('.kar') ||
+          (lowerName.endsWith('.zip') && !lowerName.endsWith('.kai.zip'))
+        ) {
+          // CDG archive format (.kar or .zip) - sequential file I/O
+          // eslint-disable-next-line no-await-in-loop
           const metadata = await this.extractCDGArchiveMetadata(fullPath);
           if (metadata) {
+            // eslint-disable-next-line no-await-in-loop
             const stats = await fsPromises.stat(fullPath);
             files.push({
               name: fullPath,
@@ -727,7 +718,7 @@ class KaiPlayerApp {
               modified: stats.mtime,
               folder: path.relative(this.settings.getSongsFolder(), folderPath) || '.',
               format: 'cdg-archive',
-              ...metadata
+              ...metadata,
             });
           }
         } else if (lowerName.endsWith('.cdg')) {
@@ -743,8 +734,10 @@ class KaiPlayerApp {
       for (const [baseName, mp3Path] of mp3Map.entries()) {
         const cdgPath = cdgMap.get(baseName);
         if (cdgPath) {
-          // Found matching pair - add as CDG song keyed by MP3 path
+          // Found matching pair - sequential metadata extraction
+          // eslint-disable-next-line no-await-in-loop
           const metadata = await this.extractCDGPairMetadata(mp3Path, cdgPath);
+          // eslint-disable-next-line no-await-in-loop
           const stats = await fsPromises.stat(mp3Path);
           files.push({
             name: mp3Path,
@@ -754,7 +747,7 @@ class KaiPlayerApp {
             modified: stats.mtime,
             folder: path.relative(this.settings.getSongsFolder(), folderPath) || '.',
             format: 'cdg-pair',
-            ...metadata
+            ...metadata,
           });
         }
         // If no CDG file, don't add this MP3 to the library
@@ -767,7 +760,7 @@ class KaiPlayerApp {
     return files;
   }
 
-  async extractKaiMetadata(kaiFilePath) {
+  extractKaiMetadata(kaiFilePath) {
     // yauzl already imported
 
     return new Promise((resolve) => {
@@ -780,7 +773,7 @@ class KaiPlayerApp {
         year: null,
         duration: null,
         stems: [],
-        stemCount: 0
+        stemCount: 0,
       };
 
       yauzl.open(kaiFilePath, { lazyEntries: true }, (err, zipfile) => {
@@ -821,10 +814,11 @@ class KaiPlayerApp {
 
                   // Extract stems info from audio.sources
                   if (songData.audio && songData.audio.sources) {
-                    metadata.stems = songData.audio.sources.map(source => source.role || source.id);
+                    metadata.stems = songData.audio.sources.map(
+                      (source) => source.role || source.id
+                    );
                     metadata.stemCount = metadata.stems.length;
                   }
-
                 } catch (parseErr) {
                   console.warn('❌ Could not parse song.json from:', kaiFilePath, parseErr.message);
                 }
@@ -845,7 +839,7 @@ class KaiPlayerApp {
     });
   }
 
-  async extractCDGArchiveMetadata(archivePath) {
+  extractCDGArchiveMetadata(archivePath) {
     // yauzl already imported
 
     return new Promise((resolve) => {
@@ -898,7 +892,7 @@ class KaiPlayerApp {
         album: null,
         genre: null,
         year: null,
-        duration: null
+        duration: null,
       };
 
       yauzl.open(archivePath, { lazyEntries: true }, (err, zipfile) => {
@@ -910,7 +904,7 @@ class KaiPlayerApp {
 
         zipfile.on('entry', (entry) => {
           if (entry.fileName === mp3FileName) {
-            zipfile.openReadStream(entry, async (err, readStream) => {
+            zipfile.openReadStream(entry, (err, readStream) => {
               if (err) {
                 zipfile.close();
                 return resolve(metadata);
@@ -931,7 +925,9 @@ class KaiPlayerApp {
                     metadata.album = mmData.common.album || null;
                     metadata.genre = mmData.common.genre ? mmData.common.genre[0] : null;
                     // Prefer full date (TDRC), fallback to year (TYER)
-                    metadata.year = mmData.common.date || (mmData.common.year ? String(mmData.common.year) : null);
+                    metadata.year =
+                      mmData.common.date ||
+                      (mmData.common.year ? String(mmData.common.year) : null);
                   }
                   if (mmData.format && mmData.format.duration) {
                     metadata.duration = mmData.format.duration;
@@ -942,8 +938,10 @@ class KaiPlayerApp {
                     const baseName = path.basename(archivePath, path.extname(archivePath));
                     const dashIndex = baseName.indexOf(' - ');
                     if (dashIndex > 0 && dashIndex < baseName.length - 3) {
-                      if (!metadata.artist) metadata.artist = baseName.substring(0, dashIndex).trim();
-                      if (!metadata.title) metadata.title = baseName.substring(dashIndex + 3).trim();
+                      if (!metadata.artist)
+                        metadata.artist = baseName.substring(0, dashIndex).trim();
+                      if (!metadata.title)
+                        metadata.title = baseName.substring(dashIndex + 3).trim();
                     } else {
                       if (!metadata.title) metadata.title = baseName;
                       if (!metadata.artist) metadata.artist = '';
@@ -980,7 +978,7 @@ class KaiPlayerApp {
     });
   }
 
-  async extractCDGPairMetadata(mp3Path, cdgPath) {
+  async extractCDGPairMetadata(mp3Path, _cdgPath) {
     const mm = await import('music-metadata');
     // path already imported
 
@@ -990,7 +988,7 @@ class KaiPlayerApp {
       album: null,
       genre: null,
       year: null,
-      duration: null
+      duration: null,
     };
 
     try {
@@ -1001,7 +999,8 @@ class KaiPlayerApp {
         metadata.album = mmData.common.album || null;
         metadata.genre = mmData.common.genre ? mmData.common.genre[0] : null;
         // Prefer full date (TDRC), fallback to year (TYER)
-        metadata.year = mmData.common.date || (mmData.common.year ? String(mmData.common.year) : null);
+        metadata.year =
+          mmData.common.date || (mmData.common.year ? String(mmData.common.year) : null);
       }
       if (mmData.format && mmData.format.duration) {
         metadata.duration = mmData.format.duration;
@@ -1041,9 +1040,9 @@ class KaiPlayerApp {
     return metadata;
   }
 
-  async readKaiSongJson(kaiFilePath) {
+  readKaiSongJson(kaiFilePath) {
     // yauzl already imported
-    
+
     return new Promise((resolve) => {
       yauzl.open(kaiFilePath, { lazyEntries: true }, (err, zipfile) => {
         if (err) {
@@ -1052,7 +1051,7 @@ class KaiPlayerApp {
         }
 
         zipfile.readEntry();
-        
+
         zipfile.on('entry', (entry) => {
           if (entry.fileName === 'song.json') {
             zipfile.openReadStream(entry, (err, readStream) => {
@@ -1072,7 +1071,11 @@ class KaiPlayerApp {
                   zipfile.close();
                   resolve(songData);
                 } catch (parseError) {
-                  console.warn('❌ Could not parse song.json from:', kaiFilePath, parseError.message);
+                  console.warn(
+                    '❌ Could not parse song.json from:',
+                    kaiFilePath,
+                    parseError.message
+                  );
                   zipfile.close();
                   resolve(null);
                 }
@@ -1126,15 +1129,15 @@ class KaiPlayerApp {
         artist: kaiData.metadata?.artist || 'Unknown',
         duration: kaiData.metadata?.duration || 0,
         requester: kaiData.requester || 'KJ',
-        isLoading: true,  // Song is being loaded
-        format: 'kai',  // Format for display icon
-        queueItemId: queueItemId  // Track which queue item (for duplicate songs)
+        isLoading: true, // Song is being loaded
+        format: 'kai', // Format for display icon
+        queueItemId: queueItemId, // Track which queue item (for duplicate songs)
       };
       this.appState.setCurrentSong(songData);
 
       console.log('Sending to renderer:', {
         metadata: kaiData.metadata,
-        hasMetadata: !!kaiData.metadata
+        hasMetadata: Boolean(kaiData.metadata),
       });
       this.sendToRenderer('song:loaded', kaiData.metadata || {});
       this.sendToRenderer('song:data', kaiData);
@@ -1157,22 +1160,25 @@ class KaiPlayerApp {
         success: true,
         metadata: kaiData.metadata,
         meta: kaiData.meta,
-        stems: kaiData.audio.sources
+        stems: kaiData.audio.sources,
       };
     } catch (error) {
       console.error('Failed to load KAI file:', error);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
 
-  async detectSongFormat(filePath) {
+  detectSongFormat(filePath) {
     const lowerPath = filePath.toLowerCase();
 
     // Check for CDG archive (.kar or .zip but not .kai.zip)
-    if (lowerPath.endsWith('.kar') || (lowerPath.endsWith('.zip') && !lowerPath.endsWith('.kai.zip'))) {
+    if (
+      lowerPath.endsWith('.kar') ||
+      (lowerPath.endsWith('.zip') && !lowerPath.endsWith('.kai.zip'))
+    ) {
       return { type: 'cdg', format: 'cdg-archive', cdgPath: null };
     }
 
@@ -1208,9 +1214,9 @@ class KaiPlayerApp {
         artist: cdgData.metadata?.artist || 'Unknown',
         duration: cdgData.metadata?.duration || 0,
         requester: cdgData.requester || 'KJ',
-        isLoading: true,  // Song is being loaded
-        format: format,  // Format for display icon (cdg-pair, cdg-archive, etc)
-        queueItemId: queueItemId  // Track which queue item (for duplicate songs)
+        isLoading: true, // Song is being loaded
+        format: format, // Format for display icon (cdg-pair, cdg-archive, etc)
+        queueItemId: queueItemId, // Track which queue item (for duplicate songs)
       };
       this.appState.setCurrentSong(songData);
 
@@ -1231,13 +1237,13 @@ class KaiPlayerApp {
       return {
         success: true,
         metadata: cdgData.metadata,
-        format: 'cdg'
+        format: 'cdg',
       };
     } catch (error) {
       console.error('Failed to load CDG file:', error);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -1292,7 +1298,7 @@ class KaiPlayerApp {
           console.log(`✅ Library loaded from cache: ${files.length} songs`);
           useCache = true;
         }
-      } catch (err) {
+      } catch {
         // Cache doesn't exist or is invalid, will scan
         console.log('📚 No valid cache found, scanning library...');
       }
@@ -1325,11 +1331,15 @@ class KaiPlayerApp {
 
       // Save to disk cache
       try {
-        await fsPromises.writeFile(cacheFile, JSON.stringify({
-          songsFolder,
-          files,
-          cachedAt: new Date().toISOString()
-        }), 'utf8');
+        await fsPromises.writeFile(
+          cacheFile,
+          JSON.stringify({
+            songsFolder,
+            files,
+            cachedAt: new Date().toISOString(),
+          }),
+          'utf8'
+        );
         console.log('💾 Library cache saved to disk');
       } catch (err) {
         console.error('Failed to save library cache:', err);
@@ -1358,6 +1368,8 @@ class KaiPlayerApp {
         const fullPath = path.join(dir, entry.name);
 
         if (entry.isDirectory()) {
+          // Recursively scan subdirectories - intentional sequential processing
+          // eslint-disable-next-line no-await-in-loop
           await scan(fullPath);
         } else {
           const lowerName = entry.name.toLowerCase();
@@ -1367,7 +1379,10 @@ class KaiPlayerApp {
             fileInfos.push({ path: fullPath, type: 'kai' });
           }
           // CDG archives
-          else if (lowerName.endsWith('.kar') || (lowerName.endsWith('.zip') && !processedPairs.has(fullPath))) {
+          else if (
+            lowerName.endsWith('.kar') ||
+            (lowerName.endsWith('.zip') && !processedPairs.has(fullPath))
+          ) {
             fileInfos.push({ path: fullPath, type: 'archive' });
           }
           // CDG+MP3 pairs - check if both exist
@@ -1376,6 +1391,8 @@ class KaiPlayerApp {
             const mp3Path = baseName + '.mp3';
 
             try {
+              // Sequential file I/O for CDG pair verification
+              // eslint-disable-next-line no-await-in-loop
               await fsPromises.access(mp3Path);
               // Only add if we haven't seen this pair
               if (!processedPairs.has(fullPath)) {
@@ -1407,22 +1424,25 @@ class KaiPlayerApp {
 
       try {
         if (fileInfo.type === 'kai') {
+          // Sequential metadata extraction - intentional to avoid overwhelming filesystem
+          // eslint-disable-next-line no-await-in-loop
           const metadata = await this.readKaiSongJson(fullPath);
           if (metadata) {
             const songData = {
               ...metadata.song,
-              duration: metadata.song.duration_sec
+              duration: metadata.song.duration_sec,
             };
             files.push({
               name: fullPath,
               path: fullPath,
               file: fullPath,
               format: 'kai',
-              ...songData
+              ...songData,
             });
           }
-        }
-        else if (fileInfo.type === 'archive') {
+        } else if (fileInfo.type === 'archive') {
+          // Sequential metadata extraction for CDG archives
+          // eslint-disable-next-line no-await-in-loop
           const metadata = await this.extractCDGArchiveMetadata(fullPath);
           if (metadata) {
             files.push({
@@ -1435,11 +1455,12 @@ class KaiPlayerApp {
               album: metadata.album,
               genre: metadata.genre,
               year: metadata.year,
-              duration: metadata.duration
+              duration: metadata.duration,
             });
           }
-        }
-        else if (fileInfo.type === 'cdg-pair') {
+        } else if (fileInfo.type === 'cdg-pair') {
+          // Sequential metadata extraction for CDG pairs
+          // eslint-disable-next-line no-await-in-loop
           const metadata = await this.extractCDGPairMetadata(fullPath, fileInfo.cdgPath);
           if (metadata) {
             files.push({
@@ -1453,7 +1474,7 @@ class KaiPlayerApp {
               genre: metadata.genre,
               year: metadata.year,
               duration: metadata.duration,
-              cdgPath: fileInfo.cdgPath
+              cdgPath: fileInfo.cdgPath,
             });
           }
         }
@@ -1462,11 +1483,11 @@ class KaiPlayerApp {
       }
 
       // Calculate progress
-      const fileProgress = (i + 1) / newFilesCount * (1 - progressOffset);
+      const fileProgress = ((i + 1) / newFilesCount) * (1 - progressOffset);
       const currentProgress = Math.floor((progressOffset + fileProgress) * totalFiles);
       this.sendToRenderer('library:scanProgress', {
         current: currentProgress,
-        total: totalFiles
+        total: totalFiles,
       });
     }
 
@@ -1489,6 +1510,8 @@ class KaiPlayerApp {
         const fullPath = path.join(dir, entry.name);
 
         if (entry.isDirectory()) {
+          // Recursively scan subdirectories - intentional sequential processing
+          // eslint-disable-next-line no-await-in-loop
           await scan(fullPath);
         } else {
           const lowerName = entry.name.toLowerCase();
@@ -1498,8 +1521,10 @@ class KaiPlayerApp {
             allFiles.push(fullPath);
           }
           // CDG archives
-          else if (lowerName.endsWith('.kar') ||
-                   (lowerName.endsWith('.zip') && !processedPairs.has(fullPath))) {
+          else if (
+            lowerName.endsWith('.kar') ||
+            (lowerName.endsWith('.zip') && !processedPairs.has(fullPath))
+          ) {
             allFiles.push(fullPath);
           }
           // CDG+MP3 pairs - only count once, return MP3 path
@@ -1509,6 +1534,8 @@ class KaiPlayerApp {
 
             // Check if paired MP3 exists
             try {
+              // Sequential file I/O for MP3 pair verification
+              // eslint-disable-next-line no-await-in-loop
               await fsPromises.access(mp3Path);
               // Only add if we haven't seen this pair
               if (!processedPairs.has(fullPath)) {
@@ -1539,23 +1566,27 @@ class KaiPlayerApp {
       try {
         // KAI files
         if (lowerName.endsWith('.kai')) {
+          // Sequential metadata extraction - intentional to avoid overwhelming filesystem
+          // eslint-disable-next-line no-await-in-loop
           const metadata = await this.readKaiSongJson(fullPath);
           if (metadata) {
             const songData = {
               ...metadata.song,
-              duration: metadata.song.duration_sec
+              duration: metadata.song.duration_sec,
             };
             files.push({
               name: fullPath,
               path: fullPath,
               file: fullPath,
               format: 'kai',
-              ...songData
+              ...songData,
             });
           }
         }
         // CDG archives
         else if (lowerName.endsWith('.kar') || lowerName.endsWith('.zip')) {
+          // Sequential CDG archive metadata extraction
+          // eslint-disable-next-line no-await-in-loop
           const metadata = await this.extractCDGArchiveMetadata(fullPath);
           if (metadata) {
             files.push({
@@ -1568,7 +1599,7 @@ class KaiPlayerApp {
               album: metadata.album,
               genre: metadata.genre,
               year: metadata.year,
-              duration: metadata.duration
+              duration: metadata.duration,
             });
           }
         }
@@ -1579,7 +1610,11 @@ class KaiPlayerApp {
 
           // Verify MP3 file exists
           try {
+            // Sequential file I/O for MP3 verification
+            // eslint-disable-next-line no-await-in-loop
             await fsPromises.access(mp3Path);
+            // Sequential CDG pair metadata extraction
+            // eslint-disable-next-line no-await-in-loop
             const metadata = await this.extractCDGPairMetadata(mp3Path, fullPath);
             if (metadata) {
               files.push({
@@ -1593,7 +1628,7 @@ class KaiPlayerApp {
                 genre: metadata.genre,
                 year: metadata.year,
                 duration: metadata.duration,
-                cdgPath: fullPath
+                cdgPath: fullPath,
               });
             }
           } catch {
@@ -1606,11 +1641,11 @@ class KaiPlayerApp {
       }
 
       // Calculate progress: progressOffset (10%) + current file progress (0-90%)
-      const fileProgress = (i + 1) / newFilesCount * (1 - progressOffset);
+      const fileProgress = ((i + 1) / newFilesCount) * (1 - progressOffset);
       const currentProgress = Math.floor((progressOffset + fileProgress) * totalFiles);
       this.sendToRenderer('library:scanProgress', {
         current: currentProgress,
-        total: totalFiles
+        total: totalFiles,
       });
     }
 
@@ -1629,7 +1664,7 @@ class KaiPlayerApp {
       if (force || now - lastProgressReport >= 1000) {
         const progressData = {
           current: processedCount,
-          total: totalFiles
+          total: totalFiles,
         };
 
         // Send to renderer
@@ -1651,6 +1686,8 @@ class KaiPlayerApp {
         const fullPath = path.join(dir, entry.name);
 
         if (entry.isDirectory()) {
+          // Recursively scan subdirectories - intentional sequential processing
+          // eslint-disable-next-line no-await-in-loop
           await scanDir(fullPath, self);
         } else {
           const lowerName = entry.name.toLowerCase();
@@ -1658,25 +1695,32 @@ class KaiPlayerApp {
           // KAI files
           if (lowerName.endsWith('.kai') && !processedPaths.has(fullPath)) {
             processedPaths.add(fullPath);
+            // Sequential metadata extraction with progress reporting
+            // eslint-disable-next-line no-await-in-loop
             const metadata = await self.readKaiSongJson(fullPath);
             if (metadata) {
               const songData = {
                 ...metadata.song,
-                duration: metadata.song.duration_sec
+                duration: metadata.song.duration_sec,
               };
               files.push({
                 name: fullPath,
                 path: fullPath,
                 format: 'kai',
-                ...songData
+                ...songData,
               });
             }
             processedCount++;
             reportProgress();
           }
           // CDG archives
-          else if ((lowerName.endsWith('.kar') || lowerName.endsWith('.zip')) && !processedPaths.has(fullPath)) {
+          else if (
+            (lowerName.endsWith('.kar') || lowerName.endsWith('.zip')) &&
+            !processedPaths.has(fullPath)
+          ) {
             processedPaths.add(fullPath);
+            // Sequential CDG archive metadata extraction with progress reporting
+            // eslint-disable-next-line no-await-in-loop
             const metadata = await self.extractCDGArchiveMetadata(fullPath);
             if (metadata) {
               files.push({
@@ -1688,7 +1732,7 @@ class KaiPlayerApp {
                 album: metadata.album,
                 genre: metadata.genre,
                 year: metadata.year,
-                duration: metadata.duration
+                duration: metadata.duration,
               });
             }
             processedCount++;
@@ -1699,10 +1743,19 @@ class KaiPlayerApp {
             const baseName = fullPath.slice(0, -4);
             const mp3Path = baseName + '.mp3';
 
-            if (await fsPromises.access(mp3Path).then(() => true).catch(() => false)) {
+            // Sequential file I/O for MP3 verification with progress reporting
+            // eslint-disable-next-line no-await-in-loop
+            if (
+              await fsPromises
+                .access(mp3Path)
+                .then(() => true)
+                .catch(() => false)
+            ) {
               processedPaths.add(fullPath);
               processedPaths.add(mp3Path);
 
+              // Sequential CDG pair metadata extraction with progress reporting
+              // eslint-disable-next-line no-await-in-loop
               const metadata = await self.extractCDGPairMetadata(mp3Path);
               files.push({
                 name: mp3Path,
@@ -1714,7 +1767,7 @@ class KaiPlayerApp {
                 genre: metadata.genre,
                 year: metadata.year,
                 duration: metadata.duration,
-                cdgPath: fullPath
+                cdgPath: fullPath,
               });
               processedCount++;
               reportProgress();
@@ -1735,21 +1788,21 @@ class KaiPlayerApp {
       title: 'Set Songs Library Folder',
       message: 'Choose a folder where your KAI music files are stored',
       detail: 'This will be your songs library that appears in the app.',
-      buttons: ['Choose Folder', 'Skip for Now']
+      buttons: ['Choose Folder', 'Skip for Now'],
     });
 
     if (result.response === 0) {
       const folderResult = await dialog.showOpenDialog(this.mainWindow, {
         title: 'Select Songs Library Folder',
         properties: ['openDirectory'],
-        buttonLabel: 'Select Folder'
+        buttonLabel: 'Select Folder',
       });
 
       if (!folderResult.canceled && folderResult.filePaths.length > 0) {
         const selectedFolder = folderResult.filePaths[0];
         this.settings.setSongsFolder(selectedFolder);
         console.log('📁 Songs folder set to:', selectedFolder);
-        
+
         // Notify renderer about the new library
         this.sendToRenderer('library:folderSet', selectedFolder);
       }
@@ -1762,29 +1815,27 @@ class KaiPlayerApp {
     }
   }
 
-  sendToRendererAndWait(channel, ...args) {
+  sendToRendererAndWait(channel, ..._args) {
     return new Promise((resolve) => {
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
         // Create a one-time listener for the response
         const responseChannel = `${channel}-response`;
 
-        let timeoutId;
-
-        const listener = (event, data) => {
+        const listener = (_event, data) => {
           clearTimeout(timeoutId);
           ipcMain.removeListener(responseChannel, listener);
           resolve(data);
         };
+
+        const timeoutId = setTimeout(() => {
+          ipcMain.removeListener(responseChannel, listener);
+          resolve(null);
+        }, 5000);
+
         ipcMain.once(responseChannel, listener);
 
         // Send the request
         this.mainWindow.webContents.send(channel);
-
-        // Timeout after 5 seconds
-        timeoutId = setTimeout(() => {
-          ipcMain.removeListener(responseChannel, listener);
-          resolve(null);
-        }, 5000);
       } else {
         resolve(null);
       }
@@ -1808,14 +1859,13 @@ class KaiPlayerApp {
 
       // Notify renderer about web server
       this.sendToRenderer('webServer:started', { port });
-
     } catch (error) {
       console.error('Failed to start web server:', error);
       // Don't fail the entire app if web server fails
     }
   }
 
-  async connectToSocketServer(port) {
+  connectToSocketServer(port) {
     try {
       this.socket = io(`http://localhost:${port}`);
 
@@ -1864,7 +1914,6 @@ class KaiPlayerApp {
         console.log('🔧 Settings update received from server:', settings);
         this.handleSettingsUpdate(settings);
       });
-
     } catch (error) {
       console.error('Failed to connect to Socket.IO server:', error);
     }
@@ -1875,7 +1924,7 @@ class KaiPlayerApp {
     if (this.socket && this.socket.connected) {
       this.socket.emit('queue-updated', {
         queue: this.appState.getQueue(),
-        currentSong: this.currentSong
+        currentSong: this.currentSong,
       });
     }
   }
@@ -2000,7 +2049,7 @@ class KaiPlayerApp {
     }
   }
 
-  async selectEffect(effectName) {
+  selectEffect(effectName) {
     try {
       this.sendToRenderer('effects:select', effectName);
       return { success: true };
@@ -2010,7 +2059,7 @@ class KaiPlayerApp {
     }
   }
 
-  async toggleEffect(effectName, enabled) {
+  toggleEffect(effectName, enabled) {
     try {
       this.sendToRenderer('effects:toggle', { effectName, enabled });
       return { success: true };
@@ -2020,15 +2069,11 @@ class KaiPlayerApp {
     }
   }
 
-
   // Removed duplicate playerNext() - see below for correct implementation
 
   // clearQueue() moved below - uses AppState
 
-  async getCurrentSong() {
-    const result = playerService.getCurrentSong(this);
-    return result.song;
-  }
+  // Removed duplicate getCurrentSong() - see line 1915 for the correct implementation (uses AppState)
 
   // Web server management methods
   getWebServerPort() {
@@ -2055,28 +2100,28 @@ class KaiPlayerApp {
   }
 
   // Player control methods for web server
-  async playerPlay() {
+  playerPlay() {
     console.log('🎮 Admin play command - using playerService');
     return playerService.play(this);
   }
 
-  async playerPause() {
+  playerPause() {
     return playerService.pause(this);
   }
 
-  async playerRestart() {
+  playerRestart() {
     return playerService.restart(this);
   }
 
-  async playerSeek(position) {
+  playerSeek(position) {
     return playerService.seek(this, position);
   }
 
-  async playerNext() {
+  playerNext() {
     return playerService.playNext(this);
   }
 
-  async clearQueue() {
+  clearQueue() {
     // Use shared queueService
     const result = queueService.clearQueue(this.appState);
     // Update legacy queue for compatibility
@@ -2084,11 +2129,7 @@ class KaiPlayerApp {
     return result;
   }
 
-  getCurrentSong() {
-    return this.currentSong;
-  }
-
-  // Removed duplicate - using appState.getQueue() above
+  // Removed duplicate getCurrentSong() - using appState version above (line 2021)
 
   // Position broadcasting timer
   startPositionBroadcasting() {
@@ -2097,17 +2138,17 @@ class KaiPlayerApp {
     }
 
     this.positionTimer = setInterval(() => {
-      const hasWebServer = !!this.webServer;
-      const hasCurrentSong = !!this.appState.state.currentSong;
+      const hasWebServer = Boolean(this.webServer);
+      const hasCurrentSong = Boolean(this.appState.state.currentSong);
 
       if (hasWebServer && hasCurrentSong) {
         // Get interpolated position from AppState
         const currentTime = this.appState.getCurrentPosition();
         const isPlaying = this.appState.state.playback.isPlaying;
 
-        const songId = this.appState.state.currentSong ?
-          `${this.appState.state.currentSong.title} - ${this.appState.state.currentSong.artist}` :
-          'Unknown Song';
+        const songId = this.appState.state.currentSong
+          ? `${this.appState.state.currentSong.title} - ${this.appState.state.currentSong.artist}`
+          : 'Unknown Song';
 
         this.webServer.broadcastPlaybackPosition(currentTime, isPlaying, songId);
       }

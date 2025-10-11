@@ -9,20 +9,19 @@
 import React, { useState, useEffect } from 'react';
 import { MixerPanel } from '../../shared/components/MixerPanel.jsx';
 import { AudioDeviceSettings } from './AudioDeviceSettings.jsx';
-import './MixerTab.css';
 
 export function MixerTab({ bridge }) {
   const [mixerState, setMixerState] = useState({
     PA: { gain: 0, muted: false },
     IEM: { gain: 0, muted: false },
-    mic: { gain: 0, muted: false }
+    mic: { gain: 0, muted: false },
   });
   const [audioDevices, setAudioDevices] = useState({ pa: [], iem: [], input: [] });
   const [selectedDevices, setSelectedDevices] = useState({ pa: '', iem: '', input: '' });
   const [audioSettings, setAudioSettings] = useState({
     iemMonoVocals: true,
     micToSpeakers: true,
-    enableMic: true
+    enableMic: true,
   });
 
   // Subscribe to mixer state updates
@@ -34,20 +33,21 @@ export function MixerTab({ bridge }) {
       const busLevelMixer = {
         PA: mixer.PA || { gain: 0, muted: false },
         IEM: mixer.IEM || { gain: 0, muted: false },
-        mic: mixer.mic || { gain: 0, muted: false }
+        mic: mixer.mic || { gain: 0, muted: false },
       };
 
       setMixerState(busLevelMixer);
     });
 
     // Fetch initial state
-    bridge.getMixerState?.()
-      .then(state => {
+    bridge
+      .getMixerState?.()
+      .then((state) => {
         // Extract only bus-level mixer (PA, IEM, mic)
         const busLevelMixer = {
           PA: state.PA || { gain: 0, muted: false },
           IEM: state.IEM || { gain: 0, muted: false },
-          mic: state.mic || { gain: 0, muted: false }
+          mic: state.mic || { gain: 0, muted: false },
         };
 
         setMixerState(busLevelMixer);
@@ -71,13 +71,13 @@ export function MixerTab({ bridge }) {
 
         // Enumerate devices
         const devices = await bridge.getAudioDevices?.();
-        const outputDevices = devices.filter(d => d.maxOutputChannels > 0);
-        const inputDevices = devices.filter(d => d.maxInputChannels > 0);
+        const outputDevices = devices.filter((d) => d.maxOutputChannels > 0);
+        const inputDevices = devices.filter((d) => d.maxInputChannels > 0);
 
         setAudioDevices({
           pa: outputDevices,
           iem: outputDevices,
-          input: inputDevices
+          input: inputDevices,
         });
 
         // Load saved device preferences
@@ -91,24 +91,27 @@ export function MixerTab({ bridge }) {
           const deviceList = type === 'input' ? inputDevices : outputDevices;
 
           // Try to match by ID first
-          let matchedDevice = deviceList.find(d => d.deviceId === savedDevice.id);
+          let matchedDevice = deviceList.find((d) => d.deviceId === savedDevice.id);
 
           // If no ID match, try matching by name
           if (!matchedDevice && savedDevice.name) {
-            matchedDevice = deviceList.find(d => d.label === savedDevice.name || d.name === savedDevice.name);
+            matchedDevice = deviceList.find(
+              (d) => d.label === savedDevice.name || d.name === savedDevice.name
+            );
           }
 
           if (matchedDevice) {
             const lowerType = type.toLowerCase();
             restored[lowerType] = matchedDevice.deviceId;
 
-            // Set the device via bridge
+            // Set the device via bridge - sequential initialization to ensure proper device setup
+            // eslint-disable-next-line no-await-in-loop
             await bridge.setAudioDevice?.(type, matchedDevice.deviceId);
           }
         }
 
         if (Object.keys(restored).length > 0) {
-          setSelectedDevices(prev => ({ ...prev, ...restored }));
+          setSelectedDevices((prev) => ({ ...prev, ...restored }));
         }
       } catch (error) {
         console.error('Failed to load devices and preferences:', error);
@@ -134,18 +137,18 @@ export function MixerTab({ bridge }) {
 
     try {
       await bridge?.setAudioDevice?.(deviceType, deviceId);
-      setSelectedDevices(prev => ({ ...prev, [type]: deviceId }));
+      setSelectedDevices((prev) => ({ ...prev, [type]: deviceId }));
 
       // Save device preference
       const deviceList = type === 'input' ? audioDevices.input : audioDevices.pa;
-      const device = deviceList.find(d => d.deviceId === deviceId);
+      const device = deviceList.find((d) => d.deviceId === deviceId);
 
       if (device) {
-        const preferences = await bridge.getDevicePreferences?.() || {};
+        const preferences = (await bridge.getDevicePreferences?.()) || {};
         preferences[deviceType] = {
           id: deviceId,
           name: device.label || device.name,
-          deviceKind: device.deviceKind
+          deviceKind: device.deviceKind,
         };
         await bridge.saveDevicePreferences?.(preferences);
       }
@@ -156,7 +159,7 @@ export function MixerTab({ bridge }) {
 
   // Audio settings
   const handleSettingChange = async (setting, value) => {
-    setAudioSettings(prev => ({ ...prev, [setting]: value }));
+    setAudioSettings((prev) => ({ ...prev, [setting]: value }));
 
     // Save audio setting
     try {
@@ -168,24 +171,25 @@ export function MixerTab({ bridge }) {
 
   // Refresh devices
   const handleRefreshDevices = () => {
-    bridge?.getAudioDevices?.()
-      .then(devices => {
-        const outputDevices = devices.filter(d => d.maxOutputChannels > 0);
-        const inputDevices = devices.filter(d => d.maxInputChannels > 0);
+    bridge
+      ?.getAudioDevices?.()
+      .then((devices) => {
+        const outputDevices = devices.filter((d) => d.maxOutputChannels > 0);
+        const inputDevices = devices.filter((d) => d.maxInputChannels > 0);
 
         setAudioDevices({
           pa: outputDevices,
           iem: outputDevices,
-          input: inputDevices
+          input: inputDevices,
         });
       })
       .catch(console.error);
   };
 
   return (
-    <div className="mixer-tab-container">
-      <div className="mixer-section">
-        <h2>Audio Mixer</h2>
+    <div className="p-5 h-full overflow-y-auto">
+      <div className="mb-8">
+        <h2 className="m-0 mb-5 text-2xl text-gray-900 dark:text-gray-100">Audio Mixer</h2>
         <MixerPanel
           mixerState={mixerState}
           onSetMasterGain={handleSetMasterGain}

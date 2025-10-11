@@ -43,7 +43,7 @@ export function registerEffectsHandlers(mainApp) {
   });
 
   // Select an effect
-  ipcMain.handle('effects:select', async (event, effectName) => {
+  ipcMain.handle('effects:select', (event, effectName) => {
     try {
       // Update AppState so web admin and other clients can see current effect
       mainApp.appState.updateEffectsState({ current: effectName });
@@ -55,7 +55,7 @@ export function registerEffectsHandlers(mainApp) {
   });
 
   // Toggle effect enabled/disabled
-  ipcMain.handle('effects:toggle', async (event, effectName, enabled) => {
+  ipcMain.handle('effects:toggle', (event, effectName, enabled) => {
     try {
       mainApp.sendToRenderer('effects:toggle', { effectName, enabled });
       return { success: true };

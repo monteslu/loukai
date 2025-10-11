@@ -7,13 +7,17 @@
 export function verifyButterchurn() {
   console.log('Butterchurn libraries loaded:', {
     butterchurn: typeof window.butterchurn,
-    presets: typeof window.butterchurnPresets
+    presets: typeof window.butterchurnPresets,
   });
 
   // Verify presets are available and debug butterchurn structure
   if (window.butterchurnPresets && typeof window.butterchurnPresets.getPresets === 'function') {
     const presets = window.butterchurnPresets.getPresets();
-    console.log('SUCCESS: Butterchurn loaded with', Object.keys(presets).length, 'presets available');
+    console.log(
+      'SUCCESS: Butterchurn loaded with',
+      Object.keys(presets).length,
+      'presets available'
+    );
   } else {
     console.error('FAILED: Butterchurn presets not properly loaded');
     return false;
@@ -24,16 +28,16 @@ export function verifyButterchurn() {
     const testCanvas = document.createElement('canvas');
     const testGL = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');
     console.log('WebGL context test:', {
-      hasWebGL: !!testGL,
+      hasWebGL: Boolean(testGL),
       version: testGL ? testGL.getParameter(testGL.VERSION) : 'none',
-      renderer: testGL ? testGL.getParameter(testGL.RENDERER) : 'none'
+      renderer: testGL ? testGL.getParameter(testGL.RENDERER) : 'none',
     });
 
     if (!testGL) {
       console.error('FAILED: WebGL not available - Butterchurn effects will not work');
       return false;
     }
-  } catch(e) {
+  } catch (e) {
     console.error('WebGL test error:', e);
     return false;
   }

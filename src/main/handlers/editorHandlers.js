@@ -22,7 +22,7 @@ export function registerEditorHandlers(mainApp) {
 
       return {
         success: true,
-        data: result.kaiData
+        data: result.kaiData,
       };
     } catch (error) {
       console.error('Failed to load KAI file for editing:', error);
@@ -37,10 +37,10 @@ export function registerEditorHandlers(mainApp) {
       console.log('Updated lyrics:', kaiData.lyrics.length, 'lines');
 
       const editorService = await import('../../shared/services/editorService.js');
-      const result = await editorService.saveSong(originalPath, {
+      const _result = await editorService.saveSong(originalPath, {
         format: 'kai',
         metadata: kaiData.song || {},
-        lyrics: kaiData.lyrics
+        lyrics: kaiData.lyrics,
       });
 
       console.log('KAI file saved successfully');

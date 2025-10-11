@@ -4,6 +4,7 @@
  */
 
 import { ipcMain, dialog } from 'electron';
+import fsPromises from 'fs/promises';
 import { LIBRARY_CHANNELS } from '../../shared/ipcContracts.js';
 import * as libraryService from '../../shared/services/libraryService.js';
 
@@ -20,7 +21,7 @@ export function registerLibraryHandlers(mainApp) {
   // Set songs folder
   ipcMain.handle(LIBRARY_CHANNELS.SET_SONGS_FOLDER, async () => {
     const result = await dialog.showOpenDialog(mainApp.mainWindow, {
-      properties: ['openDirectory']
+      properties: ['openDirectory'],
     });
 
     if (result.canceled || result.filePaths.length === 0) {
@@ -65,7 +66,7 @@ export function registerLibraryHandlers(mainApp) {
       // Return with 'songs' key for renderer compatibility
       return {
         ...result,
-        songs: result.files
+        songs: result.files,
       };
     }
 
@@ -88,7 +89,7 @@ export function registerLibraryHandlers(mainApp) {
         try {
           const stats = await fsPromises.stat(filePath);
           result.song.fileSize = stats.size;
-        } catch (statError) {
+        } catch {
           result.song.fileSize = 0;
         }
       }

@@ -5,10 +5,9 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import './StatusBar.css';
 
 export function StatusBar({ bridge }) {
-  const [statusText, setStatusText] = useState('Ready');
+  const [statusText, _setStatusText] = useState('Ready');
   const [webUrl, setWebUrl] = useState(null);
   const [latency, setLatency] = useState(null);
   const [xruns, setXruns] = useState(0);
@@ -36,8 +35,9 @@ export function StatusBar({ bridge }) {
 
     // Get initial server URL
     if (bridge.getServerUrl) {
-      bridge.getServerUrl()
-        .then(url => {
+      bridge
+        .getServerUrl()
+        .then((url) => {
           setWebUrl(url || null);
         })
         .catch(console.error);
@@ -46,8 +46,9 @@ export function StatusBar({ bridge }) {
     // Poll for server URL updates (every 5 seconds)
     const pollInterval = setInterval(() => {
       if (bridge.getServerUrl) {
-        bridge.getServerUrl()
-          .then(url => {
+        bridge
+          .getServerUrl()
+          .then((url) => {
             setWebUrl(url || null);
           })
           .catch(console.error);
@@ -55,7 +56,7 @@ export function StatusBar({ bridge }) {
     }, 5000);
 
     return () => {
-      unsubscribers.forEach(unsub => unsub && unsub());
+      unsubscribers.forEach((unsub) => unsub && unsub());
       clearInterval(pollInterval);
     };
   }, [bridge]);
@@ -67,14 +68,14 @@ export function StatusBar({ bridge }) {
   };
 
   return (
-    <div className="status-bar">
-      <div className="status-left">
+    <div className="flex justify-between items-center h-6 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-4 text-xs text-gray-600 dark:text-gray-400">
+      <div className="flex-1">
         <span>{statusText}</span>
       </div>
-      <div className="status-center">
+      <div className="flex-1 text-center">
         {webUrl && (
           <span
-            className="web-url-display"
+            className="text-blue-500 dark:text-blue-400 cursor-pointer hover:underline"
             onClick={handleUrlClick}
             title="Click to open in browser"
           >
@@ -82,10 +83,8 @@ export function StatusBar({ bridge }) {
           </span>
         )}
       </div>
-      <div className="status-right">
-        <span>
-          Latency: {latency !== null ? `${latency.toFixed(1)} ms` : '-- ms'}
-        </span>
+      <div className="flex-1 flex gap-4 justify-end">
+        <span>Latency: {latency !== null ? `${latency.toFixed(1)} ms` : '-- ms'}</span>
         <span>XRuns: {xruns}</span>
       </div>
     </div>

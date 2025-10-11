@@ -14,7 +14,7 @@ class SettingsManager {
     try {
       const data = await fs.readFile(this.settingsPath, 'utf8');
       this.settings = JSON.parse(data);
-    } catch (error) {
+    } catch {
       // Try to restore from backup if main file is corrupted
       const backupPath = this.settingsPath + '.backup';
       try {
@@ -23,12 +23,12 @@ class SettingsManager {
 
         // Save the restored settings back to main file
         await this.save();
-      } catch (backupError) {
+      } catch {
         // Backup also failed or doesn't exist, use defaults
         this.settings = {
           songsFolder: null,
           lastOpenedFile: null,
-          windowBounds: null
+          windowBounds: null,
         };
       }
     }

@@ -9,8 +9,7 @@
  * - Supports both Electron (IPC) and Web (REST) environments
  */
 
-import { useState, useEffect, useRef } from 'react';
-import './SongEditor.css';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { getFormatIcon } from '../formatUtils.js';
 import { LyricsEditorCanvas } from './LyricsEditorCanvas.jsx';
 import { LineDetailCanvas } from './LineDetailCanvas.jsx';
@@ -63,6 +62,172 @@ export function SongEditor({ bridge }) {
   // Toast notification state
   const [toast, setToast] = useState(null);
 
+  // Lyrics editing handlers - wrap in useCallback for stable references
+  const handleLineUpdate = useCallback((index, updatedLine) => {
+    setLyricsData((prev) => prev.map((line, i) => (i === index ? updatedLine : line)));
+    setHasChanges(true);
+  }, []);
+
+  const handlePlayLineSection = useCallback(
+    async (startTime, endTime) => {
+      if (!audioElements.length) {
+        console.warn('No audio elements available for playback');
+        return;
+      }
+
+      console.log(`🎵 Playing section: ${startTime}s - ${endTime}s`);
+
+      // Clear end time first to prevent premature stop
+      setPlayingLineEndTime(null);
+
+      // Set audio position
+      audioElements.forEach(({ audio }) => {
+        audio.currentTime = startTime;
+      });
+
+      // Start playback with error handling
+      try {
+        const playPromises = audioElements.map(({ audio }) => audio.play());
+        await Promise.all(playPromises);
+        setIsPlaying(true);
+        console.log('✅ Audio playback started');
+      } catch (error) {
+        console.error('Failed to play audio:', error);
+        setToast({
+          message: `Failed to play audio: ${error.message}`,
+          type: 'error',
+        });
+        return;
+      }
+
+      // Set end time after position has been set
+      // Use a small timeout to ensure currentTime has updated
+      setTimeout(() => {
+        setPlayingLineEndTime(endTime);
+      }, 50);
+    },
+    [audioElements]
+  );
+
+  // Cleanup audio on unmount or song change
+  const cleanupAudio = useCallback(() => {
+    // Stop and cleanup existing audio
+    audioElements.forEach(({ audio, source }) => {
+      audio.pause();
+      audio.currentTime = 0;
+      try {
+        source.disconnect();
+      } catch {
+        // Ignore disconnect errors
+      }
+    });
+
+    if (audioContext) {
+      audioContext.close();
+    }
+
+    setAudioElements([]);
+    setAudioContext(null);
+    setIsPlaying(false);
+  }, [audioElements, audioContext]);
+
+  // Navigate to previous enabled line
+  const selectPreviousEnabledLine = useCallback(() => {
+    if (selectedLineIndex === null || selectedLineIndex === 0) {
+      return; // Already at first line
+    }
+
+    // Find previous enabled line
+    for (let i = selectedLineIndex - 1; i >= 0; i--) {
+      if (!lyricsData[i].disabled) {
+        setSelectedLineIndex(i);
+        return;
+      }
+    }
+  }, [selectedLineIndex, lyricsData]);
+
+  // Navigate to next enabled line
+  const selectNextEnabledLine = useCallback(() => {
+    if (selectedLineIndex === null) {
+      // No selection, select first enabled line
+      for (let i = 0; i < lyricsData.length; i++) {
+        if (!lyricsData[i].disabled) {
+          setSelectedLineIndex(i);
+          return;
+        }
+      }
+      return;
+    }
+
+    if (selectedLineIndex >= lyricsData.length - 1) {
+      return; // Already at last line
+    }
+
+    // Find next enabled line
+    for (let i = selectedLineIndex + 1; i < lyricsData.length; i++) {
+      if (!lyricsData[i].disabled) {
+        setSelectedLineIndex(i);
+        return;
+      }
+    }
+  }, [selectedLineIndex, lyricsData]);
+
+  // Play currently selected line
+  const playCurrentLine = useCallback(() => {
+    if (selectedLineIndex === null || !lyricsData[selectedLineIndex]) {
+      return;
+    }
+
+    const line = lyricsData[selectedLineIndex];
+    const startTime = line.start || line.startTimeSec || 0;
+    const endTime = line.end || line.endTimeSec || startTime + 3;
+    handlePlayLineSection(startTime, endTime);
+  }, [selectedLineIndex, lyricsData, handlePlayLineSection]);
+
+  // Adjust start time of selected line
+  const adjustStartTime = useCallback(
+    (delta) => {
+      if (selectedLineIndex === null || !lyricsData[selectedLineIndex]) {
+        return;
+      }
+
+      const line = lyricsData[selectedLineIndex];
+      const currentStart = line.start || line.startTimeSec || 0;
+      const newStart = Math.max(0, currentStart + delta); // Don't go below 0
+
+      const updatedLine = {
+        ...line,
+        start: newStart,
+        startTimeSec: newStart,
+      };
+
+      handleLineUpdate(selectedLineIndex, updatedLine);
+    },
+    [selectedLineIndex, lyricsData, handleLineUpdate]
+  );
+
+  // Adjust end time of selected line
+  const adjustEndTime = useCallback(
+    (delta) => {
+      if (selectedLineIndex === null || !lyricsData[selectedLineIndex]) {
+        return;
+      }
+
+      const line = lyricsData[selectedLineIndex];
+      const currentEnd = line.end || line.endTimeSec || 0;
+      const newEnd = Math.max(0, currentEnd + delta); // Don't go below 0
+
+      const updatedLine = {
+        ...line,
+        end: newEnd,
+        endTimeSec: newEnd,
+      };
+
+      handleLineUpdate(selectedLineIndex, updatedLine);
+    },
+    [selectedLineIndex, lyricsData, handleLineUpdate]
+  );
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -111,98 +276,17 @@ export function SongEditor({ bridge }) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTab, lyricsData, selectedLineIndex, audioElements]);
-
-  // Navigate to previous enabled line
-  const selectPreviousEnabledLine = () => {
-    if (selectedLineIndex === null || selectedLineIndex === 0) {
-      return; // Already at first line
-    }
-
-    // Find previous enabled line
-    for (let i = selectedLineIndex - 1; i >= 0; i--) {
-      if (!lyricsData[i].disabled) {
-        setSelectedLineIndex(i);
-        return;
-      }
-    }
-  };
-
-  // Navigate to next enabled line
-  const selectNextEnabledLine = () => {
-    if (selectedLineIndex === null) {
-      // No selection, select first enabled line
-      for (let i = 0; i < lyricsData.length; i++) {
-        if (!lyricsData[i].disabled) {
-          setSelectedLineIndex(i);
-          return;
-        }
-      }
-      return;
-    }
-
-    if (selectedLineIndex >= lyricsData.length - 1) {
-      return; // Already at last line
-    }
-
-    // Find next enabled line
-    for (let i = selectedLineIndex + 1; i < lyricsData.length; i++) {
-      if (!lyricsData[i].disabled) {
-        setSelectedLineIndex(i);
-        return;
-      }
-    }
-  };
-
-  // Play currently selected line
-  const playCurrentLine = () => {
-    if (selectedLineIndex === null || !lyricsData[selectedLineIndex]) {
-      return;
-    }
-
-    const line = lyricsData[selectedLineIndex];
-    const startTime = line.start || line.startTimeSec || 0;
-    const endTime = line.end || line.endTimeSec || (startTime + 3);
-    handlePlayLineSection(startTime, endTime);
-  };
-
-  // Adjust start time of selected line
-  const adjustStartTime = (delta) => {
-    if (selectedLineIndex === null || !lyricsData[selectedLineIndex]) {
-      return;
-    }
-
-    const line = lyricsData[selectedLineIndex];
-    const currentStart = line.start || line.startTimeSec || 0;
-    const newStart = Math.max(0, currentStart + delta); // Don't go below 0
-
-    const updatedLine = {
-      ...line,
-      start: newStart,
-      startTimeSec: newStart
-    };
-
-    handleLineUpdate(selectedLineIndex, updatedLine);
-  };
-
-  // Adjust end time of selected line
-  const adjustEndTime = (delta) => {
-    if (selectedLineIndex === null || !lyricsData[selectedLineIndex]) {
-      return;
-    }
-
-    const line = lyricsData[selectedLineIndex];
-    const currentEnd = line.end || line.endTimeSec || 0;
-    const newEnd = Math.max(0, currentEnd + delta); // Don't go below 0
-
-    const updatedLine = {
-      ...line,
-      end: newEnd,
-      endTimeSec: newEnd
-    };
-
-    handleLineUpdate(selectedLineIndex, updatedLine);
-  };
+  }, [
+    activeTab,
+    lyricsData,
+    selectedLineIndex,
+    audioElements,
+    selectPreviousEnabledLine,
+    selectNextEnabledLine,
+    playCurrentLine,
+    adjustStartTime,
+    adjustEndTime,
+  ]);
 
   // Search for songs
   const handleSearch = async (term) => {
@@ -255,30 +339,37 @@ export function SongEditor({ bridge }) {
           });
           setLyricsData(JSON.parse(JSON.stringify(sortedLyrics)));
           setOriginalLyricsData(JSON.parse(JSON.stringify(sortedLyrics)));
-          setSongDuration(result.data.metadata?.duration || result.data.songJson?.duration_sec || 0);
+          setSongDuration(
+            result.data.metadata?.duration || result.data.songJson?.duration_sec || 0
+          );
 
           // Load AI corrections if available
           const kaiRejections = result.data.songJson?.meta?.corrections?.rejected || [];
-          setRejections(kaiRejections.map(rejection => ({
-            line_num: rejection.line,
-            start_time: rejection.start,
-            end_time: rejection.end,
-            old_text: rejection.old,
-            new_text: rejection.new,
-            reason: rejection.reason,
-            retention_rate: rejection.word_retention,
-            min_required: 0.5
-          })));
+          setRejections(
+            kaiRejections.map((rejection) => ({
+              line_num: rejection.line,
+              start_time: rejection.start,
+              end_time: rejection.end,
+              old_text: rejection.old,
+              new_text: rejection.new,
+              reason: rejection.reason,
+              retention_rate: rejection.word_retention,
+              min_required: 0.5,
+            }))
+          );
 
-          const kaiSuggestions = result.data.songJson?.meta?.corrections?.missing_lines_suggested || [];
-          setSuggestions(kaiSuggestions.map(suggestion => ({
-            suggested_text: suggestion.suggested_text,
-            start_time: suggestion.start,
-            end_time: suggestion.end,
-            confidence: suggestion.confidence,
-            reason: suggestion.reason,
-            pitch_activity: suggestion.pitch_activity
-          })));
+          const kaiSuggestions =
+            result.data.songJson?.meta?.corrections?.missing_lines_suggested || [];
+          setSuggestions(
+            kaiSuggestions.map((suggestion) => ({
+              suggested_text: suggestion.suggested_text,
+              start_time: suggestion.start,
+              end_time: suggestion.end,
+              confidence: suggestion.confidence,
+              reason: suggestion.reason,
+              pitch_activity: suggestion.pitch_activity,
+            }))
+          );
 
           setHasChanges(false);
         } else {
@@ -308,7 +399,7 @@ export function SongEditor({ bridge }) {
   };
 
   // Load audio files for KAI songs
-  const loadAudioFiles = async (audioFiles) => {
+  const loadAudioFiles = (audioFiles) => {
     try {
       // Clean up existing audio
       cleanupAudio();
@@ -342,7 +433,7 @@ export function SongEditor({ bridge }) {
           source: source,
           gainNode: gainNode,
           muted: muted,
-          audioData: file.audioData // Keep reference to raw audio data (Electron only)
+          audioData: file.audioData, // Keep reference to raw audio data (Electron only)
         };
       });
 
@@ -350,12 +441,8 @@ export function SongEditor({ bridge }) {
       console.log(`🎵 Loaded ${elements.length} audio sources for playback`);
 
       // Find vocals track and analyze waveform
-      const vocalsFile = audioFiles.find(file =>
-        file.name.toLowerCase().includes('vocal')
-      );
-      const vocalsElement = elements.find(el =>
-        el.name.toLowerCase().includes('vocal')
-      );
+      const vocalsFile = audioFiles.find((file) => file.name.toLowerCase().includes('vocal'));
+      const vocalsElement = elements.find((el) => el.name.toLowerCase().includes('vocal'));
 
       if (vocalsElement) {
         setupAudioPlaybackMonitoring(vocalsElement.audio);
@@ -423,7 +510,10 @@ export function SongEditor({ bridge }) {
           arrayBuffer = rawAudioData;
         } else if (rawAudioData.buffer instanceof ArrayBuffer) {
           // It's a typed array (like Uint8Array or Buffer)
-          arrayBuffer = rawAudioData.buffer.slice(rawAudioData.byteOffset, rawAudioData.byteOffset + rawAudioData.byteLength);
+          arrayBuffer = rawAudioData.buffer.slice(
+            rawAudioData.byteOffset,
+            rawAudioData.byteOffset + rawAudioData.byteLength
+          );
         }
       }
 
@@ -470,28 +560,6 @@ export function SongEditor({ bridge }) {
     }
   };
 
-  // Cleanup audio on unmount or song change
-  const cleanupAudio = () => {
-    // Stop and cleanup existing audio
-    audioElements.forEach(({ audio, source }) => {
-      audio.pause();
-      audio.currentTime = 0;
-      try {
-        source.disconnect();
-      } catch (e) {
-        // Ignore disconnect errors
-      }
-    });
-
-    if (audioContext) {
-      audioContext.close();
-    }
-
-    setAudioElements([]);
-    setAudioContext(null);
-    setIsPlaying(false);
-  };
-
   // Play/pause audio
   const togglePlayback = () => {
     if (!audioElements.length) return;
@@ -507,34 +575,30 @@ export function SongEditor({ bridge }) {
 
   // Toggle mute for individual source
   const toggleMute = (index) => {
-    setAudioElements(prev => prev.map((el, i) => {
-      if (i === index) {
-        const newMuted = !el.muted;
-        el.gainNode.gain.value = newMuted ? 0 : 1;
-        return { ...el, muted: newMuted };
-      }
-      return el;
-    }));
+    setAudioElements((prev) =>
+      prev.map((el, i) => {
+        if (i === index) {
+          const newMuted = !el.muted;
+          el.gainNode.gain.value = newMuted ? 0 : 1;
+          return { ...el, muted: newMuted };
+        }
+        return el;
+      })
+    );
   };
 
   // Cleanup on component unmount
   useEffect(() => {
     return () => cleanupAudio();
-  }, []);
+  }, [cleanupAudio]);
 
   // Show toast notification
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
   };
 
-  // Lyrics editing handlers
-  const handleLineUpdate = (index, updatedLine) => {
-    setLyricsData(prev => prev.map((line, i) => i === index ? updatedLine : line));
-    setHasChanges(true);
-  };
-
   const handleLineDelete = (index) => {
-    setLyricsData(prev => prev.filter((_, i) => i !== index));
+    setLyricsData((prev) => prev.filter((_, i) => i !== index));
     setSelectedLineIndex(null);
     setHasChanges(true);
   };
@@ -544,7 +608,9 @@ export function SongEditor({ bridge }) {
     const nextLine = lyricsData[index + 1];
 
     const currentEndTime = currentLine.end || currentLine.endTimeSec || 0;
-    const nextStartTime = nextLine ? (nextLine.start || nextLine.startTimeSec || currentEndTime + 3) : currentEndTime + 3;
+    const nextStartTime = nextLine
+      ? nextLine.start || nextLine.startTimeSec || currentEndTime + 3
+      : currentEndTime + 3;
 
     const gap = nextStartTime - currentEndTime;
     const usableGap = gap * 0.8;
@@ -555,14 +621,10 @@ export function SongEditor({ bridge }) {
       startTimeSec: currentEndTime + margin,
       end: currentEndTime + margin + usableGap,
       endTimeSec: currentEndTime + margin + usableGap,
-      text: ''
+      text: '',
     };
 
-    setLyricsData(prev => [
-      ...prev.slice(0, index + 1),
-      newLine,
-      ...prev.slice(index + 1)
-    ]);
+    setLyricsData((prev) => [...prev.slice(0, index + 1), newLine, ...prev.slice(index + 1)]);
     setHasChanges(true);
   };
 
@@ -575,7 +637,7 @@ export function SongEditor({ bridge }) {
         startTimeSec: 0,
         end: 3,
         endTimeSec: 3,
-        text: ''
+        text: '',
       };
       setLyricsData([newLine]);
       setHasChanges(true);
@@ -587,17 +649,16 @@ export function SongEditor({ bridge }) {
     // Create a line from 0 to 80% of available space
     const gap = firstLineStart;
     const usableGap = gap * 0.8;
-    const margin = gap * 0.1;
 
     const newLine = {
       start: 0,
       startTimeSec: 0,
       end: usableGap,
       endTimeSec: usableGap,
-      text: ''
+      text: '',
     };
 
-    setLyricsData(prev => [newLine, ...prev]);
+    setLyricsData((prev) => [newLine, ...prev]);
     setHasChanges(true);
   };
 
@@ -606,44 +667,6 @@ export function SongEditor({ bridge }) {
     if (!firstLine) return true;
     const firstLineStart = firstLine.start || firstLine.startTimeSec || 0;
     return firstLineStart >= 0.6;
-  };
-
-  const handlePlayLineSection = async (startTime, endTime) => {
-    if (!audioElements.length) {
-      console.warn('No audio elements available for playback');
-      return;
-    }
-
-    console.log(`🎵 Playing section: ${startTime}s - ${endTime}s`);
-
-    // Clear end time first to prevent premature stop
-    setPlayingLineEndTime(null);
-
-    // Set audio position
-    audioElements.forEach(({ audio }) => {
-      audio.currentTime = startTime;
-    });
-
-    // Start playback with error handling
-    try {
-      const playPromises = audioElements.map(({ audio }) => audio.play());
-      await Promise.all(playPromises);
-      setIsPlaying(true);
-      console.log('✅ Audio playback started');
-    } catch (error) {
-      console.error('Failed to play audio:', error);
-      setToast({
-        message: `Failed to play audio: ${error.message}`,
-        type: 'error'
-      });
-      return;
-    }
-
-    // Set end time after position has been set
-    // Use a small timeout to ensure currentTime has updated
-    setTimeout(() => {
-      setPlayingLineEndTime(endTime);
-    }, 50);
   };
 
   const canAddLineAfter = (index) => {
@@ -661,9 +684,9 @@ export function SongEditor({ bridge }) {
 
   // Handle metadata field changes
   const handleMetadataChange = (field, value) => {
-    setMetadata(prev => ({
+    setMetadata((prev) => ({
       ...prev,
-      [field]: value
+      [field]: value,
     }));
   };
 
@@ -688,9 +711,9 @@ export function SongEditor({ bridge }) {
           ...metadata,
           // Include rejections and suggestions so they can be saved to meta object
           rejections,
-          suggestions
+          suggestions,
         },
-        ...(songData.format === 'kai' && { lyrics: sortedLyrics })
+        ...(songData.format === 'kai' && { lyrics: sortedLyrics }),
       };
 
       const result = await bridge.saveSongEdits(updates);
@@ -746,7 +769,7 @@ export function SongEditor({ bridge }) {
   const handleExportLyrics = () => {
     if (!lyricsData || lyricsData.length === 0) return;
 
-    const lyricsText = lyricsData.map(line => line.text || '').join('\n');
+    const lyricsText = lyricsData.map((line) => line.text || '').join('\n');
     const blob = new Blob([lyricsText], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
 
@@ -785,8 +808,10 @@ export function SongEditor({ bridge }) {
 
       // Match by timing
       if (rejection.start_time !== undefined && rejection.end_time !== undefined) {
-        if (Math.abs(lineStart - rejection.start_time) < 0.1 &&
-            Math.abs(lineEnd - rejection.end_time) < 0.1) {
+        if (
+          Math.abs(lineStart - rejection.start_time) < 0.1 &&
+          Math.abs(lineEnd - rejection.end_time) < 0.1
+        ) {
           targetLineIndex = i;
           break;
         }
@@ -808,10 +833,10 @@ export function SongEditor({ bridge }) {
     if (targetLineIndex >= 0 && targetLineIndex < lyricsData.length) {
       // Update the lyric text with the proposed text
       const updatedLine = { ...lyricsData[targetLineIndex], text: rejection.new_text };
-      setLyricsData(prev => prev.map((line, i) => i === targetLineIndex ? updatedLine : line));
+      setLyricsData((prev) => prev.map((line, i) => (i === targetLineIndex ? updatedLine : line)));
 
       // Remove the rejection from the list
-      setRejections(prev => prev.filter((_, i) => i !== rejectionIndex));
+      setRejections((prev) => prev.filter((_, i) => i !== rejectionIndex));
       setHasChanges(true);
       showToast('Accepted proposed text', 'success');
     } else {
@@ -821,7 +846,7 @@ export function SongEditor({ bridge }) {
 
   // Handle rejection deletion
   const handleDeleteRejection = (rejectionIndex) => {
-    setRejections(prev => prev.filter((_, i) => i !== rejectionIndex));
+    setRejections((prev) => prev.filter((_, i) => i !== rejectionIndex));
     setHasChanges(true);
   };
 
@@ -849,55 +874,57 @@ export function SongEditor({ bridge }) {
       startTimeSec: suggestion.start_time,
       end: suggestion.end_time,
       endTimeSec: suggestion.end_time,
-      text: suggestion.suggested_text
+      text: suggestion.suggested_text,
     };
 
     // Insert the new line at the correct position
-    setLyricsData(prev => [
+    setLyricsData((prev) => [
       ...prev.slice(0, insertionIndex),
       newLine,
-      ...prev.slice(insertionIndex)
+      ...prev.slice(insertionIndex),
     ]);
 
     // Remove the suggestion from the list
-    setSuggestions(prev => prev.filter((_, i) => i !== suggestionIndex));
+    setSuggestions((prev) => prev.filter((_, i) => i !== suggestionIndex));
     setHasChanges(true);
     showToast('Added suggested line', 'success');
   };
 
   // Handle suggestion deletion
   const handleDeleteSuggestion = (suggestionIndex) => {
-    setSuggestions(prev => prev.filter((_, i) => i !== suggestionIndex));
+    setSuggestions((prev) => prev.filter((_, i) => i !== suggestionIndex));
     setHasChanges(true);
   };
 
   return (
-    <div className="song-editor">
+    <div className="flex flex-col h-full overflow-hidden bg-gray-50 dark:bg-gray-900 p-4">
       {!loadedSong ? (
         // Search view
-        <div className="editor-search-view">
-          <div className="editor-search-bar">
+        <div className="flex flex-col gap-6 max-w-[800px] mx-auto w-full">
+          <div className="relative flex items-center">
             <input
               type="text"
+              className="w-full px-5 py-4 bg-white dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white text-base transition-colors focus:outline-none focus:border-blue-600"
               placeholder="Search by title, artist, or album..."
               value={searchTerm}
               onChange={(e) => handleSearch(e.target.value)}
-              className="editor-search-input"
             />
-            {isSearching && <span className="editor-search-spinner">🔍</span>}
+            {isSearching && <span className="absolute right-5 text-xl animate-spin">🔍</span>}
 
             {searchResults.length > 0 && (
-              <div className="editor-search-dropdown">
+              <div className="absolute top-full left-0 right-0 max-h-[400px] overflow-y-auto bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg z-[100] mt-1">
                 {searchResults.map((song, index) => (
                   <div
                     key={index}
-                    className="search-dropdown-item"
+                    className="flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors border-b border-gray-200 dark:border-gray-700 last:border-b-0 hover:bg-gray-100 dark:hover:bg-gray-700"
                     onClick={() => handleLoadSong(song)}
                   >
-                    <span className="search-format-icon">{getFormatIcon(song.format)}</span>
-                    <div className="search-dropdown-info">
-                      <div className="search-dropdown-title">{song.title}</div>
-                      <div className="search-dropdown-meta">
+                    <span className="text-xl flex-shrink-0">{getFormatIcon(song.format)}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[15px] font-semibold text-gray-900 dark:text-white mb-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
+                        {song.title}
+                      </div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis">
                         {song.artist} {song.album && `• ${song.album}`}
                       </div>
                     </div>
@@ -908,47 +935,62 @@ export function SongEditor({ bridge }) {
           </div>
 
           {searchTerm && !isSearching && searchResults.length === 0 && (
-            <div className="editor-empty-state">
-              <div className="empty-icon">🔍</div>
-              <div className="empty-message">No songs found</div>
-              <div className="empty-detail">Try a different search term</div>
+            <div className="flex flex-col items-center justify-center p-16 text-center">
+              <div className="text-6xl mb-4 opacity-50">🔍</div>
+              <div className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                No songs found
+              </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                Try a different search term
+              </div>
             </div>
           )}
 
           {!searchTerm && (
-            <div className="editor-empty-state">
-              <div className="empty-icon">🎵</div>
-              <div className="empty-message">Search for a song to get started</div>
-              <div className="empty-detail">You can edit metadata and lyrics for any song in your library</div>
+            <div className="flex flex-col items-center justify-center p-16 text-center">
+              <div className="text-6xl mb-4 opacity-50">🎵</div>
+              <div className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                Search for a song to get started
+              </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                You can edit metadata and lyrics for any song in your library
+              </div>
             </div>
           )}
         </div>
       ) : (
         // Edit view
-        <div className="editor-edit-view">
-          <div className="editor-header">
-            <div className="editor-title-section">
-              <h2>{loadedSong.title}</h2>
-              <p className="editor-subtitle">
+        <div className="flex flex-col gap-3 h-full overflow-hidden">
+          <div className="flex items-center justify-between gap-4 flex-shrink-0">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg font-semibold m-0 text-gray-900 dark:text-white whitespace-nowrap overflow-hidden text-ellipsis">
+                {loadedSong.title}
+              </h2>
+              <p className="text-xs text-gray-600 dark:text-gray-400 m-0 mt-0.5">
                 {loadedSong.artist} • {songData.format?.toUpperCase()}
               </p>
             </div>
-            <div className="editor-actions">
-              <button onClick={handleAddToQueue} className="btn btn-secondary">
-                <span className="material-icons">playlist_add</span>
+            <div className="flex gap-2 flex-shrink-0">
+              <button
+                onClick={handleAddToQueue}
+                className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-sm transition-colors hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                <span className="material-icons text-lg">playlist_add</span>
                 Add to Queue
               </button>
-              <button onClick={handleClose} className="btn btn-secondary">
-                <span className="material-icons">close</span>
+              <button
+                onClick={handleClose}
+                className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-sm transition-colors hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                <span className="material-icons text-lg">close</span>
                 Close
               </button>
               <button
                 onClick={handleSave}
-                className="btn btn-primary"
+                className={`flex items-center gap-1.5 px-3 py-2 rounded text-white cursor-pointer text-sm transition-colors ${hasChanges ? 'bg-blue-600 border-blue-600 hover:bg-blue-700' : 'bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600'} disabled:opacity-50 disabled:cursor-not-allowed`}
                 disabled={isSaving}
-                style={hasChanges ? { background: '#007acc' } : {}}
               >
-                <span className="material-icons">save</span>
+                <span className="material-icons text-lg">save</span>
                 {isSaving ? 'Saving...' : hasChanges ? 'Save*' : 'Save'}
               </button>
             </div>
@@ -956,15 +998,15 @@ export function SongEditor({ bridge }) {
 
           {/* Tab navigation for KAI files */}
           {songData.format === 'kai' && (
-            <div className="editor-tabs">
+            <div className="flex gap-1 border-b-2 border-gray-200 dark:border-gray-700 pb-0">
               <button
-                className={`editor-tab ${activeTab === 'lyrics' ? 'active' : ''}`}
+                className={`px-6 py-3 bg-transparent border-none border-b-[3px] font-semibold text-[15px] cursor-pointer transition-all -mb-0.5 ${activeTab === 'lyrics' ? 'text-blue-600 border-b-blue-600' : 'text-gray-600 dark:text-gray-400 border-b-transparent hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                 onClick={() => setActiveTab('lyrics')}
               >
                 Lyrics
               </button>
               <button
-                className={`editor-tab ${activeTab === 'metadata' ? 'active' : ''}`}
+                className={`px-6 py-3 bg-transparent border-none border-b-[3px] font-semibold text-[15px] cursor-pointer transition-all -mb-0.5 ${activeTab === 'metadata' ? 'text-blue-600 border-b-blue-600' : 'text-gray-600 dark:text-gray-400 border-b-transparent hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                 onClick={() => setActiveTab('metadata')}
               >
                 Metadata
@@ -974,53 +1016,71 @@ export function SongEditor({ bridge }) {
 
           {/* Metadata form */}
           {(activeTab === 'metadata' || songData.format !== 'kai') && (
-            <div className="editor-form">
-              <h3>Metadata</h3>
-              <div className="form-grid">
-                <div className="form-field">
-                  <label>Title</label>
+            <div className="flex flex-col gap-6 overflow-y-auto flex-1 pb-6">
+              <h3 className="text-lg font-semibold m-0 text-gray-900 dark:text-white">Metadata</h3>
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(250px,1fr))] gap-5">
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                    Title
+                  </label>
                   <input
                     type="text"
+                    className="px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white text-[15px] transition-colors focus:outline-none focus:border-blue-600"
                     value={metadata.title}
                     onChange={(e) => handleMetadataChange('title', e.target.value)}
                   />
                 </div>
-                <div className="form-field">
-                  <label>Artist</label>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                    Artist
+                  </label>
                   <input
                     type="text"
+                    className="px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white text-[15px] transition-colors focus:outline-none focus:border-blue-600"
                     value={metadata.artist}
                     onChange={(e) => handleMetadataChange('artist', e.target.value)}
                   />
                 </div>
-                <div className="form-field">
-                  <label>Album</label>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                    Album
+                  </label>
                   <input
                     type="text"
+                    className="px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white text-[15px] transition-colors focus:outline-none focus:border-blue-600"
                     value={metadata.album}
                     onChange={(e) => handleMetadataChange('album', e.target.value)}
                   />
                 </div>
-                <div className="form-field">
-                  <label>Year</label>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                    Year
+                  </label>
                   <input
                     type="text"
+                    className="px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white text-[15px] transition-colors focus:outline-none focus:border-blue-600"
                     value={metadata.year}
                     onChange={(e) => handleMetadataChange('year', e.target.value)}
                   />
                 </div>
-                <div className="form-field">
-                  <label>Genre</label>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                    Genre
+                  </label>
                   <input
                     type="text"
+                    className="px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white text-[15px] transition-colors focus:outline-none focus:border-blue-600"
                     value={metadata.genre}
                     onChange={(e) => handleMetadataChange('genre', e.target.value)}
                   />
                 </div>
-                <div className="form-field">
-                  <label>Key</label>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                    Key
+                  </label>
                   <input
                     type="text"
+                    className="px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white text-[15px] transition-colors focus:outline-none focus:border-blue-600"
                     value={metadata.key}
                     onChange={(e) => handleMetadataChange('key', e.target.value)}
                   />
@@ -1054,20 +1114,32 @@ export function SongEditor({ bridge }) {
 
               {/* Audio playback controls */}
               {audioElements.length > 0 && (
-                <div className="audio-playback-controls">
-                  <button onClick={togglePlayback} className="btn btn-primary">
-                    <span className="material-icons">{isPlaying ? 'pause' : 'play_arrow'}</span>
+                <div className="flex items-center gap-2 px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded flex-shrink-0">
+                  <button
+                    onClick={togglePlayback}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 border-blue-600 rounded text-white cursor-pointer text-xs transition-colors hover:bg-blue-700"
+                  >
+                    <span className="material-icons text-base">
+                      {isPlaying ? 'pause' : 'play_arrow'}
+                    </span>
                     {isPlaying ? 'Pause' : 'Play'}
                   </button>
-                  <div className="audio-mixer">
+                  <div className="flex gap-1.5 flex-wrap flex-1 items-center">
                     {audioElements.map((el, index) => (
-                      <div key={index} className="mixer-channel">
-                        <span className="channel-name">{el.name}</span>
+                      <div
+                        key={index}
+                        className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
+                      >
+                        <span className="text-[11px] font-semibold text-gray-900 dark:text-white min-w-[45px]">
+                          {el.name}
+                        </span>
                         <button
                           onClick={() => toggleMute(index)}
-                          className={`btn btn-sm ${el.muted ? 'btn-danger' : 'btn-success'}`}
+                          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] cursor-pointer transition-colors ${el.muted ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-green-600 text-white hover:bg-green-700'}`}
                         >
-                          <span className="material-icons">{el.muted ? 'volume_off' : 'volume_up'}</span>
+                          <span className="material-icons text-xs">
+                            {el.muted ? 'volume_off' : 'volume_up'}
+                          </span>
                           {el.muted ? 'Muted' : 'On'}
                         </button>
                       </div>
@@ -1075,38 +1147,42 @@ export function SongEditor({ bridge }) {
                   </div>
                   <button
                     onClick={handleExportLyrics}
-                    className="btn btn-secondary"
+                    className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={!lyricsData || lyricsData.length === 0}
                     title="Export lyrics as text file"
                   >
-                    <span className="material-icons">download</span>
+                    <span className="material-icons text-base">download</span>
                     Export
                   </button>
                   <button
                     onClick={handleResetLyrics}
-                    className="btn btn-secondary"
+                    className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={!hasChanges}
                     title="Reset to original lyrics"
                   >
-                    <span className="material-icons">restore</span>
+                    <span className="material-icons text-base">restore</span>
                     Reset
                   </button>
                   <button
                     onClick={handleAddLineAtStart}
-                    className="btn"
+                    className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={!canAddLineAtStart()}
-                    title={canAddLineAtStart() ? "Add line at beginning" : "Not enough space (need 0.6s gap)"}
+                    title={
+                      canAddLineAtStart()
+                        ? 'Add line at beginning'
+                        : 'Not enough space (need 0.6s gap)'
+                    }
                   >
-                    <span className="material-icons">add</span>
+                    <span className="material-icons text-base">add</span>
                     Add First Line
                   </button>
                 </div>
               )}
 
               {/* Scrollable container for lyrics and corrections */}
-              <div className="lyrics-editor-scroll-container">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
                 {/* Lyrics lines */}
-                <div className="lyrics-lines">
+                <div className="flex flex-col gap-0 p-3 overflow-y-auto flex-1">
                   {lyricsData && lyricsData.length > 0 ? (
                     lyricsData.map((line, index) => (
                       <LyricLine
@@ -1123,7 +1199,7 @@ export function SongEditor({ bridge }) {
                       />
                     ))
                   ) : (
-                    <div className="no-lyrics-message">
+                    <div className="text-center p-10 text-gray-500 dark:text-gray-400 text-base">
                       No lyrics available. Load a KAI file with lyrics to edit.
                     </div>
                   )}
@@ -1131,8 +1207,10 @@ export function SongEditor({ bridge }) {
 
                 {/* AI Corrections Section */}
                 {(rejections.length > 0 || suggestions.length > 0) && (
-                  <div className="ai-corrections-section">
-                    <h3>AI Corrections & Suggestions</h3>
+                  <div className="mb-6 p-4 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md">
+                    <h3 className="text-base font-semibold m-0 mb-4 text-gray-900 dark:text-white">
+                      AI Corrections & Suggestions
+                    </h3>
 
                     {rejections.map((rejection, rejectionIndex) => (
                       <LyricRejection
@@ -1162,13 +1240,7 @@ export function SongEditor({ bridge }) {
       )}
 
       {/* Toast notification */}
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
 }

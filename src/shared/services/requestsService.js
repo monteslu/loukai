@@ -15,13 +15,13 @@ export function getRequests(webServer) {
     return {
       success: true,
       requests: webServer.songRequests,
-      settings: webServer.settings
+      settings: webServer.settings,
     };
   } catch (error) {
     console.error('Error getting requests:', error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }
@@ -34,7 +34,7 @@ export function getRequests(webServer) {
  */
 export async function approveRequest(webServer, requestId) {
   try {
-    const request = webServer.songRequests.find(r => r.id === requestId);
+    const request = webServer.songRequests.find((r) => r.id === requestId);
 
     if (!request) {
       return { success: false, error: 'Request not found' };
@@ -59,7 +59,7 @@ export async function approveRequest(webServer, requestId) {
     console.error('Error approving request:', error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }
@@ -70,9 +70,9 @@ export async function approveRequest(webServer, requestId) {
  * @param {number} requestId - ID of the request to reject
  * @returns {Object} Result with success status
  */
-export async function rejectRequest(webServer, requestId) {
+export function rejectRequest(webServer, requestId) {
   try {
-    const request = webServer.songRequests.find(r => r.id === requestId);
+    const request = webServer.songRequests.find((r) => r.id === requestId);
 
     if (!request) {
       return { success: false, error: 'Request not found' };
@@ -95,7 +95,7 @@ export async function rejectRequest(webServer, requestId) {
     console.error('Error rejecting request:', error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }
@@ -112,7 +112,7 @@ export function addRequest(webServer, request) {
       ...request,
       id: Date.now(),
       timestamp: new Date().toISOString(),
-      status: 'pending'
+      status: 'pending',
     };
 
     webServer.songRequests.push(newRequest);
@@ -125,13 +125,13 @@ export function addRequest(webServer, request) {
 
     return {
       success: true,
-      request: newRequest
+      request: newRequest,
     };
   } catch (error) {
     console.error('Error adding request:', error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }
@@ -149,7 +149,7 @@ export function clearRequests(webServer) {
     console.error('Error clearing requests:', error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }

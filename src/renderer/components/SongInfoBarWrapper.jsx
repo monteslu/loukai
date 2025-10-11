@@ -19,8 +19,9 @@ export function SongInfoBarWrapper({ bridge }) {
     });
 
     // Fetch initial state
-    bridge.getQueue?.()
-      .then(data => {
+    bridge
+      .getQueue?.()
+      .then((data) => {
         if (data.currentSong) {
           setCurrentSong(data.currentSong);
         }
@@ -28,13 +29,14 @@ export function SongInfoBarWrapper({ bridge }) {
       .catch(console.error);
 
     // Load sidebar state
-    bridge.api?.settings.get('sidebarCollapsed', false)
-      .then(collapsed => {
+    bridge.api?.settings
+      .get('sidebarCollapsed', false)
+      .then((collapsed) => {
         setSidebarCollapsed(collapsed);
         // Apply initial state to sidebar
-        const sidebar = document.querySelector('.sidebar');
+        const sidebar = document.getElementById('app-sidebar');
         if (sidebar && collapsed) {
-          sidebar.classList.add('collapsed');
+          sidebar.classList.add('-ml-80', 'w-0', 'p-0', 'border-0');
         }
       })
       .catch(console.error);
@@ -43,17 +45,17 @@ export function SongInfoBarWrapper({ bridge }) {
   }, [bridge]);
 
   const handleMenuClick = async () => {
-    const sidebar = document.querySelector('.sidebar');
+    const sidebar = document.getElementById('app-sidebar');
     if (!sidebar) return;
 
     const newCollapsedState = !sidebarCollapsed;
     setSidebarCollapsed(newCollapsedState);
 
-    // Toggle CSS class
+    // Toggle Tailwind classes
     if (newCollapsedState) {
-      sidebar.classList.add('collapsed');
+      sidebar.classList.add('-ml-80', 'w-0', 'p-0', 'border-0');
     } else {
-      sidebar.classList.remove('collapsed');
+      sidebar.classList.remove('-ml-80', 'w-0', 'p-0', 'border-0');
     }
 
     // Save state

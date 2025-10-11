@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { getFormatIcon, formatDuration } from '../../shared/formatUtils.js';
 import { Toast } from '../../shared/components/Toast.jsx';
-import './SongRequestPage.css';
+import { ThemeToggle } from '../../shared/components/ThemeToggle.jsx';
 
 export function SongRequestPage() {
   const [userName, setUserName] = useState(null);
@@ -56,13 +56,13 @@ export function SongRequestPage() {
     if (!userName) return;
 
     fetch('/api/info')
-      .then(res => res.json())
-      .then(info => {
+      .then((res) => res.json())
+      .then((info) => {
         setServerName(info.serverName || 'Loukai Karaoke');
         setAllowRequests(info.allowRequests !== false);
         document.title = `${info.serverName || 'Karaoke'} - Song Requests`;
       })
-      .catch(err => console.error('Failed to load server info:', err));
+      .catch((err) => console.error('Failed to load server info:', err));
   }, [userName]);
 
   // Load available letters when user is set
@@ -70,8 +70,8 @@ export function SongRequestPage() {
     if (!userName) return;
 
     fetch('/api/letters')
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => res.json())
+      .then((data) => {
         const letters = data.letters || [];
         setAvailableLetters(letters);
         const firstLetter = letters.includes('A') ? 'A' : letters[0];
@@ -79,7 +79,7 @@ export function SongRequestPage() {
           loadLetterPage(firstLetter, 1);
         }
       })
-      .catch(err => console.error('Failed to load letters:', err));
+      .catch((err) => console.error('Failed to load letters:', err));
   }, [userName]);
 
   // Load queue periodically
@@ -88,9 +88,9 @@ export function SongRequestPage() {
 
     const loadQueue = () => {
       fetch('/api/queue')
-        .then(res => res.json())
-        .then(data => setQueue(data.queue || []))
-        .catch(err => console.error('Failed to load queue:', err));
+        .then((res) => res.json())
+        .then((data) => setQueue(data.queue || []))
+        .catch((err) => console.error('Failed to load queue:', err));
     };
 
     loadQueue();
@@ -136,7 +136,9 @@ export function SongRequestPage() {
 
   const loadLetterPage = async (letter, page) => {
     try {
-      const res = await fetch(`/api/songs/letter/${encodeURIComponent(letter)}?page=${page}&limit=50`);
+      const res = await fetch(
+        `/api/songs/letter/${encodeURIComponent(letter)}?page=${page}&limit=50`
+      );
       const data = await res.json();
 
       setSongs(data.songs || []);
@@ -174,8 +176,8 @@ export function SongRequestPage() {
         body: JSON.stringify({
           songId: selectedSong.path,
           requesterName: userName,
-          message: requestMessage
-        })
+          message: requestMessage,
+        }),
       });
 
       if (res.ok) {
@@ -249,13 +251,15 @@ export function SongRequestPage() {
   // Name prompt modal
   if (!userName) {
     return (
-      <div className="name-prompt-overlay">
-        <div className="name-prompt-modal">
-          <div className="name-prompt-title">Welcome to Karaoke!</div>
-          <div className="name-prompt-subtitle">Please enter your name to request songs</div>
+      <div className="fixed top-0 left-0 w-full h-full bg-black/90 flex items-center justify-center z-[1000]">
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-8 max-w-md w-[90%] text-center border border-gray-300 dark:border-gray-600">
+          <div className="text-2xl mb-4 text-gray-900 dark:text-white">Welcome to Karaoke!</div>
+          <div className="text-gray-600 dark:text-gray-300 mb-8 leading-relaxed">
+            Please enter your name to request songs
+          </div>
           <input
             type="text"
-            className="name-input"
+            className="w-full px-3 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-white text-base mb-6 focus:outline-none focus:border-blue-600 dark:focus:border-blue-500"
             placeholder="Your name..."
             maxLength={50}
             value={nameInput}
@@ -264,7 +268,7 @@ export function SongRequestPage() {
             autoFocus
           />
           <button
-            className="name-submit-btn"
+            className="bg-blue-600 text-white border-none px-6 py-3 rounded-lg text-base cursor-pointer w-full hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
             disabled={!nameInput.trim()}
             onClick={handleNameSubmit}
           >
@@ -277,59 +281,79 @@ export function SongRequestPage() {
 
   // Main content
   return (
-    <div className="song-request-page">
-      <div className="header">
-        <h1>{serverName}</h1>
-        <div className="subtitle">Request your favorite songs!</div>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
+      <div className="bg-white dark:bg-gray-800 py-8 px-8 text-center border-b-2 border-blue-600 dark:border-blue-500 relative">
+        <div className="absolute top-4 right-4">
+          <ThemeToggle />
+        </div>
+        <h1 className="m-0 mb-2 text-4xl text-gray-900 dark:text-white">{serverName}</h1>
+        <div className="text-gray-600 dark:text-gray-400 text-lg">Request your favorite songs!</div>
       </div>
 
-      <div className="container">
+      <div className="max-w-6xl mx-auto p-5">
         {/* Quick Search */}
-        <div className="quick-search-section" ref={quickSearchRef}>
-          <div className="quick-search-title">
+        <div
+          className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-5 border border-gray-200 dark:border-gray-700 relative"
+          ref={quickSearchRef}
+        >
+          <div className="text-base mb-2 flex items-center gap-2 text-gray-900 dark:text-white">
             <span className="material-icons">search</span>
             <span>Quick Song Search</span>
           </div>
           <input
             type="text"
-            className="quick-search-input"
+            className="w-full px-3 py-3 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md text-gray-900 dark:text-white text-base focus:outline-none focus:border-blue-600 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-600"
             placeholder="Search songs to request..."
             value={quickSearchTerm}
             onChange={(e) => setQuickSearchTerm(e.target.value)}
             onFocus={() => quickSearchTerm && setShowQuickSearch(true)}
           />
           {showQuickSearch && (
-            <div className="quick-search-dropdown">
+            <div className="absolute top-full left-4 right-4 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 border-t-0 rounded-b-md max-h-[300px] overflow-y-auto z-[1000] -mt-px">
               {quickSearchResults.length === 0 ? (
-                <div className="no-search-message">No songs found</div>
+                <div className="p-5 text-center text-gray-500 dark:text-gray-400">
+                  No songs found
+                </div>
               ) : (
-                quickSearchResults.slice(0, 8).map(song => (
+                quickSearchResults.slice(0, 8).map((song) => (
                   <div
                     key={song.path}
-                    className="quick-search-item"
+                    className="p-3.5 cursor-pointer border-b border-gray-200 dark:border-gray-600 flex justify-between items-start gap-3 transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 last:border-b-0"
                     onClick={() => {
                       handleRequestSong(song);
                       setShowQuickSearch(false);
                       setQuickSearchTerm('');
                     }}
                   >
-                    <div className="quick-search-info">
-                      <div className="quick-search-header">
-                        <div className="quick-search-title">
-                          <span className="format-icon">{getFormatIcon(song.format)}</span>
+                    <div className="flex-1 flex flex-col items-start">
+                      <div className="flex items-baseline gap-3 flex-wrap">
+                        <div className="font-semibold text-[0.95rem] inline-flex items-center gap-2 text-gray-900 dark:text-white">
+                          <span className="text-xs">{getFormatIcon(song.format)}</span>
                           {song.title}
                         </div>
-                        <div className="quick-search-artist">{song.artist}</div>
+                        <div className="text-[0.9rem] text-gray-600 dark:text-gray-400">
+                          {song.artist}
+                        </div>
                       </div>
                       {(song.album || song.year || song.genre) && (
-                        <div className="quick-search-metadata">
+                        <div className="text-[0.82rem] text-gray-500 dark:text-gray-500 mt-1">
                           {song.album && <span>{song.album}</span>}
-                          {song.year && <span>{song.year}</span>}
-                          {song.genre && <span>{song.genre}</span>}
+                          {song.year && (
+                            <span className="before:content-['_•_'] before:text-gray-400 dark:before:text-gray-600">
+                              {song.year}
+                            </span>
+                          )}
+                          {song.genre && (
+                            <span className="before:content-['_•_'] before:text-gray-400 dark:before:text-gray-600">
+                              {song.genre}
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>
-                    <span className="song-duration">{formatDuration(song.duration)}</span>
+                    <span className="text-gray-500 dark:text-gray-400 text-[0.9rem] font-medium">
+                      {formatDuration(song.duration)}
+                    </span>
                   </div>
                 ))
               )}
@@ -338,22 +362,30 @@ export function SongRequestPage() {
         </div>
 
         {/* Songs Section */}
-        <div className="songs-section">
-          <div className="section-header">
-            <div className="section-title">Available Songs</div>
-            <div className="songs-count">{songs.length} songs</div>
+        <div className="bg-white dark:bg-gray-800 rounded-lg p-5 mb-5 border border-gray-200 dark:border-gray-700">
+          <div className="flex justify-between items-center mb-4">
+            <div className="text-xl font-semibold text-gray-900 dark:text-white">
+              Available Songs
+            </div>
+            <div className="text-gray-500 dark:text-gray-400 text-sm">{songs.length} songs</div>
           </div>
 
           {/* Alphabet Navigation */}
-          <div className="alphabet-nav">
-            <div className="alphabet-title">Browse by Artist:</div>
-            <div className="alphabet-buttons">
-              {allLetters.map(letter => {
+          <div className="mb-4">
+            <div className="text-sm text-gray-600 dark:text-gray-300 mb-2">Browse by Artist:</div>
+            <div className="flex flex-wrap gap-1.5">
+              {allLetters.map((letter) => {
                 const hasContent = availableLetters.includes(letter);
                 return (
                   <button
                     key={letter}
-                    className={`alphabet-btn ${currentLetter === letter ? 'active' : ''} ${!hasContent ? 'disabled' : ''}`}
+                    className={`px-3 py-2 rounded border transition-all text-sm min-w-[40px] ${
+                      currentLetter === letter
+                        ? 'bg-blue-600 dark:bg-blue-500 border-blue-600 dark:border-blue-500 text-white'
+                        : hasContent
+                          ? 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600 hover:border-blue-600 dark:hover:border-blue-500'
+                          : 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white opacity-30 cursor-not-allowed'
+                    }`}
                     disabled={!hasContent}
                     onClick={() => loadLetterPage(letter, 1)}
                   >
@@ -365,41 +397,55 @@ export function SongRequestPage() {
           </div>
 
           {/* Songs List */}
-          <div className="songs-list">
+          <div className="max-h-[500px] overflow-y-auto">
             {songs.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon material-icons">library_music</div>
+              <div className="text-center py-16 px-5 text-gray-500 dark:text-gray-500">
+                <div className="material-icons text-6xl mb-5 opacity-30">library_music</div>
                 <div>No songs found</div>
               </div>
             ) : (
-              songs.map(song => (
+              songs.map((song) => (
                 <div
                   key={song.path}
-                  className="song-item"
+                  className="flex justify-between items-start p-4 bg-gray-100 dark:bg-gray-700 rounded-md mb-2 transition-colors gap-4"
                 >
-                  <div className="song-info">
-                    <div className="song-header">
-                      <div className="song-title">
+                  <div className="flex-1 flex flex-col items-start">
+                    <div className="flex items-baseline gap-3 flex-wrap">
+                      <div className="font-semibold text-base text-gray-900 dark:text-white inline-flex items-center gap-2">
                         {getFormatIcon(song.format)} {song.title}
                       </div>
-                      <div className="song-artist">{song.artist}</div>
+                      <div className="text-[0.95rem] text-gray-600 dark:text-gray-400">
+                        {song.artist}
+                      </div>
                     </div>
                     {(song.album || song.year || song.genre) && (
-                      <div className="song-metadata">
+                      <div className="text-[0.85rem] text-gray-500 dark:text-gray-500 mt-1">
                         {song.album && <span>{song.album}</span>}
-                        {song.year && <span>{song.year}</span>}
-                        {song.genre && <span>{song.genre}</span>}
+                        {song.year && (
+                          <span className="before:content-['_•_'] before:text-gray-400 dark:before:text-gray-600">
+                            {song.year}
+                          </span>
+                        )}
+                        {song.genre && (
+                          <span className="before:content-['_•_'] before:text-gray-400 dark:before:text-gray-600">
+                            {song.genre}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
-                  <div className="song-actions">
-                    <span className="song-duration">{formatDuration(song.duration)}</span>
+                  <div className="flex items-start gap-4 flex-shrink-0 pt-0.5">
+                    <span className="text-gray-500 dark:text-gray-400 text-sm font-medium min-w-[45px] text-right">
+                      {formatDuration(song.duration)}
+                    </span>
                     <button
-                      className="request-btn"
+                      className="px-5 py-2.5 bg-blue-600 dark:bg-blue-500 border-none rounded-md text-white cursor-pointer flex items-center gap-1.5 font-medium text-[0.95rem] transition-all whitespace-nowrap hover:bg-blue-700 dark:hover:bg-blue-600 hover:-translate-y-px disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-50"
                       disabled={!allowRequests}
                       onClick={() => handleRequestSong(song)}
                     >
-                      <span className="material-icons" style={{ fontSize: 18 }}>add</span>
+                      <span className="material-icons" style={{ fontSize: 18 }}>
+                        add
+                      </span>
                       Request
                     </button>
                   </div>
@@ -410,19 +456,22 @@ export function SongRequestPage() {
 
           {/* Page Navigation */}
           {totalPages > 1 && (
-            <div className="page-nav">
+            <div className="flex justify-center items-center gap-2 mt-4 p-3 bg-gray-100 dark:bg-gray-700 rounded-md flex-wrap">
               <button
-                className="page-nav-btn"
+                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-sm transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 hover:border-blue-600 dark:hover:border-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
                 onClick={() => loadLetterPage(currentLetter, currentPage - 1)}
                 disabled={currentPage === 1}
               >
                 Previous
               </button>
-              <div className="page-numbers">
+              <div className="flex gap-1 items-center">
                 {getPageNumbers().map((page, index) => {
                   if (page === '...') {
                     return (
-                      <span key={`ellipsis-${index}`} className="page-ellipsis">
+                      <span
+                        key={`ellipsis-${index}`}
+                        className="px-2 text-gray-500 dark:text-gray-400 text-sm"
+                      >
                         ...
                       </span>
                     );
@@ -430,7 +479,11 @@ export function SongRequestPage() {
                   return (
                     <button
                       key={page}
-                      className={`page-number ${page === currentPage ? 'active' : ''}`}
+                      className={`px-3 py-2 border rounded cursor-pointer text-sm min-w-[40px] transition-all ${
+                        page === currentPage
+                          ? 'bg-blue-600 dark:bg-blue-500 border-blue-600 dark:border-blue-500 font-semibold text-white'
+                          : 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600 hover:border-blue-600 dark:hover:border-blue-500'
+                      }`}
                       onClick={() => loadLetterPage(currentLetter, page)}
                     >
                       {page}
@@ -438,9 +491,11 @@ export function SongRequestPage() {
                   );
                 })}
               </div>
-              <span className="page-info">({songs.length} songs)</span>
+              <span className="text-gray-500 dark:text-gray-400 text-[0.85rem] ml-2">
+                ({songs.length} songs)
+              </span>
               <button
-                className="page-nav-btn"
+                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-sm transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 hover:border-blue-600 dark:hover:border-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
                 onClick={() => loadLetterPage(currentLetter, currentPage + 1)}
                 disabled={currentPage === totalPages}
               >
@@ -451,30 +506,39 @@ export function SongRequestPage() {
         </div>
 
         {/* Queue Section */}
-        <div className="queue-section">
-          <div className="queue-title">
+        <div className="bg-white dark:bg-gray-800 rounded-lg p-5 border border-gray-200 dark:border-gray-700">
+          <div className="text-xl font-semibold mb-4 flex items-center gap-2 text-gray-900 dark:text-white">
             <span className="material-icons">queue_music</span>
             Queue ({queue.length})
           </div>
-          <ul className="queue-list">
+          <ul className="list-none p-0 m-0">
             {queue.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon material-icons">queue_music</div>
+              <div className="text-center py-16 px-5 text-gray-500 dark:text-gray-500">
+                <div className="material-icons text-6xl mb-5 opacity-30">queue_music</div>
                 <div>Queue is empty</div>
               </div>
             ) : (
               queue.map((item, index) => (
-                <li key={item.id} className="queue-item">
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <div className="queue-number">{index + 1}</div>
-                    <div className="queue-info">
-                      <div className="queue-title">{item.title}</div>
-                      <div className="queue-artist">
+                <li
+                  key={item.id}
+                  className="flex justify-between items-center p-3 bg-gray-100 dark:bg-gray-700 rounded-md mb-2"
+                >
+                  <div className="flex items-center">
+                    <div className="w-8 h-8 flex items-center justify-center bg-blue-600 dark:bg-blue-500 rounded-full font-semibold mr-3 text-white">
+                      {index + 1}
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-medium mb-1 text-gray-900 dark:text-white">
+                        {item.title}
+                      </div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
                         {item.artist} • Singer: {item.requester}
                       </div>
                     </div>
                   </div>
-                  <span className="queue-duration">{formatDuration(item.duration)}</span>
+                  <span className="text-gray-500 dark:text-gray-400 text-sm">
+                    {formatDuration(item.duration)}
+                  </span>
                 </li>
               ))
             )}
@@ -484,24 +548,36 @@ export function SongRequestPage() {
 
       {/* Request Modal */}
       {showRequestModal && selectedSong && (
-        <div className="modal active" onClick={() => setShowRequestModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="modal-title">Request Song</div>
-              <div className="modal-song-info">
+        <div
+          className="fixed top-0 left-0 w-full h-full bg-black/80 z-[1000] flex items-center justify-center"
+          onClick={() => setShowRequestModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-lg p-8 max-w-lg w-[90%] border border-gray-200 dark:border-gray-700"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-5">
+              <div className="text-2xl mb-2 text-gray-900 dark:text-white">Request Song</div>
+              <div className="text-gray-900 dark:text-white text-xl font-bold mb-2 p-2.5 bg-gray-100 dark:bg-gray-700 rounded-md border-l-4 border-blue-600 dark:border-blue-500">
                 {selectedSong.title} - {selectedSong.artist}
               </div>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Your Name</label>
-              <div className="requester-display">{userName}</div>
+            <div className="mb-5">
+              <label className="block mb-2 text-gray-600 dark:text-gray-300 text-sm">
+                Your Name
+              </label>
+              <div className="px-3 py-2 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white font-medium">
+                {userName}
+              </div>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Message (optional)</label>
+            <div className="mb-5">
+              <label className="block mb-2 text-gray-600 dark:text-gray-300 text-sm">
+                Message (optional)
+              </label>
               <textarea
-                className="form-input form-textarea"
+                className="w-full px-2.5 py-2.5 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-gray-900 dark:text-white text-base resize-y min-h-[80px] focus:outline-none focus:border-blue-600 dark:focus:border-blue-500"
                 placeholder="Any special requests or notes..."
                 value={requestMessage}
                 onChange={(e) => setRequestMessage(e.target.value)}
@@ -509,7 +585,7 @@ export function SongRequestPage() {
               />
             </div>
 
-            <div className="modal-buttons">
+            <div className="flex gap-2.5 justify-end">
               <button className="btn btn-secondary" onClick={() => setShowRequestModal(false)}>
                 Cancel
               </button>
@@ -522,13 +598,7 @@ export function SongRequestPage() {
       )}
 
       {/* Toast notifications */}
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
 }

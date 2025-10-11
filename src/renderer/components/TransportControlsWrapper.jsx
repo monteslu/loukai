@@ -8,7 +8,7 @@ import { PlayerControls } from '../../shared/components/PlayerControls.jsx';
 import { usePlayerState } from '../../shared/contexts/PlayerContext.jsx';
 import { usePlayer } from '../../shared/hooks/usePlayer.js';
 
-export function TransportControlsWrapper({ bridge }) {
+export function TransportControlsWrapper({ bridge: _bridge }) {
   const { currentSong, isPlaying, currentPosition, duration } = usePlayerState();
   const { play, pause, restart, next, seek } = usePlayer();
   const [currentEffect, setCurrentEffect] = useState('');

@@ -20,77 +20,84 @@ import { toggleCanvasFullscreen } from '../hooks/useKeyboardShortcuts.js';
 
 export function App({ bridge }) {
   return (
-    <div className="app-container">
+    <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
       {/* Song Info Bar */}
       <SongInfoBarWrapper bridge={bridge} />
 
       {/* Main Content */}
-      <div className="main-content">
+      <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <div className="sidebar">
+        <div
+          id="app-sidebar"
+          className="w-80 bg-white dark:bg-gray-800 p-4 overflow-y-auto border-r border-gray-200 dark:border-gray-700 transition-all duration-300"
+        >
           <VisualizationSettings bridge={bridge} />
         </div>
 
         {/* Center Content */}
-        <div className="center-content">
+        <div className="flex-1 flex flex-col overflow-hidden">
           {/* Tab Navigation */}
           <TabNavigation requestsCount={0} />
 
           {/* Tab Content */}
-          <div className="tab-content">
+          <div className="flex-1 overflow-auto">
             {/* Library Tab */}
-            <div id="library-tab" className="tab-pane">
+            <div id="library-tab" className="hidden h-full">
               <LibraryPanel bridge={bridge} showSetFolder={true} showFullRefresh={true} />
             </div>
 
             {/* Mixer Tab */}
-            <div id="mixer-tab" className="tab-pane">
+            <div id="mixer-tab" className="hidden h-full overflow-auto">
               <MixerTab bridge={bridge} />
             </div>
 
             {/* Player Tab */}
-            <div id="player-tab" className="tab-pane active">
-              <div className="player-container">
-                {/* Top Section: Queue Sidebar + Canvas */}
-                <div className="player-top-section">
-                  {/* Queue Sidebar (Left 1/3) */}
-                  <div className="player-queue-sidebar">
-                    <QueueTab bridge={bridge} />
-                  </div>
+            <div id="player-tab" className="h-full flex flex-col">
+              {/* Top Section: Queue Sidebar + Canvas */}
+              <div className="flex flex-1 gap-1 min-h-0">
+                {/* Queue Sidebar (Left 30%) */}
+                <div className="w-[30%] min-w-[280px] flex flex-col min-h-0">
+                  <QueueTab bridge={bridge} />
+                </div>
 
-                  {/* Canvas Area (Right 2/3) */}
-                  <div className="player-canvas-area">
-                    <div className="karaoke-display">
-                      <canvas id="karaokeCanvas" width="1920" height="1080" style={{ cursor: 'pointer' }} onClick={toggleCanvasFullscreen}></canvas>
-                      <div className="lyrics-container" id="lyricsContainer" style={{ display: 'none' }}>
-                        <div className="no-lyrics">No lyrics available</div>
-                      </div>
+                {/* Canvas Area (Right 70%) */}
+                <div className="flex-1 flex flex-col p-0 m-0 min-w-0">
+                  <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900">
+                    <canvas
+                      id="karaokeCanvas"
+                      width="1920"
+                      height="1080"
+                      className="max-w-full max-h-full w-auto h-auto cursor-pointer"
+                      onClick={toggleCanvasFullscreen}
+                    />
+                    <div id="lyricsContainer" className="hidden">
+                      <div className="text-center text-gray-500">No lyrics available</div>
                     </div>
                   </div>
                 </div>
-
-                {/* Bottom Section: Transport Controls */}
-                <TransportControlsWrapper bridge={bridge} />
               </div>
+
+              {/* Bottom Section: Transport Controls */}
+              <TransportControlsWrapper bridge={bridge} />
             </div>
 
             {/* Effects Tab */}
-            <div id="effects-tab" className="tab-pane">
+            <div id="effects-tab" className="hidden h-full">
               <EffectsPanelWrapper bridge={bridge} />
             </div>
 
             {/* Song Requests Tab */}
-            <div id="requests-tab" className="tab-pane">
+            <div id="requests-tab" className="hidden h-full">
               <RequestsListWrapper />
             </div>
 
             {/* Server Tab */}
-            <div id="server-tab" className="tab-pane">
+            <div id="server-tab" className="hidden h-full overflow-auto">
               <ServerTab bridge={bridge} />
             </div>
 
             {/* Lyrics Editor Tab */}
-            <div id="editor-tab" className="tab-pane">
+            <div id="editor-tab" className="hidden h-full">
               <SongEditor bridge={bridge} />
             </div>
           </div>

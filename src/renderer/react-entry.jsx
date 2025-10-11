@@ -6,7 +6,7 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import '../shared/styles/theme.css';
+import './styles/tailwind.css';
 import { ElectronBridge } from './adapters/ElectronBridge.js';
 import { AppRoot } from './components/AppRoot.jsx';
 import { App } from './components/App.jsx';

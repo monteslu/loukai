@@ -24,9 +24,9 @@ export class WebBridge extends BridgeInterface {
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...options.headers
+        ...options.headers,
       },
-      ...options
+      ...options,
     });
 
     if (!res.ok) {
@@ -53,7 +53,7 @@ export class WebBridge extends BridgeInterface {
   async seek(positionSec) {
     return await this._fetch('/player/seek', {
       method: 'POST',
-      body: JSON.stringify({ position: positionSec })
+      body: JSON.stringify({ position: positionSec }),
     });
   }
 
@@ -71,7 +71,7 @@ export class WebBridge extends BridgeInterface {
   async addToQueue(song) {
     return await this._fetch('/queue/add', {
       method: 'POST',
-      body: JSON.stringify({ song })
+      body: JSON.stringify({ song }),
     });
   }
 
@@ -86,7 +86,7 @@ export class WebBridge extends BridgeInterface {
   async reorderQueue(songId, newIndex) {
     return await this._fetch('/queue/reorder', {
       method: 'POST',
-      body: JSON.stringify({ songId, newIndex })
+      body: JSON.stringify({ songId, newIndex }),
     });
   }
 
@@ -97,7 +97,7 @@ export class WebBridge extends BridgeInterface {
   async playFromQueue(songId) {
     return await this._fetch('/queue/load', {
       method: 'POST',
-      body: JSON.stringify({ songId })
+      body: JSON.stringify({ songId }),
     });
   }
 
@@ -111,21 +111,21 @@ export class WebBridge extends BridgeInterface {
   async setMasterGain(bus, gainDb) {
     return await this._fetch('/mixer/master-gain', {
       method: 'POST',
-      body: JSON.stringify({ bus, gainDb })
+      body: JSON.stringify({ bus, gainDb }),
     });
   }
 
   async toggleMasterMute(bus) {
     return await this._fetch('/mixer/master-mute', {
       method: 'POST',
-      body: JSON.stringify({ bus })
+      body: JSON.stringify({ bus }),
     });
   }
 
   async setMasterMute(bus, muted) {
     return await this._fetch('/mixer/master-mute', {
       method: 'POST',
-      body: JSON.stringify({ bus, muted })
+      body: JSON.stringify({ bus, muted }),
     });
   }
 
@@ -138,14 +138,14 @@ export class WebBridge extends BridgeInterface {
   async selectEffect(effectName) {
     return await this._fetch('/effects/select', {
       method: 'POST',
-      body: JSON.stringify({ effectName })
+      body: JSON.stringify({ effectName }),
     });
   }
 
   async toggleEffect(effectName, enabled) {
     return await this._fetch('/effects/toggle', {
       method: 'POST',
-      body: JSON.stringify({ effectName, enabled })
+      body: JSON.stringify({ effectName, enabled }),
     });
   }
 
@@ -164,14 +164,14 @@ export class WebBridge extends BridgeInterface {
   async enableEffect(effectName) {
     return await this._fetch('/effects/enable', {
       method: 'POST',
-      body: JSON.stringify({ effectName })
+      body: JSON.stringify({ effectName }),
     });
   }
 
   async disableEffect(effectName) {
     return await this._fetch('/effects/disable', {
       method: 'POST',
-      body: JSON.stringify({ effectName })
+      body: JSON.stringify({ effectName }),
     });
   }
 
@@ -192,14 +192,14 @@ export class WebBridge extends BridgeInterface {
   async loadSongForEditing(path) {
     return await this._fetch('/editor/load', {
       method: 'POST',
-      body: JSON.stringify({ path })
+      body: JSON.stringify({ path }),
     });
   }
 
   async saveSongEdits(updates) {
     return await this._fetch('/editor/save', {
       method: 'POST',
-      body: JSON.stringify(updates)
+      body: JSON.stringify(updates),
     });
   }
 
@@ -223,7 +223,7 @@ export class WebBridge extends BridgeInterface {
   async loadSong(path) {
     return await this._fetch('/player/load', {
       method: 'POST',
-      body: JSON.stringify({ path })
+      body: JSON.stringify({ path }),
     });
   }
 
@@ -236,21 +236,21 @@ export class WebBridge extends BridgeInterface {
   async updateAutoTunePreferences(prefs) {
     return await this._fetch('/preferences/autotune', {
       method: 'POST',
-      body: JSON.stringify(prefs)
+      body: JSON.stringify(prefs),
     });
   }
 
   async updateMicrophonePreferences(prefs) {
     return await this._fetch('/preferences/microphone', {
       method: 'POST',
-      body: JSON.stringify(prefs)
+      body: JSON.stringify(prefs),
     });
   }
 
   async updateEffectsPreferences(prefs) {
     return await this._fetch('/preferences/effects', {
       method: 'POST',
-      body: JSON.stringify(prefs)
+      body: JSON.stringify(prefs),
     });
   }
 
@@ -258,13 +258,15 @@ export class WebBridge extends BridgeInterface {
   async getWaveformPreferences() {
     try {
       const response = await this._fetch('/settings/waveform');
-      return response.settings || {
-        enableWaveforms: true,
-        enableEffects: true,
-        randomEffectOnSong: false,
-        showUpcomingLyrics: true,
-        overlayOpacity: 0.7
-      };
+      return (
+        response.settings || {
+          enableWaveforms: true,
+          enableEffects: true,
+          randomEffectOnSong: false,
+          showUpcomingLyrics: true,
+          overlayOpacity: 0.7,
+        }
+      );
     } catch (error) {
       console.error('Failed to fetch waveform preferences:', error);
       return {
@@ -272,7 +274,7 @@ export class WebBridge extends BridgeInterface {
         enableEffects: true,
         randomEffectOnSong: false,
         showUpcomingLyrics: true,
-        overlayOpacity: 0.7
+        overlayOpacity: 0.7,
       };
     }
   }
@@ -280,24 +282,26 @@ export class WebBridge extends BridgeInterface {
   async saveWaveformPreferences(prefs) {
     return await this._fetch('/settings/waveform', {
       method: 'POST',
-      body: JSON.stringify(prefs)
+      body: JSON.stringify(prefs),
     });
   }
 
   async getAutotunePreferences() {
     try {
       const response = await this._fetch('/settings/autotune');
-      return response.settings || {
-        enabled: false,
-        strength: 50,
-        speed: 20
-      };
+      return (
+        response.settings || {
+          enabled: false,
+          strength: 50,
+          speed: 20,
+        }
+      );
     } catch (error) {
       console.error('Failed to fetch autotune preferences:', error);
       return {
         enabled: false,
         strength: 50,
-        speed: 20
+        speed: 20,
       };
     }
   }
@@ -305,7 +309,7 @@ export class WebBridge extends BridgeInterface {
   async saveAutotunePreferences(prefs) {
     return await this._fetch('/settings/autotune', {
       method: 'POST',
-      body: JSON.stringify(prefs)
+      body: JSON.stringify(prefs),
     });
   }
 
@@ -342,13 +346,13 @@ export class WebBridge extends BridgeInterface {
 
     // Map domain to Socket.IO event
     const eventMap = {
-      'mixer': 'mixer-update',
-      'queue': 'queue-update',
-      'playback': 'playback-state-update',
-      'effects': 'effects-update',
-      'preferences': 'preferences-update',
-      'requests': 'new-song-request',
-      'currentSong': 'current-song-update'
+      mixer: 'mixer-update',
+      queue: 'queue-update',
+      playback: 'playback-state-update',
+      effects: 'effects-update',
+      preferences: 'preferences-update',
+      requests: 'new-song-request',
+      currentSong: 'current-song-update',
     };
 
     const event = eventMap[domain];
@@ -374,13 +378,13 @@ export class WebBridge extends BridgeInterface {
     if (!this.socket) return;
 
     const eventMap = {
-      'mixer': 'mixer-update',
-      'queue': 'queue-update',
-      'playback': 'playback-state-update',
-      'effects': 'effects-update',
-      'preferences': 'preferences-update',
-      'requests': 'new-song-request',
-      'currentSong': 'current-song-update'
+      mixer: 'mixer-update',
+      queue: 'queue-update',
+      playback: 'playback-state-update',
+      effects: 'effects-update',
+      preferences: 'preferences-update',
+      requests: 'new-song-request',
+      currentSong: 'current-song-update',
     };
 
     const event = eventMap[domain];
@@ -400,7 +404,7 @@ export class WebBridge extends BridgeInterface {
 
   // ===== Lifecycle =====
 
-  async connect() {
+  connect() {
     if (this.socket) {
       console.log('Socket already connected');
       return;
@@ -410,7 +414,7 @@ export class WebBridge extends BridgeInterface {
       this.socket = io({
         reconnection: true,
         reconnectionDelay: 1000,
-        reconnectionAttempts: Infinity
+        reconnectionAttempts: Infinity,
       });
 
       this.socket.on('connect', () => {
@@ -430,12 +434,12 @@ export class WebBridge extends BridgeInterface {
     });
   }
 
-  async disconnect() {
+  disconnect() {
     if (!this.socket) return;
 
     // Clean up all listeners
     for (const [domain, listeners] of this.listeners.entries()) {
-      listeners.forEach(listener => this.offStateChange(domain, listener));
+      listeners.forEach((listener) => this.offStateChange(domain, listener));
     }
     this.listeners.clear();
 

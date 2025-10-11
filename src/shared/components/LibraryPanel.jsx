@@ -9,9 +9,8 @@
  * - Add to queue / Load song actions
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getFormatIcon, formatDuration } from '../formatUtils.js';
-import './LibraryPanel.css';
 
 function SongInfoModal({ song, onClose }) {
   if (!song) return null;
@@ -19,49 +18,60 @@ function SongInfoModal({ song, onClose }) {
   console.log('🎵 SongInfoModal rendering for:', song.title);
 
   return (
-    <div className="song-info-modal-overlay" onClick={onClose}>
-      <div className="song-info-modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="song-info-modal-header">
-          <h2>Song Information</h2>
-          <button className="song-info-close-btn" onClick={onClose}>&times;</button>
+    <div
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10000]"
+      onClick={onClose}
+    >
+      <div
+        className="bg-gray-800 dark:bg-gray-900 border border-gray-600 dark:border-gray-700 rounded-lg w-[90%] max-w-[500px] max-h-[80vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center px-5 py-4 border-b border-gray-700 dark:border-gray-800">
+          <h2 className="m-0 text-lg font-semibold text-white">Song Information</h2>
+          <button
+            className="bg-none border-none text-white text-[32px] leading-none cursor-pointer p-0 w-8 h-8 flex items-center justify-center rounded transition-colors hover:bg-gray-700 dark:hover:bg-gray-800"
+            onClick={onClose}
+          >
+            &times;
+          </button>
         </div>
-        <div className="song-info-modal-body">
-          <div className="song-info-grid">
-            <div className="info-row">
-              <span className="info-label">Title:</span>
-              <span className="info-value">{song.title}</span>
+        <div className="p-5 overflow-y-auto">
+          <div className="space-y-0">
+            <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5 border-b border-gray-700/50 dark:border-gray-800/50">
+              <span className="font-semibold text-gray-300 dark:text-gray-400">Title:</span>
+              <span className="text-white">{song.title}</span>
             </div>
-            <div className="info-row">
-              <span className="info-label">Artist:</span>
-              <span className="info-value">{song.artist}</span>
+            <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5 border-b border-gray-700/50 dark:border-gray-800/50">
+              <span className="font-semibold text-gray-300 dark:text-gray-400">Artist:</span>
+              <span className="text-white">{song.artist}</span>
             </div>
-            <div className="info-row">
-              <span className="info-label">Album:</span>
-              <span className="info-value">{song.album || 'N/A'}</span>
+            <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5 border-b border-gray-700/50 dark:border-gray-800/50">
+              <span className="font-semibold text-gray-300 dark:text-gray-400">Album:</span>
+              <span className="text-white">{song.album || 'N/A'}</span>
             </div>
-            <div className="info-row">
-              <span className="info-label">Genre:</span>
-              <span className="info-value">{song.genre || 'N/A'}</span>
+            <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5 border-b border-gray-700/50 dark:border-gray-800/50">
+              <span className="font-semibold text-gray-300 dark:text-gray-400">Genre:</span>
+              <span className="text-white">{song.genre || 'N/A'}</span>
             </div>
-            <div className="info-row">
-              <span className="info-label">Key:</span>
-              <span className="info-value">{song.key || 'N/A'}</span>
+            <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5 border-b border-gray-700/50 dark:border-gray-800/50">
+              <span className="font-semibold text-gray-300 dark:text-gray-400">Key:</span>
+              <span className="text-white">{song.key || 'N/A'}</span>
             </div>
-            <div className="info-row">
-              <span className="info-label">Year:</span>
-              <span className="info-value">{song.year || 'N/A'}</span>
+            <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5 border-b border-gray-700/50 dark:border-gray-800/50">
+              <span className="font-semibold text-gray-300 dark:text-gray-400">Year:</span>
+              <span className="text-white">{song.year || 'N/A'}</span>
             </div>
-            <div className="info-row">
-              <span className="info-label">Duration:</span>
-              <span className="info-value">{formatDuration(song.duration)}</span>
+            <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5 border-b border-gray-700/50 dark:border-gray-800/50">
+              <span className="font-semibold text-gray-300 dark:text-gray-400">Duration:</span>
+              <span className="text-white">{formatDuration(song.duration)}</span>
             </div>
-            <div className="info-row">
-              <span className="info-label">Format:</span>
-              <span className="info-value">{song.format || 'N/A'}</span>
+            <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5 border-b border-gray-700/50 dark:border-gray-800/50">
+              <span className="font-semibold text-gray-300 dark:text-gray-400">Format:</span>
+              <span className="text-white">{song.format || 'N/A'}</span>
             </div>
-            <div className="info-row">
-              <span className="info-label">Path:</span>
-              <span className="info-value" style={{ wordBreak: 'break-all', fontSize: '11px' }}>{song.path}</span>
+            <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5">
+              <span className="font-semibold text-gray-300 dark:text-gray-400">Path:</span>
+              <span className="text-white break-all text-[11px]">{song.path}</span>
             </div>
           </div>
         </div>
@@ -83,6 +93,92 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
   const [scanProgress, setScanProgress] = useState(null); // { current, total }
 
   const pageSize = 100;
+
+  // Wrap functions in useCallback to stabilize references for useEffect dependencies
+  const loadLetterPage = useCallback((letter, page, songsList) => {
+    setCurrentLetter(letter);
+    setCurrentPage(page);
+    setSearchTerm('');
+
+    // Filter songs by first letter of artist
+    const letterSongs = songsList.filter((song) => {
+      const artist = song.artist || song.title || song.name;
+      if (!artist) return false;
+
+      const firstChar = artist.trim()[0].toUpperCase();
+      if (letter === '#') {
+        return !/[A-Z]/.test(firstChar);
+      }
+      return firstChar === letter;
+    });
+
+    // Sort and paginate
+    const sortedSongs = letterSongs.sort((a, b) => {
+      const artistA = (a.artist || a.title || '').toLowerCase();
+      const artistB = (b.artist || b.title || '').toLowerCase();
+      return artistA.localeCompare(artistB);
+    });
+
+    setFilteredSongs(sortedSongs);
+  }, []);
+
+  const calculateAvailableLetters = useCallback(
+    (songsList, shouldAutoSelect = true) => {
+      const letterSet = new Set();
+
+      songsList.forEach((song) => {
+        const artist = song.artist || song.title || song.name;
+        if (artist) {
+          const firstChar = artist.trim()[0].toUpperCase();
+          if (/[A-Z]/.test(firstChar)) {
+            letterSet.add(firstChar);
+          } else {
+            letterSet.add('#');
+          }
+        }
+      });
+
+      let letters = Array.from(letterSet).sort();
+      // Put '#' at the end
+      if (letters.includes('#')) {
+        letters = letters.filter((l) => l !== '#');
+        letters.push('#');
+      }
+
+      setAvailableLetters(letters);
+
+      // Auto-select first letter if requested and songs exist
+      if (shouldAutoSelect && letters.length > 0) {
+        const firstLetter = letters.includes('A') ? 'A' : letters[0];
+        loadLetterPage(firstLetter, 1, songsList);
+      }
+    },
+    [loadLetterPage]
+  );
+
+  const loadLibrary = useCallback(async () => {
+    try {
+      setLoading(true);
+      const folder = await bridge.getSongsFolder();
+      console.log('📁 Songs folder:', folder);
+      setSongsFolder(folder);
+
+      if (folder) {
+        const result = await bridge.getCachedLibrary();
+        console.log('📚 Cached library result:', result);
+        const librarySongs = result.files || [];
+        console.log('🎵 Library songs count:', librarySongs.length);
+        setSongs(librarySongs);
+        calculateAvailableLetters(librarySongs); // This will auto-select first letter
+      } else {
+        console.log('❌ No songs folder set');
+      }
+    } catch (error) {
+      console.error('Failed to load library:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [bridge, calculateAvailableLetters]);
 
   // Listen for scan progress events (Electron renderer only)
   useEffect(() => {
@@ -106,8 +202,8 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
       const handleSongUpdated = (event, data) => {
         console.log(`🎵 Song updated: ${data.path}`);
         // Update the song in the songs list
-        setSongs(prevSongs => {
-          const songIndex = prevSongs.findIndex(s => s.path === data.path);
+        setSongs((prevSongs) => {
+          const songIndex = prevSongs.findIndex((s) => s.path === data.path);
           if (songIndex !== -1) {
             const updatedSongs = [...prevSongs];
             updatedSongs[songIndex] = { ...updatedSongs[songIndex], ...data.metadata };
@@ -117,8 +213,8 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
         });
 
         // Update filtered songs if they're currently displayed
-        setFilteredSongs(prevFiltered => {
-          const songIndex = prevFiltered.findIndex(s => s.path === data.path);
+        setFilteredSongs((prevFiltered) => {
+          const songIndex = prevFiltered.findIndex((s) => s.path === data.path);
           if (songIndex !== -1) {
             const updatedFiltered = [...prevFiltered];
             updatedFiltered[songIndex] = { ...updatedFiltered[songIndex], ...data.metadata };
@@ -140,7 +236,7 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
         window.kaiAPI.events.removeListener('library:songUpdated', handleSongUpdated);
       };
     }
-  }, []);
+  }, [loadLibrary]);
 
   // Listen for library updates from socket (Web admin only)
   useEffect(() => {
@@ -153,8 +249,8 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
       const handleSongUpdated = (data) => {
         console.log(`🎵 Song updated: ${data.path}`);
         // Update the song in the songs list
-        setSongs(prevSongs => {
-          const songIndex = prevSongs.findIndex(s => s.path === data.path);
+        setSongs((prevSongs) => {
+          const songIndex = prevSongs.findIndex((s) => s.path === data.path);
           if (songIndex !== -1) {
             const updatedSongs = [...prevSongs];
             updatedSongs[songIndex] = { ...updatedSongs[songIndex], ...data.metadata };
@@ -164,8 +260,8 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
         });
 
         // Update filtered songs if they're currently displayed
-        setFilteredSongs(prevFiltered => {
-          const songIndex = prevFiltered.findIndex(s => s.path === data.path);
+        setFilteredSongs((prevFiltered) => {
+          const songIndex = prevFiltered.findIndex((s) => s.path === data.path);
           if (songIndex !== -1) {
             const updatedFiltered = [...prevFiltered];
             updatedFiltered[songIndex] = { ...updatedFiltered[songIndex], ...data.metadata };
@@ -183,94 +279,12 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
         bridge.socket.off('library:songUpdated', handleSongUpdated);
       };
     }
-  }, [bridge]);
+  }, [bridge, loadLibrary]);
 
   // Load library on mount
   useEffect(() => {
     loadLibrary();
-  }, []);
-
-  const loadLibrary = async () => {
-    try {
-      setLoading(true);
-      const folder = await bridge.getSongsFolder();
-      console.log('📁 Songs folder:', folder);
-      setSongsFolder(folder);
-
-      if (folder) {
-        const result = await bridge.getCachedLibrary();
-        console.log('📚 Cached library result:', result);
-        const librarySongs = result.files || [];
-        console.log('🎵 Library songs count:', librarySongs.length);
-        setSongs(librarySongs);
-        calculateAvailableLetters(librarySongs); // This will auto-select first letter
-      } else {
-        console.log('❌ No songs folder set');
-      }
-    } catch (error) {
-      console.error('Failed to load library:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const calculateAvailableLetters = (songsList) => {
-    const letterSet = new Set();
-
-    songsList.forEach(song => {
-      const artist = song.artist || song.title || song.name;
-      if (artist) {
-        const firstChar = artist.trim()[0].toUpperCase();
-        if (/[A-Z]/.test(firstChar)) {
-          letterSet.add(firstChar);
-        } else {
-          letterSet.add('#');
-        }
-      }
-    });
-
-    let letters = Array.from(letterSet).sort();
-    // Put '#' at the end
-    if (letters.includes('#')) {
-      letters = letters.filter(l => l !== '#');
-      letters.push('#');
-    }
-
-    setAvailableLetters(letters);
-
-    // Auto-select first letter if none selected and songs exist
-    if (!currentLetter && letters.length > 0) {
-      const firstLetter = letters.includes('A') ? 'A' : letters[0];
-      loadLetterPage(firstLetter, 1, songsList);
-    }
-  };
-
-  const loadLetterPage = (letter, page, songsList = songs) => {
-    setCurrentLetter(letter);
-    setCurrentPage(page);
-    setSearchTerm('');
-
-    // Filter songs by first letter of artist
-    const letterSongs = songsList.filter(song => {
-      const artist = song.artist || song.title || song.name;
-      if (!artist) return false;
-
-      const firstChar = artist.trim()[0].toUpperCase();
-      if (letter === '#') {
-        return !/[A-Z]/.test(firstChar);
-      }
-      return firstChar === letter;
-    });
-
-    // Sort and paginate
-    const sortedSongs = letterSongs.sort((a, b) => {
-      const artistA = (a.artist || a.title || '').toLowerCase();
-      const artistB = (b.artist || b.title || '').toLowerCase();
-      return artistA.localeCompare(artistB);
-    });
-
-    setFilteredSongs(sortedSongs);
-  };
+  }, [loadLibrary]);
 
   const handleSearch = (term) => {
     setSearchTerm(term);
@@ -283,7 +297,7 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
     }
 
     const searchLower = term.toLowerCase();
-    const results = songs.filter(song => {
+    const results = songs.filter((song) => {
       return (
         (song.title || '').toLowerCase().includes(searchLower) ||
         (song.artist || '').toLowerCase().includes(searchLower) ||
@@ -342,7 +356,7 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
         path: song.path,
         title: song.title,
         artist: song.artist,
-        duration: song.duration
+        duration: song.duration,
       });
     } catch (error) {
       console.error('Failed to add to queue:', error);
@@ -413,49 +427,67 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
   const allLetters = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), '#'];
 
   return (
-    <div className="library-panel">
+    <div className="flex flex-col flex-1 min-h-0 gap-3 overflow-hidden">
       {/* Header Controls */}
-      <div className="library-header">
-        <div className="library-controls">
+      <div className="flex flex-col gap-2 pb-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+        <div className="flex gap-2 flex-wrap items-center">
           {showSetFolder && (
-            <button onClick={handleSetFolder} className="library-btn">
-              <span className="material-icons">folder_open</span>
+            <button
+              onClick={handleSetFolder}
+              className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-gray-900 dark:text-white cursor-pointer text-sm hover:bg-gray-200 dark:hover:bg-gray-750 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="material-icons text-lg">folder_open</span>
               Set Songs Folder
             </button>
           )}
-          <button onClick={handleSync} className="library-btn" disabled={!songsFolder || loading}>
-            <span className="material-icons">sync</span>
+          <button
+            onClick={handleSync}
+            className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-gray-900 dark:text-white cursor-pointer text-sm hover:bg-gray-200 dark:hover:bg-gray-750 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!songsFolder || loading}
+          >
+            <span className="material-icons text-lg">sync</span>
             Sync
           </button>
           {showFullRefresh && (
-            <button onClick={handleRefresh} className="library-btn" disabled={!songsFolder || loading}>
-              <span className="material-icons">refresh</span>
+            <button
+              onClick={handleRefresh}
+              className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-gray-900 dark:text-white cursor-pointer text-sm hover:bg-gray-200 dark:hover:bg-gray-750 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!songsFolder || loading}
+            >
+              <span className="material-icons text-lg">refresh</span>
               Full Refresh
             </button>
           )}
-          <div className="library-search">
+          <div className="flex-1 min-w-[200px]">
             <input
               type="text"
+              className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-gray-900 dark:text-white text-sm focus:outline-none focus:border-blue-500"
               placeholder="Search songs..."
               value={searchTerm}
               onChange={(e) => handleSearch(e.target.value)}
             />
           </div>
         </div>
-        <div className="library-info">
+        <div className="flex gap-4 text-xs text-gray-500 dark:text-gray-400">
           <span>{songs.length} songs</span>
           {songsFolder && <span>{songsFolder}</span>}
         </div>
         {scanProgress && (
-          <div className="library-scan-progress">
-            <div className="scan-progress-bar">
+          <div className="flex flex-col gap-1 py-2">
+            <div className="w-full h-5 bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded overflow-hidden">
               <div
-                className="scan-progress-fill"
-                style={{ width: `${scanProgress.total > 0 ? Math.round((scanProgress.current / scanProgress.total) * 100) : 0}%` }}
+                className="h-full bg-blue-600 transition-all duration-300"
+                style={{
+                  width: `${scanProgress.total > 0 ? Math.round((scanProgress.current / scanProgress.total) * 100) : 0}%`,
+                }}
               />
             </div>
-            <div className="scan-progress-text">
-              Scanning: {scanProgress.current} / {scanProgress.total} files ({scanProgress.total > 0 ? Math.round((scanProgress.current / scanProgress.total) * 100) : 0}%)
+            <div className="text-xs text-gray-700 dark:text-gray-300 text-center">
+              Scanning: {scanProgress.current} / {scanProgress.total} files (
+              {scanProgress.total > 0
+                ? Math.round((scanProgress.current / scanProgress.total) * 100)
+                : 0}
+              %)
             </div>
           </div>
         )}
@@ -463,17 +495,19 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
 
       {/* Alphabet Navigation */}
       {!searchTerm && !scanProgress && (
-        <div className="alphabet-nav">
-          <div className="alphabet-title">Browse by Artist:</div>
-          <div className="alphabet-buttons">
-            {allLetters.map(letter => {
+        <div className="flex flex-col gap-2 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-md flex-shrink-0">
+          <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+            Browse by Artist:
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {allLetters.map((letter) => {
               const isAvailable = availableLetters.includes(letter);
               const isActive = currentLetter === letter;
 
               return (
                 <button
                   key={letter}
-                  className={`alphabet-btn ${isActive ? 'active' : ''} ${!isAvailable ? 'disabled' : ''}`}
+                  className={`w-8 h-8 p-0 rounded text-sm font-semibold cursor-pointer transition-all ${isActive ? 'bg-blue-600 border-blue-600 text-white' : isAvailable ? 'bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-750 hover:scale-105' : 'bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 opacity-30 cursor-not-allowed'}`}
                   onClick={() => isAvailable && loadLetterPage(letter, 1)}
                   disabled={!isAvailable}
                 >
@@ -487,51 +521,83 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
 
       {/* Library Table */}
       {loading ? (
-        <div className="library-loading">Loading library...</div>
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-16 text-center text-base text-gray-700 dark:text-gray-300">
+          Loading library...
+        </div>
       ) : filteredSongs.length > 0 ? (
         <>
-          <div className="library-table-container">
-            <table className="library-table">
-              <thead>
+          <div className="flex-1 min-h-0 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-md">
+            <table className="w-full border-collapse">
+              <thead className="sticky top-0 bg-gray-100 dark:bg-gray-800 z-10">
                 <tr>
-                  <th>Title</th>
-                  <th>Artist</th>
-                  <th>Album</th>
-                  <th>Genre</th>
-                  <th>Key</th>
-                  <th>Duration</th>
-                  <th>Year</th>
-                  <th>Actions</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 border-b-2 border-gray-200 dark:border-gray-700">
+                    Title
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 border-b-2 border-gray-200 dark:border-gray-700">
+                    Artist
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 border-b-2 border-gray-200 dark:border-gray-700">
+                    Album
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 border-b-2 border-gray-200 dark:border-gray-700">
+                    Genre
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 border-b-2 border-gray-200 dark:border-gray-700">
+                    Key
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 border-b-2 border-gray-200 dark:border-gray-700">
+                    Duration
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 border-b-2 border-gray-200 dark:border-gray-700">
+                    Year
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 border-b-2 border-gray-200 dark:border-gray-700">
+                    Actions
+                  </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
                 {currentPageSongs.map((song, index) => (
-                  <tr key={index}>
-                    <td>
-                      <span className="format-icon">{getFormatIcon(song.format)}</span>
+                  <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                    <td className="px-3 py-1.5 text-xs leading-relaxed border-b border-gray-200 dark:border-gray-800/50">
+                      <span className="mr-1.5 text-base">{getFormatIcon(song.format)}</span>
                       {song.title}
                     </td>
-                    <td>{song.artist}</td>
-                    <td>{song.album || '-'}</td>
-                    <td>{song.genre || '-'}</td>
-                    <td>{song.key || '-'}</td>
-                    <td>{formatDuration(song.duration)}</td>
-                    <td>{song.year || '-'}</td>
-                    <td>
-                      <div className="table-actions">
+                    <td className="px-3 py-1.5 text-xs leading-relaxed border-b border-gray-200 dark:border-gray-800/50">
+                      {song.artist}
+                    </td>
+                    <td className="px-3 py-1.5 text-xs leading-relaxed border-b border-gray-200 dark:border-gray-800/50">
+                      {song.album || '-'}
+                    </td>
+                    <td className="px-3 py-1.5 text-xs leading-relaxed border-b border-gray-200 dark:border-gray-800/50">
+                      {song.genre || '-'}
+                    </td>
+                    <td className="px-3 py-1.5 text-xs leading-relaxed border-b border-gray-200 dark:border-gray-800/50">
+                      {song.key || '-'}
+                    </td>
+                    <td className="px-3 py-1.5 text-xs leading-relaxed border-b border-gray-200 dark:border-gray-800/50">
+                      {formatDuration(song.duration)}
+                    </td>
+                    <td className="px-3 py-1.5 text-xs leading-relaxed border-b border-gray-200 dark:border-gray-800/50">
+                      {song.year || '-'}
+                    </td>
+                    <td className="px-3 py-1.5 text-xs leading-relaxed border-b border-gray-200 dark:border-gray-800/50">
+                      <div className="flex flex-row gap-1 items-center">
                         <button
-                          className="library-action-btn queue-btn"
+                          className="w-7 h-7 min-w-[28px] min-h-[28px] max-w-[28px] max-h-[28px] p-0 flex items-center justify-center bg-transparent border border-gray-200 dark:border-gray-700 rounded text-gray-700 dark:text-white cursor-pointer transition-all flex-shrink-0 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-blue-600"
                           onClick={() => handleAddToQueue(song)}
                           title="Add to Queue"
                         >
-                          <span className="material-icons">playlist_add</span>
+                          <span className="material-icons text-base leading-none">
+                            playlist_add
+                          </span>
                         </button>
                         <button
-                          className="library-action-btn info-btn"
+                          className="w-7 h-7 min-w-[28px] min-h-[28px] max-w-[28px] max-h-[28px] p-0 flex items-center justify-center bg-transparent border border-gray-200 dark:border-gray-700 rounded text-gray-700 dark:text-white cursor-pointer transition-all flex-shrink-0 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-blue-600"
                           onClick={() => handleShowInfo(song)}
                           title="Song Info"
                         >
-                          <span className="material-icons">info</span>
+                          <span className="material-icons text-base leading-none">info</span>
                         </button>
                       </div>
                     </td>
@@ -543,18 +609,22 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
 
           {/* Pagination */}
           {totalPages > 1 && !scanProgress && (
-            <div className="library-pagination">
+            <div className="flex items-center justify-center gap-3 p-3 bg-gray-100 dark:bg-gray-800/50 rounded-md text-sm flex-shrink-0">
               <button
+                className="px-4 py-1.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-gray-900 dark:text-white cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-750 disabled:opacity-40 disabled:cursor-not-allowed"
                 onClick={() => setCurrentPage(currentPage - 1)}
                 disabled={currentPage === 1}
               >
                 Previous
               </button>
-              <div className="page-numbers">
+              <div className="flex gap-1 items-center">
                 {getPageNumbers().map((page, index) => {
                   if (page === '...') {
                     return (
-                      <span key={`ellipsis-${index}`} className="page-ellipsis">
+                      <span
+                        key={`ellipsis-${index}`}
+                        className="px-2 py-1.5 text-gray-700 dark:text-gray-300 select-none"
+                      >
                         ...
                       </span>
                     );
@@ -562,7 +632,7 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
                   return (
                     <button
                       key={page}
-                      className={`page-number ${page === currentPage ? 'active' : ''}`}
+                      className={`min-w-[36px] px-2 py-1.5 rounded cursor-pointer ${page === currentPage ? 'bg-blue-600 border-blue-600 font-semibold text-white' : 'bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-750'}`}
                       onClick={() => setCurrentPage(page)}
                     >
                       {page}
@@ -570,10 +640,11 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
                   );
                 })}
               </div>
-              <span className="page-info">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
                 ({filteredSongs.length} songs)
               </span>
               <button
+                className="px-4 py-1.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-gray-900 dark:text-white cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-750 disabled:opacity-40 disabled:cursor-not-allowed"
                 onClick={() => setCurrentPage(currentPage + 1)}
                 disabled={currentPage === totalPages}
               >
@@ -583,13 +654,15 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
           )}
         </>
       ) : (
-        <div className="library-empty">
-          <div className="empty-icon">🎵</div>
-          <div className="empty-message">
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-16 text-center">
+          <div className="text-5xl opacity-50">🎵</div>
+          <div className="text-lg font-semibold text-gray-900 dark:text-white">
             {songsFolder ? 'No songs found' : 'No songs library set'}
           </div>
-          <div className="empty-detail">
-            {songsFolder ? 'Try syncing or refreshing your library' : 'Click "Set Songs Folder" to choose your music library'}
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            {songsFolder
+              ? 'Try syncing or refreshing your library'
+              : 'Click "Set Songs Folder" to choose your music library'}
           </div>
         </div>
       )}

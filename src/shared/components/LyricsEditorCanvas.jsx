@@ -18,7 +18,7 @@ export function LyricsEditorCanvas({
   vocalsWaveform,
   songDuration,
   currentPosition,
-  isPlaying
+  isPlaying,
 }) {
   const canvasRef = useRef(null);
   const lyricRectanglesRef = useRef([]);
@@ -145,7 +145,7 @@ export function LyricsEditorCanvas({
     for (let i = 0; i < waveform.length; i++) {
       const x = (i / waveform.length) * width;
       const value = waveform[i];
-      const y = centerY - (value * scale);
+      const y = centerY - value * scale;
 
       if (i === 0) {
         ctx.moveTo(x, y);
@@ -161,7 +161,7 @@ export function LyricsEditorCanvas({
     for (let i = 0; i < waveform.length; i++) {
       const x = (i / waveform.length) * width;
       const value = waveform[i];
-      const y = centerY + (value * scale);
+      const y = centerY + value * scale;
 
       if (i === 0) {
         ctx.moveTo(x, y);
@@ -182,9 +182,19 @@ export function LyricsEditorCanvas({
   };
 
   // Draw lyric rectangle
-  const drawLyricRectangle = (ctx, lineData, lineIndex, songDuration, width, height, fillColor, outlineColor, isSelected) => {
+  const drawLyricRectangle = (
+    ctx,
+    lineData,
+    lineIndex,
+    songDuration,
+    width,
+    height,
+    fillColor,
+    outlineColor,
+    isSelected
+  ) => {
     const startTime = lineData.start || lineData.startTimeSec || 0;
-    const endTime = lineData.end || lineData.endTimeSec || (startTime + 3);
+    const endTime = lineData.end || lineData.endTimeSec || startTime + 3;
     const duration = endTime - startTime;
 
     if (duration > 0) {
@@ -193,7 +203,7 @@ export function LyricsEditorCanvas({
 
       // Rectangle dimensions relative to canvas height
       const rectMargin = height * 0.05; // 5% margin from top/bottom
-      const rectHeight = height - (rectMargin * 2); // Use most of canvas height
+      const rectHeight = height - rectMargin * 2; // Use most of canvas height
 
       // Store rectangle bounds for click detection
       lyricRectanglesRef.current.push({
@@ -201,7 +211,7 @@ export function LyricsEditorCanvas({
         y: rectMargin,
         width: rectWidth,
         height: rectHeight,
-        lineIndex: lineIndex
+        lineIndex: lineIndex,
       });
 
       // Draw rectangle
@@ -236,7 +246,9 @@ export function LyricsEditorCanvas({
         onLineSelect(r.lineIndex);
 
         // Scroll the corresponding line into view
-        const lineElement = document.querySelector(`.lyric-line-editor[data-index="${r.lineIndex}"]`);
+        const lineElement = document.querySelector(
+          `.lyric-line-editor[data-index="${r.lineIndex}"]`
+        );
         if (lineElement) {
           lineElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
@@ -246,18 +258,13 @@ export function LyricsEditorCanvas({
   };
 
   return (
-    <div className="lyrics-waveform-container">
+    <div className="w-full">
       <canvas
         ref={canvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
         onClick={handleCanvasClick}
-        style={{
-          width: '100%',
-          height: 'auto',
-          cursor: 'pointer',
-          display: 'block'
-        }}
+        className="w-full h-auto cursor-pointer block"
       />
     </div>
   );

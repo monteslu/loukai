@@ -10,18 +10,16 @@ export class WebRTCManager {
     this.senderPC = null;
     this.receiverPC = null;
     this.canvasStream = null;
-    this.streamCaptureCanvas = null;
-    this.streamingToChild = false;
     this.pendingICECandidates = []; // Queue for sender early ICE candidates
     this.receiverPendingICE = []; // Queue for receiver early ICE candidates
   }
 
   /**
    * Set up WebRTC sender in main window
-   * Creates offscreen canvas and RTCPeerConnection for sending
+   * Captures stream directly from karaokeCanvas and creates RTCPeerConnection for sending
    * @returns {Promise<{success: boolean, error?: string}>}
    */
-  async setupSender() {
+  setupSender() {
     try {
       console.log('🎬 Setting up WebRTC sender');
 
@@ -30,40 +28,27 @@ export class WebRTCManager {
         return { success: false, error: 'Canvas not found' };
       }
 
-      // Get or create persistent offscreen canvas for streaming
-      if (!this.streamCaptureCanvas) {
-        this.streamCaptureCanvas = document.createElement('canvas');
-        this.streamCaptureCanvas.width = 1920;
-        this.streamCaptureCanvas.height = 1080;
-        this.streamCaptureCanvas.style.display = 'none';
-        document.body.appendChild(this.streamCaptureCanvas);
+      // Capture stream directly from the main karaokeCanvas (final composited output)
+      if (!this.canvasStream) {
+        console.log('📹 Capturing stream from karaokeCanvas at 60fps');
+        this.canvasStream = canvas.captureStream(60);
 
-        // Create the MediaStream from this canvas (once)
-        this.canvasStream = this.streamCaptureCanvas.captureStream(60);
-
-        // Check if track is actually 1920x1080
+        // Check stream resolution
         const track = this.canvasStream.getVideoTracks()[0];
         const settings = track.getSettings();
         console.log('🔍 Capture stream resolution:', settings.width, 'x', settings.height);
 
         if (settings.width !== 1920 || settings.height !== 1080) {
-          console.error('❌ CAPTURE STREAM NOT 1080p! Actual:', settings.width, 'x', settings.height);
+          console.warn(
+            '⚠️ Stream resolution not 1080p! Actual:',
+            settings.width,
+            'x',
+            settings.height
+          );
         }
       }
 
-      // Start painting to the offscreen canvas now that child window is open
-      const captureCtx = this.streamCaptureCanvas.getContext('2d');
-
-      const copyFrame = () => {
-        if (this.streamingToChild) {
-          captureCtx.drawImage(canvas, 0, 0, 1920, 1080);
-          requestAnimationFrame(copyFrame);
-        }
-      };
-      this.streamingToChild = true;
-      copyFrame();
-
-      // Return the existing stream
+      // Use the existing stream
       const stream = this.canvasStream;
 
       if (stream.getVideoTracks().length === 0) {
@@ -76,29 +61,32 @@ export class WebRTCManager {
         iceCandidatePoolSize: 10,
         bundlePolicy: 'balanced',
         rtcpMuxPolicy: 'require',
-        sdpSemantics: 'unified-plan'
+        sdpSemantics: 'unified-plan',
       });
 
       // Add stream tracks with transceivers for better control
-      stream.getTracks().forEach(track => {
+      stream.getTracks().forEach((track) => {
         console.log('➕ Adding track:', track.kind);
 
         if (track.kind === 'video') {
           // Apply constraints to force 1920x1080
-          track.applyConstraints({
-            width: { exact: 1920 },
-            height: { exact: 1080 },
-            frameRate: { exact: 60 }
-          }).then(() => {
-            console.log('🎯 Applied 1920x1080 constraints to track');
-          }).catch(err => {
-            console.error('❌ Failed to apply constraints:', err);
-          });
+          track
+            .applyConstraints({
+              width: { exact: 1920 },
+              height: { exact: 1080 },
+              frameRate: { exact: 60 },
+            })
+            .then(() => {
+              console.log('🎯 Applied 1920x1080 constraints to track');
+            })
+            .catch((err) => {
+              console.error('❌ Failed to apply constraints:', err);
+            });
         }
 
         const transceiver = pc.addTransceiver(track, {
           direction: 'sendonly',
-          streams: [stream]
+          streams: [stream],
         });
 
         // Configure for high quality, low compression
@@ -144,7 +132,7 @@ export class WebRTCManager {
           window.kaiAPI.canvas.sendICECandidate('sender', {
             candidate: event.candidate.candidate,
             sdpMid: event.candidate.sdpMid,
-            sdpMLineIndex: event.candidate.sdpMLineIndex
+            sdpMLineIndex: event.candidate.sdpMLineIndex,
           });
         }
       };
@@ -170,31 +158,42 @@ export class WebRTCManager {
 
       // Force CPU-efficient codec for 1080p streaming
       const transceivers = this.senderPC.getTransceivers();
-      transceivers.forEach(transceiver => {
-        if (transceiver.sender && transceiver.sender.track && transceiver.sender.track.kind === 'video') {
+      transceivers.forEach((transceiver) => {
+        if (
+          transceiver.sender &&
+          transceiver.sender.track &&
+          transceiver.sender.track.kind === 'video'
+        ) {
           const capabilities = RTCRtpSender.getCapabilities('video');
-          console.log('📺 Available video codecs:', capabilities.codecs.map(c => c.mimeType));
+          console.log(
+            '📺 Available video codecs:',
+            capabilities.codecs.map((c) => c.mimeType)
+          );
 
           // Prioritize codecs for CPU efficiency and quality:
           // 1. H.264 Baseline (hardware accelerated, low CPU)
           // 2. VP8 (simple, good for local streaming)
-          const preferredCodecs = capabilities.codecs.filter(codec => {
-            // H.264 Baseline profile (most CPU efficient)
-            if (codec.mimeType.includes('H264') &&
-                codec.sdpFmtpLine?.includes('profile-level-id=42e01f')) {
-              return true;
-            }
-            // VP8 (simple and efficient)
-            if (codec.mimeType.includes('VP8')) {
-              return true;
-            }
-            return false;
-          }).sort((a, b) => {
-            // H.264 Baseline first, then VP8
-            if (a.mimeType.includes('H264')) return -1;
-            if (b.mimeType.includes('H264')) return 1;
-            return 0;
-          });
+          const preferredCodecs = capabilities.codecs
+            .filter((codec) => {
+              // H.264 Baseline profile (most CPU efficient)
+              if (
+                codec.mimeType.includes('H264') &&
+                codec.sdpFmtpLine?.includes('profile-level-id=42e01f')
+              ) {
+                return true;
+              }
+              // VP8 (simple and efficient)
+              if (codec.mimeType.includes('VP8')) {
+                return true;
+              }
+              return false;
+            })
+            .sort((a, b) => {
+              // H.264 Baseline first, then VP8
+              if (a.mimeType.includes('H264')) return -1;
+              if (b.mimeType.includes('H264')) return 1;
+              return 0;
+            });
 
           if (preferredCodecs.length > 0) {
             transceiver.setCodecPreferences(preferredCodecs);
@@ -207,7 +206,7 @@ export class WebRTCManager {
 
       const offer = await this.senderPC.createOffer({
         offerToReceiveVideo: false,
-        voiceActivityDetection: false
+        voiceActivityDetection: false,
       });
 
       console.log('📋 Offer created');
@@ -221,7 +220,7 @@ export class WebRTCManager {
       // Return only the serializable parts
       return {
         type: offer.type,
-        sdp: offer.sdp
+        sdp: offer.sdp,
       };
     } catch (error) {
       console.error('❌ Error in sender offer creation:', error);
@@ -245,6 +244,8 @@ export class WebRTCManager {
         console.log(`🧊 Flushing ${this.pendingICECandidates.length} pending ICE candidates`);
         for (const candidate of this.pendingICECandidates) {
           try {
+            // Sequential ICE candidate addition to ensure proper WebRTC connection establishment
+            // eslint-disable-next-line no-await-in-loop
             await this.senderPC.addIceCandidate(new RTCIceCandidate(candidate));
             console.log('✅ Added queued ICE candidate to sender');
           } catch (error) {
@@ -262,14 +263,6 @@ export class WebRTCManager {
   }
 
   /**
-   * Stop painting to capture canvas
-   */
-  stopPainting() {
-    this.streamingToChild = false;
-    console.log('🔴 Stopped painting to capture canvas - child window closed');
-  }
-
-  /**
    * Get sender connection status
    * @returns {{connectionState: string, iceConnectionState: string, iceGatheringState: string} | {error: string}}
    */
@@ -280,7 +273,7 @@ export class WebRTCManager {
     return {
       connectionState: this.senderPC.connectionState,
       iceConnectionState: this.senderPC.iceConnectionState,
-      iceGatheringState: this.senderPC.iceGatheringState
+      iceGatheringState: this.senderPC.iceGatheringState,
     };
   }
 
@@ -315,7 +308,7 @@ export class WebRTCManager {
    * Cleanup sender resources
    * @returns {Promise<void>}
    */
-  async cleanupSender() {
+  cleanupSender() {
     if (this.senderPC) {
       try {
         this.senderPC.close();
@@ -325,7 +318,13 @@ export class WebRTCManager {
       }
       this.senderPC = null;
     }
-    this.streamingToChild = false;
+
+    // Stop the canvas stream tracks
+    if (this.canvasStream) {
+      this.canvasStream.getTracks().forEach((track) => track.stop());
+      this.canvasStream = null;
+    }
+
     this.pendingICECandidates = []; // Clear pending candidates
   }
 
@@ -336,7 +335,7 @@ export class WebRTCManager {
    * Creates RTCPeerConnection for receiving stream
    * @returns {Promise<{success: boolean, error?: string}>}
    */
-  async setupReceiver() {
+  setupReceiver() {
     try {
       console.log('🎬 Setting up WebRTC receiver');
 
@@ -350,7 +349,7 @@ export class WebRTCManager {
         iceServers: [], // No ICE servers needed for local connection
         iceCandidatePoolSize: 10,
         bundlePolicy: 'balanced',
-        rtcpMuxPolicy: 'require'
+        rtcpMuxPolicy: 'require',
       });
 
       // Handle ICE candidates
@@ -361,7 +360,7 @@ export class WebRTCManager {
           ipcRenderer.invoke('canvas:sendICECandidate', 'receiver', {
             candidate: event.candidate.candidate,
             sdpMid: event.candidate.sdpMid,
-            sdpMLineIndex: event.candidate.sdpMLineIndex
+            sdpMLineIndex: event.candidate.sdpMLineIndex,
           });
         }
       };
@@ -405,6 +404,8 @@ export class WebRTCManager {
         console.log(`🧊 Flushing ${this.receiverPendingICE.length} pending ICE candidates`);
         for (const candidate of this.receiverPendingICE) {
           try {
+            // Sequential ICE candidate addition to ensure proper WebRTC connection establishment
+            // eslint-disable-next-line no-await-in-loop
             await this.receiverPC.addIceCandidate(new RTCIceCandidate(candidate));
             console.log('✅ Added queued ICE candidate to receiver');
           } catch (error) {
@@ -425,7 +426,7 @@ export class WebRTCManager {
       // Return only the serializable parts
       return {
         type: answer.type,
-        sdp: answer.sdp
+        sdp: answer.sdp,
       };
     } catch (error) {
       console.error('❌ Error in receiver answer creation:', error);
@@ -471,7 +472,7 @@ export class WebRTCManager {
     return {
       connectionState: this.receiverPC.connectionState,
       iceConnectionState: this.receiverPC.iceConnectionState,
-      iceGatheringState: this.receiverPC.iceGatheringState
+      iceGatheringState: this.receiverPC.iceGatheringState,
     };
   }
 
@@ -482,7 +483,7 @@ export class WebRTCManager {
   checkReceiverReady() {
     return {
       ready: true,
-      hasReceiverPC: !!this.receiverPC
+      hasReceiverPC: Boolean(this.receiverPC),
     };
   }
 
@@ -490,7 +491,7 @@ export class WebRTCManager {
    * Cleanup receiver resources
    * @returns {Promise<void>}
    */
-  async cleanupReceiver() {
+  cleanupReceiver() {
     if (this.receiverPC) {
       try {
         this.receiverPC.close();

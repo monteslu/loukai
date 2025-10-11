@@ -5,8 +5,6 @@
  * Works with both ElectronBridge and WebBridge via callbacks
  */
 
-import './EffectsPanel.css';
-
 export function EffectsPanel({
   effects = [],
   currentEffect = null,
@@ -18,21 +16,22 @@ export function EffectsPanel({
   onSelectEffect,
   onRandomEffect,
   onEnableEffect,
-  onDisableEffect
+  onDisableEffect,
 }) {
   // Filter effects based on category and search
   let filteredEffects = [...effects];
 
   if (currentCategory !== 'all') {
-    filteredEffects = filteredEffects.filter(effect => effect.category === currentCategory);
+    filteredEffects = filteredEffects.filter((effect) => effect.category === currentCategory);
   }
 
   if (searchTerm.trim()) {
     const searchLower = searchTerm.toLowerCase();
-    filteredEffects = filteredEffects.filter(effect =>
-      effect.name?.toLowerCase().includes(searchLower) ||
-      effect.displayName?.toLowerCase().includes(searchLower) ||
-      effect.author?.toLowerCase().includes(searchLower)
+    filteredEffects = filteredEffects.filter(
+      (effect) =>
+        effect.name?.toLowerCase().includes(searchLower) ||
+        effect.displayName?.toLowerCase().includes(searchLower) ||
+        effect.author?.toLowerCase().includes(searchLower)
     );
   }
 
@@ -42,7 +41,7 @@ export function EffectsPanel({
     { id: 'martin', label: 'Martin' },
     { id: 'flexi', label: 'Flexi' },
     { id: 'shifter', label: 'Shifter' },
-    { id: 'other', label: 'Other' }
+    { id: 'other', label: 'Other' },
   ];
 
   const sanitizeFilename = (name) => {
@@ -50,37 +49,41 @@ export function EffectsPanel({
   };
 
   return (
-    <div className="effects-container">
-      <div className="effects-header">
-        <div className="effects-search">
+    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
+      <div className="p-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+        <div className="flex-1 max-w-md">
           <input
             type="text"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm focus:outline-none focus:border-blue-500"
             placeholder="Search effects..."
             value={searchTerm}
             onChange={(e) => onSearch && onSearch(e.target.value)}
           />
         </div>
-        <div className="effects-info">
-          <span id="effectsCount">
+        <div className="flex items-center gap-4 text-gray-600 dark:text-gray-400">
+          <span id="effectsCount" className="text-sm">
             {currentCategory === 'all' && !searchTerm.trim()
               ? `${effects.length} effects`
               : `${filteredEffects.length} of ${effects.length} effects`}
           </span>
           {onRandomEffect && (
-            <button onClick={onRandomEffect} className="effects-btn">
-              <span className="material-icons">casino</span>
+            <button
+              onClick={onRandomEffect}
+              className="px-4 py-2 bg-blue-600 border-none rounded text-white cursor-pointer text-sm transition-colors flex items-center gap-1.5 hover:bg-blue-700"
+            >
+              <span className="material-icons text-lg">casino</span>
               Random
             </button>
           )}
         </div>
       </div>
 
-      <div className="effects-content">
-        <div className="effects-categories">
-          {categories.map(cat => (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="p-2.5 px-4 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex gap-2.5">
+          {categories.map((cat) => (
             <button
               key={cat.id}
-              className={`category-btn ${currentCategory === cat.id ? 'active' : ''}`}
+              className={`px-3 py-1.5 rounded text-xs cursor-pointer transition-all ${currentCategory === cat.id ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 hover:text-gray-900 dark:hover:text-white'}`}
               onClick={() => onCategoryChange && onCategoryChange(cat.id)}
             >
               {cat.label}
@@ -88,15 +91,15 @@ export function EffectsPanel({
           ))}
         </div>
 
-        <div className="effects-list">
+        <div className="flex-1 overflow-y-auto p-4">
           {filteredEffects.length === 0 ? (
-            <div className="effects-loading">
-              <span className="material-icons loading-icon">search_off</span>
-              <div className="loading-message">No effects found</div>
+            <div className="text-center p-10 text-gray-500 dark:text-gray-400 flex flex-col items-center">
+              <span className="material-icons text-5xl mb-2.5">search_off</span>
+              <div className="text-base">No effects found</div>
             </div>
           ) : (
-            <div className="effects-grid">
-              {filteredEffects.map(effect => {
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+              {filteredEffects.map((effect) => {
                 const isActive = currentEffect === effect.name;
                 const isDisabled = disabledEffects.includes(effect.name);
                 const sanitizedName = sanitizeFilename(effect.name);
@@ -105,30 +108,40 @@ export function EffectsPanel({
                 return (
                   <div
                     key={effect.name}
-                    className={`effect-item ${isActive ? 'active' : ''} ${isDisabled ? 'disabled' : ''}`}
+                    className={`rounded-md p-0 cursor-pointer transition-all overflow-hidden flex flex-col ${isActive ? 'bg-blue-100 dark:bg-blue-900/40 border border-blue-600' : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-blue-600'} ${isDisabled ? 'opacity-60' : ''}`}
                     onClick={() => !isDisabled && onSelectEffect && onSelectEffect(effect.name)}
                   >
-                    <div className="effect-preview">
+                    <div className="relative w-full h-[150px] bg-gray-200 dark:bg-gray-900 overflow-hidden">
                       <img
                         src={screenshotPath}
                         alt={effect.displayName}
-                        className="effect-screenshot"
+                        className="w-full h-full object-cover transition-transform hover:scale-105"
                         onError={(e) => {
                           e.target.style.display = 'none';
                           e.target.nextElementSibling.style.display = 'flex';
                         }}
                       />
-                      <div className="effect-fallback" style={{ display: 'none' }}>
-                        <span className="material-icons">image_not_supported</span>
+                      <div className="absolute top-0 left-0 w-full h-full hidden items-center justify-center bg-gray-200 dark:bg-gray-900 text-gray-400 dark:text-gray-600">
+                        <span className="material-icons text-5xl">image_not_supported</span>
                       </div>
                     </div>
-                    <div className={`effect-info ${isDisabled ? 'disabled' : ''}`}>
-                      <div className="effect-category">{effect.category}</div>
-                      <div className="effect-name">{effect.displayName}</div>
-                      <div className="effect-author">by {effect.author}</div>
-                      <div className="effect-actions">
+                    <div className={`p-4 flex-1 ${isDisabled ? 'opacity-60' : ''}`}>
+                      <div className="inline-block bg-blue-600 text-white px-1.5 py-0.5 rounded text-[11px] mb-2">
+                        {effect.category}
+                      </div>
+                      <div
+                        className={`font-bold mb-1.5 text-sm ${isDisabled ? 'text-gray-500 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}
+                      >
+                        {effect.displayName}
+                      </div>
+                      <div
+                        className={`text-xs mb-1.5 ${isDisabled ? 'text-gray-400 dark:text-gray-600' : 'text-gray-600 dark:text-gray-400'}`}
+                      >
+                        by {effect.author}
+                      </div>
+                      <div className="flex gap-2 mt-2.5">
                         <button
-                          className="effect-action-btn primary"
+                          className={`flex-1 px-3 py-1.5 rounded text-xs cursor-pointer transition-colors ${isDisabled ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-500 cursor-not-allowed opacity-50' : 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             !isDisabled && onSelectEffect && onSelectEffect(effect.name);
@@ -138,7 +151,7 @@ export function EffectsPanel({
                           Use
                         </button>
                         <button
-                          className="effect-action-btn"
+                          className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-300 text-xs cursor-pointer transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 hover:text-gray-900 dark:hover:text-white"
                           onClick={(e) => {
                             e.stopPropagation();
                             if (isDisabled) {

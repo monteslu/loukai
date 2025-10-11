@@ -1,7 +1,6 @@
 import yazl from 'yazl';
 import yauzl from 'yauzl';
 import fs from 'fs';
-import path from 'path';
 
 class KaiWriter {
   static saveLocks = new Map(); // Track ongoing save operations
@@ -9,7 +8,11 @@ class KaiWriter {
   static async save(kaiData, originalFilePath) {
     // Prevent concurrent saves to the same file
     if (this.saveLocks.has(originalFilePath)) {
-      console.log('KaiWriter: Save already in progress for', originalFilePath, '- skipping duplicate request');
+      console.log(
+        'KaiWriter: Save already in progress for',
+        originalFilePath,
+        '- skipping duplicate request'
+      );
       return this.saveLocks.get(originalFilePath);
     }
 
@@ -24,10 +27,10 @@ class KaiWriter {
     }
   }
 
-  static async _performSave(kaiData, originalFilePath) {
+  static _performSave(kaiData, originalFilePath) {
     return new Promise((resolve, reject) => {
       console.log('KaiWriter: Starting save process for', originalFilePath);
-      
+
       // First, read the original KAI file to preserve all non-lyrics data
       yauzl.open(originalFilePath, { lazyEntries: true }, (err, zipfile) => {
         if (err) {
@@ -56,7 +59,7 @@ class KaiWriter {
             readStream.on('data', (chunk) => chunks.push(chunk));
             readStream.on('end', () => {
               const buffer = Buffer.concat(chunks);
-              
+
               if (entry.fileName === 'song.json') {
                 try {
                   originalSongJson = JSON.parse(buffer.toString('utf8'));
@@ -69,7 +72,7 @@ class KaiWriter {
                 // Store all other files as-is
                 originalEntries.set(entry.fileName, buffer);
               }
-              
+
               zipfile.readEntry();
             });
             readStream.on('error', (err) => {
@@ -87,7 +90,7 @@ class KaiWriter {
           try {
             // Update the song.json with new lyrics data and song metadata
             const updatedSongJson = { ...originalSongJson };
-            
+
             // Only update lyrics if we have valid lyrics data, otherwise preserve original
             if (kaiData.lyrics && Array.isArray(kaiData.lyrics) && kaiData.lyrics.length > 0) {
               updatedSongJson.lyrics = kaiData.lyrics;
@@ -95,7 +98,7 @@ class KaiWriter {
             } else {
               console.log('KaiWriter: Preserving original lyrics (new lyrics empty/invalid)');
             }
-            
+
             // Update song metadata including rejections if present
             if (kaiData.song) {
               updatedSongJson.song = { ...updatedSongJson.song, ...kaiData.song };
@@ -105,7 +108,12 @@ class KaiWriter {
             // Update meta object if provided (for AI corrections)
             if (kaiData.meta) {
               updatedSongJson.meta = { ...updatedSongJson.meta, ...kaiData.meta };
-              console.log('KaiWriter: Updated meta object, rejections:', kaiData.meta.corrections?.rejected?.length || 0, 'suggestions:', kaiData.meta.corrections?.missing_lines_suggested?.length || 0);
+              console.log(
+                'KaiWriter: Updated meta object, rejections:',
+                kaiData.meta.corrections?.rejected?.length || 0,
+                'suggestions:',
+                kaiData.meta.corrections?.missing_lines_suggested?.length || 0
+              );
             }
 
             console.log('KaiWriter: Updated song.json with', kaiData.lyrics.length, 'lyrics lines');
@@ -132,7 +140,8 @@ class KaiWriter {
   static createUpdatedKaiFile(originalFilePath, updatedSongJson, originalEntries) {
     return new Promise((resolve, reject) => {
       // Use unique temporary filename to prevent conflicts
-      const tempFilePath = originalFilePath + '.tmp.' + Date.now() + '.' + Math.random().toString(36).substr(2, 9);
+      const tempFilePath =
+        originalFilePath + '.tmp.' + Date.now() + '.' + Math.random().toString(36).substr(2, 9);
       const zipFile = new yazl.ZipFile();
 
       // Add updated song.json
@@ -164,7 +173,7 @@ class KaiWriter {
             reject(new Error(`Failed to replace original file: ${err.message}`));
             return;
           }
-          
+
           console.log('KaiWriter: File replacement completed');
           resolve();
         });
