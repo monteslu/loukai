@@ -460,26 +460,57 @@ export class ElectronBridge extends BridgeInterface {
       enabled: prefs.enabled,
       strength: prefs.strength,
       speed: prefs.speed,
+      preferVocals: prefs.preferVocals,
     };
 
+    // Save to disk
     const result = await this.api.settings.set('autoTunePreferences', cleanPrefs);
 
-    // Apply settings to audio engine in real-time
-    if (cleanPrefs.enabled !== undefined) {
-      await this.setAutotuneEnabled(cleanPrefs.enabled);
-    }
-    if (cleanPrefs.strength !== undefined || cleanPrefs.speed !== undefined) {
-      await this.setAutotuneSettings(cleanPrefs);
+    // Apply settings to player in real-time (if it exists)
+    // This ensures mid-song adjustments work immediately
+    const player = window.app?.player?.kaiPlayer || window.app?.player?.cdgPlayer;
+    if (player) {
+      try {
+        // Apply all settings at once
+        await player.setAutoTuneSettings(cleanPrefs);
+        console.log('🎤 Applied auto-tune settings in real-time:', cleanPrefs);
+      } catch (error) {
+        console.error('❌ Failed to apply auto-tune settings to player:', error);
+      }
     }
 
     return result;
   }
 
   async setAutotuneEnabled(enabled) {
+    // Apply to player immediately
+    const player = window.app?.player?.kaiPlayer || window.app?.player?.cdgPlayer;
+    if (player) {
+      try {
+        await player.setAutoTuneSettings({ enabled });
+        console.log('🎤 Applied auto-tune enabled:', enabled);
+      } catch (error) {
+        console.error('❌ Failed to apply auto-tune enabled:', error);
+      }
+    }
+
+    // Also notify main process for persistence
     return await this.api.autotune.setEnabled(enabled);
   }
 
   async setAutotuneSettings(settings) {
+    // Apply to player immediately
+    const player = window.app?.player?.kaiPlayer || window.app?.player?.cdgPlayer;
+    if (player) {
+      try {
+        await player.setAutoTuneSettings(settings);
+        console.log('🎤 Applied auto-tune settings:', settings);
+      } catch (error) {
+        console.error('❌ Failed to apply auto-tune settings:', error);
+      }
+    }
+
+    // Also notify main process for persistence
     return await this.api.autotune.setSettings(settings);
   }
 

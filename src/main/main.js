@@ -1745,12 +1745,12 @@ class KaiPlayerApp {
 
             // Sequential file I/O for MP3 verification with progress reporting
             // eslint-disable-next-line no-await-in-loop
-            if (
-              await fsPromises
-                .access(mp3Path)
-                .then(() => true)
-                .catch(() => false)
-            ) {
+            const mp3Exists = await fsPromises
+              .access(mp3Path)
+              .then(() => true)
+              .catch(() => false);
+
+            if (mp3Exists) {
               processedPaths.add(fullPath);
               processedPaths.add(mp3Path);
 

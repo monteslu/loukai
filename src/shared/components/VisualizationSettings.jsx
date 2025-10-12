@@ -27,6 +27,7 @@ export function VisualizationSettings({
     enabled: false,
     strength: 50,
     speed: 20,
+    preferVocals: true,
   });
 
   // Load preferences on mount
@@ -111,14 +112,8 @@ export function VisualizationSettings({
     }
 
     try {
+      // saveAutotunePreferences now handles both persistence AND real-time application
       await bridge.saveAutotunePreferences?.(newSettings);
-
-      // Also update via API for real-time changes
-      if (key === 'enabled') {
-        await bridge.setAutotuneEnabled?.(value);
-      } else {
-        await bridge.setAutotuneSettings?.(newSettings);
-      }
     } catch (error) {
       console.error('Failed to save autotune preferences:', error);
     }
@@ -202,6 +197,19 @@ export function VisualizationSettings({
               className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
             />
             <span className="text-gray-900 dark:text-gray-100">Enable Auto-Tune</span>
+          </label>
+
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autotuneSettings.preferVocals}
+              onChange={(e) => handleAutotuneChange('preferVocals', e.target.checked)}
+              disabled={!autotuneSettings.enabled}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+            <span className="text-gray-900 dark:text-gray-100">
+              Prefer Vocals for Pitch Reference
+            </span>
           </label>
 
           <div className="space-y-2">

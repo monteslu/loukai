@@ -20,6 +20,8 @@ export default [
       'src/renderer/lib/butterchurn.min.js',
       'src/renderer/lib/butterchurnPresets.min.js',
       'src/renderer/lib/cdgraphics.js',
+      'src/renderer/js/soundtouch-worklet.js',
+      'src/renderer/public/js/soundtouch-worklet.js',
       'static/**',
     ],
   },

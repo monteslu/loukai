@@ -1,0 +1,102 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Electron Main Process",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron",
+      "windows": {
+        "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron.cmd"
+      },
+      "args": [
+        ".",
+        "--no-sandbox"
+      ],
+      "outputCapture": "std",
+      "sourceMaps": true,
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Debug Electron Renderer Process",
+      "type": "chrome",
+      "request": "attach",
+      "port": 9222,
+      "webRoot": "${workspaceFolder}/src/renderer",
+      "timeout": 30000,
+      "sourceMaps": true,
+      "trace": true
+    },
+    {
+      "name": "Debug Web Server",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "start"
+      ],
+      "port": 9229,
+      "timeout": 30000,
+      "sourceMaps": true,
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Run Tests (Current File)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "test",
+        "--",
+        "${file}"
+      ],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Run All Tests",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "test:run"
+      ],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Run Tests with Coverage",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "test:coverage"
+      ],
+      "console": "integratedTerminal"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Debug Electron (Main + Renderer)",
+      "configurations": [
+        "Debug Electron Main Process",
+        "Debug Electron Renderer Process"
+      ],
+      "presentation": {
+        "hidden": false,
+        "group": "Electron",
+        "order": 1
+      },
+      "stopAll": true
+    }
+  ]
+}

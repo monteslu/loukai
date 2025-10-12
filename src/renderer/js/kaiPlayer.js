@@ -1,4 +1,5 @@
 import { PlayerInterface } from './PlayerInterface.js';
+import { MicrophoneEngine } from './microphoneEngine.js';
 
 export class KAIPlayer extends PlayerInterface {
   constructor() {
@@ -15,9 +16,6 @@ export class KAIPlayer extends PlayerInterface {
       PA: 'default',
       IEM: 'default',
     };
-
-    // Input device ID for microphone
-    this.inputDevice = 'default';
 
     // Note: this.isPlaying is inherited from PlayerInterface
     this.currentPosition = 0;
@@ -43,14 +41,8 @@ export class KAIPlayer extends PlayerInterface {
 
     // Note: this.onSongEndedCallback is inherited from PlayerInterface
 
-    // Microphone input
-    this.microphoneStream = null;
-    this.microphoneSource = null;
-    this.microphoneGain = null;
-
-    // Auto-tune
-    this.autoTuneNode = null;
-    this.autoTuneWorkletLoaded = false;
+    // Microphone engine (handles all mic/auto-tune functionality)
+    this.micEngine = null; // Will be initialized after audio contexts are created
 
     this.mixerState = {
       // Simple 3-fader mixer
@@ -69,12 +61,7 @@ export class KAIPlayer extends PlayerInterface {
       },
       // Per-song data (for internal use)
       stems: [],
-      autotuneSettings: {
-        enabled: false,
-        strength: 50,
-        speed: 5,
-      },
-      // Mic routing settings
+      // Mic routing settings (deprecated - now in micEngine, kept for compatibility)
       micToSpeakers: true,
       enableMic: true,
     };
@@ -128,11 +115,27 @@ export class KAIPlayer extends PlayerInterface {
       const iemGain = this.mixerState.IEM.muted ? 0 : this.dbToLinear(this.mixerState.IEM.gain);
       this.outputNodes.IEM.masterGain.gain.value = iemGain;
 
-      // Load auto-tune worklet
-      await this.loadAutoTuneWorklet();
+      // Initialize microphone engine
+      this.micEngine = new MicrophoneEngine(this.audioContexts.PA, this.outputNodes.PA.masterGain, {
+        getCurrentPosition: () => this.getCurrentPosition(),
+      });
+
+      // Load auto-tune worklets
+      await this.micEngine.loadAutoTuneWorklet();
 
       // Load mic settings
       await this.loadMicSettings();
+
+      // Start microphone if enabled (after reinitialize, mic needs to be restarted)
+      if (this.micEngine.enableMic) {
+        await this.micEngine.startMicrophoneInput(this.micEngine.inputDevice);
+
+        // Apply saved mic gain and mute state
+        const linearGain = this.mixerState.mic.muted
+          ? 0
+          : this.dbToLinear(this.mixerState.mic.gain);
+        this.micEngine.setMicrophoneGain(linearGain);
+      }
 
       return true;
     } catch (error) {
@@ -230,6 +233,24 @@ export class KAIPlayer extends PlayerInterface {
       this.outputNodes[busType].sourceNodes.clear();
       this.outputNodes[busType].gainNodes.clear();
 
+      // If PA context was recreated, update microphone engine
+      if (busType === 'PA' && this.micEngine) {
+        console.log('[AutoTune] PA context recreated, updating microphone engine...');
+        this.micEngine.updateAudioContext(this.audioContexts.PA, this.outputNodes.PA.masterGain);
+        await this.micEngine.loadAutoTuneWorklet();
+
+        // Restart microphone if it was enabled
+        if (this.micEngine.enableMic) {
+          await this.micEngine.startMicrophoneInput(this.micEngine.inputDevice);
+
+          // Reapply saved mic gain and mute state
+          const linearGain = this.mixerState.mic.muted
+            ? 0
+            : this.dbToLinear(this.mixerState.mic.gain);
+          this.micEngine.setMicrophoneGain(linearGain);
+        }
+      }
+
       // Reload audio buffers for the new context (audio buffers are context-specific)
       if (this.songData) {
         await this.reloadAudioBuffersForBus(busType);
@@ -274,6 +295,15 @@ export class KAIPlayer extends PlayerInterface {
 
     await this.loadAudioBuffers(songData);
 
+    // Load vocals_f0 data for auto-tune (if available)
+    if (this.micEngine) {
+      if (songData.features) {
+        this.micEngine.loadVocalsF0(songData.features);
+      } else {
+        this.micEngine.clearPitchReference();
+      }
+    }
+
     // Report song loaded to main process
     this.reportSongLoaded();
 
@@ -317,7 +347,7 @@ export class KAIPlayer extends PlayerInterface {
       return;
     }
 
-    if (!this.audioContext) {
+    if (!this.audioContexts.PA || !this.audioContexts.IEM) {
       await this.initialize();
     }
 
@@ -421,6 +451,11 @@ export class KAIPlayer extends PlayerInterface {
     // Start state reporting
     this.startStateReporting();
 
+    // Update microphone engine playing state
+    if (this.micEngine) {
+      this.micEngine.setPlaying(true);
+    }
+
     // Report immediate state change
     this.reportStateChange();
 
@@ -441,6 +476,11 @@ export class KAIPlayer extends PlayerInterface {
 
     // Stop state reporting
     this.stopStateReporting();
+
+    // Update microphone engine playing state
+    if (this.micEngine) {
+      this.micEngine.setPlaying(false);
+    }
 
     // Report immediate state change
     this.reportStateChange();
@@ -552,6 +592,12 @@ export class KAIPlayer extends PlayerInterface {
             const paSource = this.audioContexts.PA.createBufferSource();
             paSource.buffer = audioBuffer;
             paSource.connect(paGainNode);
+
+            // If this is a melodic stem, connect to microphone engine for pitch detection
+            if (this.isMelodicStem(stem.name) && this.micEngine) {
+              this.micEngine.connectMusicSource(paSource);
+            }
+
             paSource.start(scheduleTime, offset);
             this.outputNodes.PA.sourceNodes.set(stem.name, paSource);
 
@@ -582,6 +628,31 @@ export class KAIPlayer extends PlayerInterface {
     const vocalsKeywords = ['vocals', 'vocal', 'voice', 'lead', 'singing', 'vox'];
     const lowerName = stemName.toLowerCase();
     return vocalsKeywords.some((keyword) => lowerName.includes(keyword));
+  }
+
+  isMelodicStem(stemName) {
+    // Returns true for stems containing melodic instruments (typically "other")
+    // These are best for pitch detection as melody reference
+    const lowerName = stemName.toLowerCase();
+
+    // Explicitly melodic stems
+    if (
+      lowerName.includes('other') ||
+      lowerName.includes('music') ||
+      lowerName.includes('instrumental') ||
+      lowerName.includes('accompaniment') ||
+      lowerName.includes('melody')
+    ) {
+      return true;
+    }
+
+    // Exclude non-melodic stems
+    if (this.isVocalStem(stemName)) return false;
+    if (lowerName.includes('drum') || lowerName.includes('percussion')) return false;
+    if (lowerName.includes('bass')) return false;
+
+    // Default to true for unknown stems (likely melodic)
+    return true;
   }
 
   updateStemGain(stem) {
@@ -622,8 +693,11 @@ export class KAIPlayer extends PlayerInterface {
         linearGain,
         this.audioContexts.IEM.currentTime
       );
+    } else if (bus === 'mic' && this.micEngine) {
+      // Apply mic gain (considering mute state)
+      const linearGain = this.mixerState.mic.muted ? 0 : this.dbToLinear(gainDb);
+      this.micEngine.setMicrophoneGain(linearGain);
     }
-    // Mic gain would be applied to microphone input node (when implemented)
 
     // Report to main process (which handles persistence via AppState)
     this.reportMixerState();
@@ -643,6 +717,9 @@ export class KAIPlayer extends PlayerInterface {
     } else if (bus === 'IEM' && this.outputNodes.IEM.masterGain) {
       const gain = muted ? 0 : this.dbToLinear(this.mixerState.IEM.gain);
       this.outputNodes.IEM.masterGain.gain.setValueAtTime(gain, this.audioContexts.IEM.currentTime);
+    } else if (bus === 'mic' && this.micEngine) {
+      const gain = muted ? 0 : this.dbToLinear(this.mixerState.mic.gain);
+      this.micEngine.setMicrophoneGain(gain);
     }
 
     // Report to main process (which handles persistence via AppState)
@@ -662,6 +739,9 @@ export class KAIPlayer extends PlayerInterface {
     } else if (bus === 'IEM' && this.outputNodes.IEM.masterGain) {
       const gain = muted ? 0 : this.dbToLinear(this.mixerState.IEM.gain);
       this.outputNodes.IEM.masterGain.gain.setValueAtTime(gain, this.audioContexts.IEM.currentTime);
+    } else if (bus === 'mic' && this.micEngine) {
+      const gain = muted ? 0 : this.dbToLinear(this.mixerState.mic.gain);
+      this.micEngine.setMicrophoneGain(gain);
     }
 
     // Don't report back to main - this was initiated by main/admin
@@ -706,191 +786,37 @@ export class KAIPlayer extends PlayerInterface {
     };
   }
 
-  async loadAutoTuneWorklet() {
-    try {
-      if (!this.audioContexts.PA) {
-        return;
-      }
-
-      await this.audioContexts.PA.audioWorklet.addModule('js/autoTuneWorklet.js');
-      this.autoTuneWorkletLoaded = true;
-    } catch (error) {
-      console.error('Failed to load auto-tune worklet:', error);
-      this.autoTuneWorkletLoaded = false;
-    }
-  }
+  // Microphone/Auto-tune delegation methods (delegate to MicrophoneEngine)
 
   async startMicrophoneInput(deviceId = 'default') {
-    try {
-      // Don't start mic if disabled
-      if (!this.mixerState.enableMic) {
-        return;
-      }
-
-      // Stop existing microphone if running
-      this.stopMicrophoneInput();
-
-      const constraints = {
-        audio: {
-          deviceId: deviceId !== 'default' ? { exact: deviceId } : undefined,
-          channelCount: 1,
-          sampleRate: 44100,
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
-      };
-
-      // Get microphone stream
-      this.microphoneStream = await navigator.mediaDevices.getUserMedia(constraints);
-
-      // Create audio source from microphone
-      this.microphoneSource = this.audioContexts.PA.createMediaStreamSource(this.microphoneStream);
-
-      // Create gain node for microphone volume control
-      this.microphoneGain = this.audioContexts.PA.createGain();
-      this.microphoneGain.gain.value = 1.0; // Full volume, can be adjusted
-
-      // Connect microphone to gain node
-      this.microphoneSource.connect(this.microphoneGain);
-
-      // Only route to speakers if micToSpeakers is enabled
-      if (this.mixerState.micToSpeakers) {
-        // If auto-tune is available and enabled, route through it
-        if (this.autoTuneWorkletLoaded && this.mixerState.autotuneSettings.enabled) {
-          await this.enableAutoTune();
-        } else {
-          // Direct connection to PA output
-          this.microphoneGain.connect(this.outputNodes.PA.masterGain);
-        }
-      } else {
-        // Mic not routed to speakers - captured but silent
-      }
-    } catch (error) {
-      console.error('Failed to start microphone input:', error);
-      this.stopMicrophoneInput();
-    }
-  }
-
-  enableAutoTune() {
-    try {
-      if (!this.autoTuneWorkletLoaded || !this.microphoneGain) return;
-
-      // Create auto-tune node if it doesn't exist
-      if (!this.autoTuneNode) {
-        this.autoTuneNode = new AudioWorkletNode(this.audioContexts.PA, 'auto-tune-processor');
-      }
-
-      // Disconnect current connections
-      this.microphoneGain.disconnect();
-
-      // Route through auto-tune
-      this.microphoneGain.connect(this.autoTuneNode);
-      this.autoTuneNode.connect(this.outputNodes.PA.masterGain);
-
-      // Always update all auto-tune settings to ensure they're current
-      this.autoTuneNode.port.postMessage({
-        type: 'setEnabled',
-        value: this.mixerState.autotuneSettings.enabled,
-      });
-      this.autoTuneNode.port.postMessage({
-        type: 'setStrength',
-        value: this.mixerState.autotuneSettings.strength,
-      });
-      this.autoTuneNode.port.postMessage({
-        type: 'setSpeed',
-        value: this.mixerState.autotuneSettings.speed,
-      });
-    } catch (error) {
-      console.error('Failed to enable auto-tune:', error);
-    }
-  }
-
-  disableAutoTune() {
-    try {
-      if (!this.microphoneGain) return;
-
-      // Disconnect current connections
-      this.microphoneGain.disconnect();
-      if (this.autoTuneNode) {
-        this.autoTuneNode.disconnect();
-        this.autoTuneNode.port.postMessage({
-          type: 'setEnabled',
-          value: false,
-        });
-      }
-
-      // Only reconnect if mic routing is enabled
-      if (this.mixerState.micToSpeakers) {
-        // Direct connection to PA output
-        this.microphoneGain.connect(this.outputNodes.PA.masterGain);
-      } else {
-        // Mic disabled - stay disconnected
-      }
-    } catch (error) {
-      console.error('Failed to disable auto-tune:', error);
-    }
-  }
-
-  async setAutoTuneSettings(settings) {
-    this.mixerState.autotuneSettings = { ...this.mixerState.autotuneSettings, ...settings };
-
-    // Handle enable/disable
-    if (Object.hasOwn(settings, 'enabled')) {
-      if (settings.enabled) {
-        await this.enableAutoTune();
-      } else {
-        await this.disableAutoTune();
-      }
-    }
-
-    // Update parameters if auto-tune node exists
-    // These will apply in real-time to the running audio
-    if (this.autoTuneNode) {
-      if (Object.hasOwn(settings, 'strength')) {
-        this.autoTuneNode.port.postMessage({
-          type: 'setStrength',
-          value: settings.strength,
-        });
-      }
-
-      if (Object.hasOwn(settings, 'speed')) {
-        this.autoTuneNode.port.postMessage({
-          type: 'setSpeed',
-          value: settings.speed,
-        });
-      }
-    } else if (settings.enabled && this.microphoneGain) {
-      // If auto-tune should be enabled but node doesn't exist, create it
-      await this.enableAutoTune();
+    if (this.micEngine) {
+      await this.micEngine.startMicrophoneInput(deviceId);
     }
   }
 
   stopMicrophoneInput() {
-    if (this.microphoneSource) {
-      this.microphoneSource.disconnect();
-      this.microphoneSource = null;
+    if (this.micEngine) {
+      this.micEngine.stopMicrophoneInput();
     }
+  }
 
-    if (this.microphoneGain) {
-      this.microphoneGain.disconnect();
-      this.microphoneGain = null;
-    }
+  setAutoTuneSettings(settings) {
+    if (this.micEngine) {
+      this.micEngine.setAutoTuneSettings(settings);
 
-    if (this.autoTuneNode) {
-      this.autoTuneNode.disconnect();
-      this.autoTuneNode = null;
-    }
-
-    if (this.microphoneStream) {
-      this.microphoneStream.getTracks().forEach((track) => track.stop());
-      this.microphoneStream = null;
+      // Reapply gain after auto-tune enable/disable reconnects the audio chain
+      if (this.micEngine.microphoneGain && Object.hasOwn(settings, 'enabled')) {
+        const linearGain = this.mixerState.mic.muted
+          ? 0
+          : this.dbToLinear(this.mixerState.mic.gain);
+        this.micEngine.setMicrophoneGain(linearGain);
+      }
     }
   }
 
   setMicrophoneGain(gainValue) {
-    if (this.microphoneGain) {
-      this.microphoneGain.gain.value = gainValue;
+    if (this.micEngine) {
+      this.micEngine.setMicrophoneGain(gainValue);
     }
   }
 
@@ -912,7 +838,7 @@ export class KAIPlayer extends PlayerInterface {
 
   async loadMicSettings() {
     try {
-      if (window.kaiAPI.settings) {
+      if (window.kaiAPI.settings && this.micEngine) {
         const micToSpeakers = await window.kaiAPI.settings.get('micToSpeakers', true);
         const enableMic = await window.kaiAPI.settings.get('enableMic', true);
         const iemMonoVocals = await window.kaiAPI.settings.get('iemMonoVocals', true);
@@ -920,40 +846,76 @@ export class KAIPlayer extends PlayerInterface {
         this.mixerState.micToSpeakers = micToSpeakers;
         this.mixerState.enableMic = enableMic;
         this.mixerState.iemMonoVocals = iemMonoVocals;
+
+        // Load settings into microphone engine
+        this.micEngine.micToSpeakers = micToSpeakers;
+        this.micEngine.enableMic = enableMic;
+
+        // Load auto-tune settings
+        const autoTunePrefs = await window.kaiAPI.settings.get('autoTunePreferences', {});
+        if (autoTunePrefs.enabled !== undefined) {
+          this.micEngine.autotuneSettings.enabled = autoTunePrefs.enabled;
+        }
+        if (autoTunePrefs.strength !== undefined) {
+          this.micEngine.autotuneSettings.strength = autoTunePrefs.strength;
+        }
+        if (autoTunePrefs.speed !== undefined) {
+          this.micEngine.autotuneSettings.speed = autoTunePrefs.speed;
+        }
+        if (autoTunePrefs.preferVocals !== undefined) {
+          this.micEngine.autotuneSettings.preferVocals = autoTunePrefs.preferVocals;
+        }
+
+        console.log('[AutoTune] Loaded settings:', this.micEngine.autotuneSettings);
+
+        // If auto-tune is enabled and mic is already running, apply it
+        if (
+          this.micEngine.autotuneSettings.enabled &&
+          this.micEngine.microphoneGain &&
+          this.micEngine.autoTuneWorkletsLoaded
+        ) {
+          console.log('[AutoTune] Applying enabled auto-tune from saved settings');
+          this.micEngine.enableAutoTune();
+
+          // Reapply gain after auto-tune reconnects the audio chain
+          const linearGain = this.mixerState.mic.muted
+            ? 0
+            : this.dbToLinear(this.mixerState.mic.gain);
+          this.micEngine.setMicrophoneGain(linearGain);
+        }
       }
     } catch (error) {
-      console.error('Failed to load mic settings:', error);
+      console.error('Failed to load mic/autotune settings:', error);
     }
   }
 
   setMicToSpeakers(enabled) {
     this.mixerState.micToSpeakers = enabled;
+    if (this.micEngine) {
+      this.micEngine.setMicToSpeakers(enabled);
 
-    // Update routing if mic is currently active
-    if (this.microphoneGain) {
-      this.microphoneGain.disconnect();
-
-      if (enabled) {
-        // Reconnect to speakers
-        if (this.autoTuneWorkletLoaded && this.mixerState.autotuneSettings.enabled) {
-          this.enableAutoTune();
-        } else {
-          this.microphoneGain.connect(this.outputNodes.PA.masterGain);
-        }
+      // Reapply gain after mic routing changes reconnect the audio chain
+      if (this.micEngine.microphoneGain) {
+        const linearGain = this.mixerState.mic.muted
+          ? 0
+          : this.dbToLinear(this.mixerState.mic.gain);
+        this.micEngine.setMicrophoneGain(linearGain);
       }
-      // If disabled, mic stays disconnected (captured but not routed)
     }
   }
 
-  setEnableMic(enabled) {
+  async setEnableMic(enabled) {
     this.mixerState.enableMic = enabled;
+    if (this.micEngine) {
+      await this.micEngine.setEnableMic(enabled);
 
-    if (enabled) {
-      // Restart mic with saved device preference
-      this.startMicrophoneInput(this.inputDevice);
-    } else {
-      // Stop mic completely
-      this.stopMicrophoneInput();
+      // Reapply saved mic gain and mute state after mic restarts
+      if (enabled && this.micEngine.microphoneGain) {
+        const linearGain = this.mixerState.mic.muted
+          ? 0
+          : this.dbToLinear(this.mixerState.mic.gain);
+        this.micEngine.setMicrophoneGain(linearGain);
+      }
     }
   }
 
@@ -1011,7 +973,10 @@ export class KAIPlayer extends PlayerInterface {
       this.stopAllSources();
       this.stopSongEndMonitoring();
 
-      // Use base class method for consistent song end handling
+      // Pause to properly clean up (sets isPlaying = false, updates renderer, etc.)
+      this.pause();
+
+      // Use base class method for consistent song end handling (triggers callback)
       this._triggerSongEnd();
     }
   }

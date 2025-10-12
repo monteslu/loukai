@@ -158,6 +158,9 @@ export class PlayerInterface {
     this.stopStateReporting();
     this.isPlaying = false;
 
+    // Report final state (position at end, not playing)
+    this.reportStateChange();
+
     if (this.onSongEndedCallback) {
       this.onSongEndedCallback();
     }

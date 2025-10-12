@@ -1,0 +1,206 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  quality-checks:
+    name: Code Quality & Security
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Check code formatting
+        run: npm run format:check
+
+      - name: Security audit
+        run: npm audit --audit-level=high
+        continue-on-error: false
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:run
+
+      - name: Generate coverage report
+        run: npm run test:coverage
+
+      - name: Check coverage threshold
+        run: |
+          # Extract coverage percentage from vitest output
+          COVERAGE=$(npm run test:coverage 2>&1 | grep -oP 'All files\s+\|\s+\K[0-9.]+' | head -1)
+          echo "Current coverage: $COVERAGE%"
+
+          # Fail if coverage is below 30%
+          if (( $(echo "$COVERAGE < 30" | bc -l) )); then
+            echo "❌ Coverage is below 30% threshold"
+            exit 1
+          fi
+          echo "✅ Coverage meets 30% threshold"
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage/coverage-final.json
+          flags: unittests
+          name: codecov-umbrella
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
+  build:
+    name: Build Check
+    runs-on: ubuntu-latest
+    needs: [quality-checks, test]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer
+        run: npm run build:renderer
+
+      - name: Build web
+        run: npm run build:web
+
+      - name: Check build artifacts
+        run: |
+          echo "Checking build outputs..."
+          ls -lh src/renderer/dist/
+          ls -lh src/web/dist/
+
+          # Verify critical files exist
+          test -f src/renderer/dist/index.html || exit 1
+          test -f src/web/dist/index.html || exit 1
+
+          echo "✅ Build artifacts verified"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            src/renderer/dist/
+            src/web/dist/
+          retention-days: 7
+
+  # Optional: Bundle size check
+  bundle-size:
+    name: Bundle Size Check
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+
+      - name: Analyze bundle sizes
+        run: |
+          echo "📊 Bundle Size Report"
+          echo "===================="
+
+          # Renderer bundle
+          RENDERER_SIZE=$(du -sh src/renderer/dist/ | cut -f1)
+          echo "Renderer: $RENDERER_SIZE"
+
+          # Web bundle
+          WEB_SIZE=$(du -sh src/web/dist/ | cut -f1)
+          echo "Web: $WEB_SIZE"
+
+          # Individual JS chunks
+          echo ""
+          echo "Top 5 largest files:"
+          find src/renderer/dist src/web/dist -type f -name "*.js" -exec ls -lh {} \; | sort -k5 -hr | head -5 | awk '{print $9, $5}'
+
+      - name: Comment PR with bundle size
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            const rendererSize = require('child_process').execSync('du -sh src/renderer/dist/').toString().split('\t')[0];
+            const webSize = require('child_process').execSync('du -sh src/web/dist/').toString().split('\t')[0];
+
+            const comment = `## 📦 Bundle Size Report\n\n` +
+              `- **Renderer:** ${rendererSize}\n` +
+              `- **Web:** ${webSize}\n\n` +
+              `*Built from commit ${context.sha.substring(0, 7)}*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              body: comment
+            });
+
+  # Success summary
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [quality-checks, test, build]
+    if: success()
+
+    steps:
+      - name: Success message
+        run: |
+          echo "✅ All CI checks passed!"
+          echo "- Code quality: PASSED"
+          echo "- Security audit: PASSED"
+          echo "- Tests: PASSED"
+          echo "- Coverage: PASSED"
+          echo "- Build: PASSED"

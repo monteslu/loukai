@@ -188,7 +188,10 @@ class KaiLoader {
 
       features: {
         notesRef: data.features.notes_ref || null,
-        vocalsF0: data.features.vocals_f0 || null,
+        // Use vocal_pitch from song.json (MIDI+cents format) for auto-tune
+        // Falls back to raw vocals_f0 from features if vocal_pitch unavailable
+        vocalPitch: data.songJson.vocal_pitch || data.features.vocal_pitch || null,
+        vocalsF0: data.features.vocals_f0 || null, // Raw Hz data (legacy/coaching)
         onsets: data.features.onsets || null,
         tempo: data.features.tempo || null,
       },

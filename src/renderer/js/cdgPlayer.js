@@ -4,6 +4,7 @@
 /* global CDGraphics */
 
 import { PlayerInterface } from './PlayerInterface.js';
+import { MicrophoneEngine } from './microphoneEngine.js';
 
 export class CDGPlayer extends PlayerInterface {
   constructor(canvasId) {
@@ -43,6 +44,9 @@ export class CDGPlayer extends PlayerInterface {
     this.butterchurn = null;
     this.effectsEnabled = true;
     this.overlayOpacity = 0.7; // Default, will be updated from settings
+
+    // Microphone engine (handles mic input and auto-tune)
+    this.micEngine = null; // Will be initialized when audio context is set
 
     // Note: this.stateReportInterval is inherited from PlayerInterface
   }
@@ -151,6 +155,11 @@ export class CDGPlayer extends PlayerInterface {
       this.audioSource.connect(this.analyserNode);
     }
 
+    // Connect to microphone engine for real-time music pitch detection (auto-tune)
+    if (this.micEngine) {
+      this.micEngine.connectMusicSource(this.audioSource);
+    }
+
     // Handle song end - check both isPlaying AND that we've reached the end naturally
     const duration = this.audioBuffer.duration;
     this.audioSource.onended = () => {
@@ -171,6 +180,11 @@ export class CDGPlayer extends PlayerInterface {
     // Start state reporting
     this.startStateReporting();
 
+    // Update microphone engine playing state
+    if (this.micEngine) {
+      this.micEngine.setPlaying(true);
+    }
+
     // Report immediate state change
     this.reportStateChange();
   }
@@ -184,12 +198,23 @@ export class CDGPlayer extends PlayerInterface {
     // Stop state reporting
     this.stopStateReporting();
 
+    // Update microphone engine playing state
+    if (this.micEngine) {
+      this.micEngine.setPlaying(false);
+    }
+
     // Report paused state
     this.reportStateChange();
 
     // Stop audio source (and clear onended handler to prevent false song-end events)
     if (this.audioSource) {
       this.audioSource.onended = null; // Clear handler first
+
+      // Disconnect from music analysis
+      if (this.micEngine) {
+        this.micEngine.disconnectMusicSource(this.audioSource);
+      }
+
       try {
         this.audioSource.stop();
       } catch {
@@ -367,17 +392,90 @@ export class CDGPlayer extends PlayerInterface {
    * are inherited from PlayerInterface base class
    */
 
-  setAudioContext(audioContext, gainNode, analyserNode) {
+  async setAudioContext(audioContext, gainNode, analyserNode) {
     this.audioContext = audioContext;
     this.gainNode = gainNode;
     this.analyserNode = analyserNode;
+
+    // Initialize microphone engine with PA context
+    this.micEngine = new MicrophoneEngine(audioContext, gainNode, {
+      getCurrentPosition: () => this.getCurrentPosition(),
+    });
+
+    // Load auto-tune worklets
+    await this.micEngine.loadAutoTuneWorklet();
+  }
+
+  async loadAutoTuneWorklet() {
+    if (this.micEngine) {
+      await this.micEngine.loadAutoTuneWorklet();
+    }
+  }
+
+  async startMicrophoneInput(deviceId = 'default') {
+    if (this.micEngine) {
+      await this.micEngine.startMicrophoneInput(deviceId);
+    }
+  }
+
+  enableAutoTune() {
+    if (this.micEngine) {
+      this.micEngine.enableAutoTune();
+    }
+  }
+
+  disableAutoTune() {
+    if (this.micEngine) {
+      this.micEngine.disableAutoTune();
+    }
+  }
+
+  setAutoTuneSettings(settings) {
+    if (this.micEngine) {
+      this.micEngine.setAutoTuneSettings(settings);
+    }
+  }
+
+  stopMicrophoneInput() {
+    if (this.micEngine) {
+      this.micEngine.stopMicrophoneInput();
+    }
+  }
+
+  setMicToSpeakers(enabled) {
+    if (this.micEngine) {
+      this.micEngine.setMicToSpeakers(enabled);
+    }
+  }
+
+  async setEnableMic(enabled) {
+    if (this.micEngine) {
+      await this.micEngine.setEnableMic(enabled);
+    }
+  }
+
+  setMicrophoneGain(gainValue) {
+    if (this.micEngine) {
+      this.micEngine.setMicrophoneGain(gainValue);
+    }
   }
 
   destroy() {
     super.destroy(); // Call parent cleanup (stops state reporting)
 
+    // Stop microphone engine
+    if (this.micEngine) {
+      this.micEngine.stopMicrophoneInput();
+      this.micEngine = null;
+    }
+
     this.stopRendering();
     if (this.audioSource) {
+      // Disconnect from music analysis
+      if (this.micEngine) {
+        this.micEngine.disconnectMusicSource(this.audioSource);
+      }
+
       try {
         this.audioSource.stop();
       } catch {

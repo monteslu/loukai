@@ -40,6 +40,34 @@ export async function loadCDGSong(app, songData, metadata) {
   // Load CDG data
   await app.player.cdgPlayer.loadSong(songData);
 
+  // Load microphone settings for CDG (after micEngine is initialized)
+  if (app.player.cdgPlayer.micEngine) {
+    const micToSpeakers = await window.kaiAPI.settings.get('micToSpeakers', true);
+    const enableMic = await window.kaiAPI.settings.get('enableMic', true);
+    const autoTunePrefs = await window.kaiAPI.settings.get('autoTunePreferences', {});
+
+    // Apply settings to microphone engine
+    app.player.cdgPlayer.micEngine.micToSpeakers = micToSpeakers;
+    app.player.cdgPlayer.micEngine.enableMic = enableMic;
+
+    if (autoTunePrefs.enabled !== undefined) {
+      app.player.cdgPlayer.micEngine.autotuneSettings.enabled = autoTunePrefs.enabled;
+    }
+    if (autoTunePrefs.strength !== undefined) {
+      app.player.cdgPlayer.micEngine.autotuneSettings.strength = autoTunePrefs.strength;
+    }
+    if (autoTunePrefs.speed !== undefined) {
+      app.player.cdgPlayer.micEngine.autotuneSettings.speed = autoTunePrefs.speed;
+    }
+
+    // Start microphone if enabled
+    if (enableMic) {
+      const devicePrefs = await window.kaiAPI.settings.get('devicePreferences', {});
+      const inputDeviceId = devicePrefs?.input?.id || 'default';
+      await app.player.cdgPlayer.startMicrophoneInput(inputDeviceId);
+    }
+  }
+
   // Load and apply waveform preferences from settings for CDG
   const waveformPrefs = await window.kaiAPI.settings.get('waveformPreferences', {
     enableEffects: true,

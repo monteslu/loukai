@@ -9,6 +9,7 @@ import bcrypt from 'bcrypt';
 import cookieSession from 'cookie-session';
 import { Server } from 'socket.io';
 import http from 'http';
+import rateLimit from 'express-rate-limit';
 import Fuse from 'fuse.js';
 import * as queueService from '../shared/services/queueService.js';
 import * as libraryService from '../shared/services/libraryService.js';
@@ -89,11 +90,30 @@ class WebServer {
       this.app.use('/admin', express.static(webDistPath));
     }
 
-    // Rate limiting middleware
+    // Rate limiting middleware - store clientIP for request tracking
     this.app.use((req, res, next) => {
-      // Simple in-memory rate limiting by IP
       req.clientIP = req.ip || req.connection.remoteAddress;
       next();
+    });
+
+    // Rate limiters
+    this.loginLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 5, // Limit each IP to 5 login requests per windowMs
+      message: 'Too many login attempts, please try again after 15 minutes',
+      standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+      legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+      skipSuccessfulRequests: true, // Don't count successful logins
+    });
+
+    this.apiLimiter = rateLimit({
+      windowMs: 1 * 60 * 1000, // 1 minute
+      max: 20, // Limit each IP to 20 API requests per minute
+      message: 'Too many requests, please slow down',
+      standardHeaders: true,
+      legacyHeaders: false,
+      // Only apply to /api/request (song requests), not all API endpoints
+      skip: (req) => !req.path.startsWith('/api/request'),
     });
   }
 
@@ -123,8 +143,8 @@ class WebServer {
       }
     });
 
-    // Admin login endpoint
-    this.app.post('/admin/login', async (req, res) => {
+    // Admin login endpoint (with rate limiting)
+    this.app.post('/admin/login', this.loginLimiter, async (req, res) => {
       try {
         const { password } = req.body;
 
@@ -385,8 +405,8 @@ class WebServer {
       }
     });
 
-    // Submit song request
-    this.app.post('/api/request', async (req, res) => {
+    // Submit song request (with rate limiting)
+    this.app.post('/api/request', this.apiLimiter, async (req, res) => {
       try {
         console.log('🎤 NEW REQUEST received:', req.body);
 

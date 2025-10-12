@@ -13,6 +13,7 @@ export function PlayerSettingsPanel({ socket }) {
     enabled: false,
     strength: 50,
     speed: 20,
+    preferVocals: true,
   });
 
   const [loading, setLoading] = useState(true);
@@ -181,6 +182,19 @@ export function PlayerSettingsPanel({ socket }) {
             className="w-[18px] h-[18px] cursor-pointer"
           />
           <span className="flex-1 text-[15px] text-gray-900 dark:text-white">Enable Auto-Tune</span>
+        </label>
+
+        <label className="flex items-center py-3 gap-3 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={autoTuneSettings.preferVocals}
+            onChange={(e) => handleAutoTuneChange('preferVocals', e.target.checked)}
+            disabled={!autoTuneSettings.enabled}
+            className="w-[18px] h-[18px] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+          <span className="flex-1 text-[15px] text-gray-900 dark:text-white">
+            Prefer Vocals for Pitch Reference
+          </span>
         </label>
 
         <div className="flex flex-col items-stretch py-3 cursor-default">

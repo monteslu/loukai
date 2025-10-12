@@ -1,0 +1,33 @@
+{
+  "recommendations": [
+    // Code Quality
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+
+    // Testing
+    "vitest.explorer",
+
+    // React & JavaScript
+    "dsznajder.es7-react-js-snippets",
+    "xabikos.javascriptsnippets",
+
+    // Tailwind CSS
+    "bradlc.vscode-tailwindcss",
+
+    // Git
+    "eamodio.gitlens",
+
+    // Markdown
+    "yzhang.markdown-all-in-one",
+
+    // Utilities
+    "christian-kohler.path-intellisense",
+    "formulahendry.auto-rename-tag",
+    "naumovs.color-highlight",
+    "gruntfuggly.todo-tree"
+  ],
+  "unwantedRecommendations": [
+    // No TypeScript extensions needed
+    "ms-vscode.vscode-typescript-next"
+  ]
+}

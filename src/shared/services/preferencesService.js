@@ -18,13 +18,13 @@ export function getPreferences(appState) {
     const state = appState.getSnapshot();
     return {
       success: true,
-      preferences: state.preferences
+      preferences: state.preferences,
     };
   } catch (error) {
     console.error('Error getting preferences:', error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }
@@ -42,18 +42,19 @@ export function updateAutoTunePreferences(appState, updates) {
     if (typeof updates.enabled === 'boolean') validUpdates.enabled = updates.enabled;
     if (typeof updates.strength === 'number') validUpdates.strength = updates.strength;
     if (typeof updates.speed === 'number') validUpdates.speed = updates.speed;
+    if (typeof updates.preferVocals === 'boolean') validUpdates.preferVocals = updates.preferVocals;
 
     appState.setAutoTunePreferences(validUpdates);
 
     return {
       success: true,
-      autoTune: appState.state.preferences.autoTune
+      autoTune: appState.state.preferences.autoTune,
     };
   } catch (error) {
     console.error('Error updating autotune preferences:', error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }
@@ -76,13 +77,13 @@ export function updateMicrophonePreferences(appState, updates) {
 
     return {
       success: true,
-      microphone: appState.state.preferences.microphone
+      microphone: appState.state.preferences.microphone,
     };
   } catch (error) {
     console.error('Error updating microphone preferences:', error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }
@@ -97,23 +98,28 @@ export function updateEffectsPreferences(appState, updates) {
   try {
     const validUpdates = {};
 
-    if (typeof updates.enableWaveforms === 'boolean') validUpdates.enableWaveforms = updates.enableWaveforms;
-    if (typeof updates.enableEffects === 'boolean') validUpdates.enableEffects = updates.enableEffects;
-    if (typeof updates.randomEffectOnSong === 'boolean') validUpdates.randomEffectOnSong = updates.randomEffectOnSong;
-    if (typeof updates.overlayOpacity === 'number') validUpdates.overlayOpacity = updates.overlayOpacity;
-    if (typeof updates.showUpcomingLyrics === 'boolean') validUpdates.showUpcomingLyrics = updates.showUpcomingLyrics;
+    if (typeof updates.enableWaveforms === 'boolean')
+      validUpdates.enableWaveforms = updates.enableWaveforms;
+    if (typeof updates.enableEffects === 'boolean')
+      validUpdates.enableEffects = updates.enableEffects;
+    if (typeof updates.randomEffectOnSong === 'boolean')
+      validUpdates.randomEffectOnSong = updates.randomEffectOnSong;
+    if (typeof updates.overlayOpacity === 'number')
+      validUpdates.overlayOpacity = updates.overlayOpacity;
+    if (typeof updates.showUpcomingLyrics === 'boolean')
+      validUpdates.showUpcomingLyrics = updates.showUpcomingLyrics;
 
     appState.updateEffectsState(validUpdates);
 
     return {
       success: true,
-      effects: appState.state.effects
+      effects: appState.state.effects,
     };
   } catch (error) {
     console.error('Error updating effects preferences:', error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }
@@ -128,13 +134,13 @@ export function getWaveformSettings(settings) {
     const waveformPrefs = settings.get('waveformPreferences', {});
     return {
       success: true,
-      settings: waveformPrefs
+      settings: waveformPrefs,
     };
   } catch (error) {
     console.error('Error fetching waveform settings:', error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }
@@ -154,13 +160,13 @@ export async function updateWaveformSettings(settings, updates) {
 
     return {
       success: true,
-      settings: updated
+      settings: updated,
     };
   } catch (error) {
     console.error('Error updating waveform settings:', error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }
@@ -175,13 +181,13 @@ export function getAutoTuneSettings(settings) {
     const autotunePrefs = settings.get('autoTunePreferences', {});
     return {
       success: true,
-      settings: autotunePrefs
+      settings: autotunePrefs,
     };
   } catch (error) {
     console.error('Error fetching autotune settings:', error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }
@@ -201,13 +207,13 @@ export async function updateAutoTuneSettings(settings, updates) {
 
     return {
       success: true,
-      settings: updated
+      settings: updated,
     };
   } catch (error) {
     console.error('Error updating autotune settings:', error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }

@@ -330,7 +330,115 @@ const formats = PlayerFactory.getSupportedFormats(); // ['kai', 'cdg']
 - Dynamic support detection (checks if MoviePlayer loaded)
 - Future-proof (adding formats just updates the factory)
 
-### 5. Web Server & Admin Interface
+### 5. Auto-Tune System
+
+Real-time pitch correction using AudioWorklet for low-latency processing.
+
+**Architecture:**
+```mermaid
+graph LR
+    subgraph "Microphone Input Chain"
+        Mic[Microphone] --> MicGain[Mic Gain Node]
+        MicGain --> AutoTune[AutoTune Worklet]
+        AutoTune --> PABus[PA Bus Only]
+    end
+
+    subgraph "AutoTune Worklet Processor"
+        Input[Audio Input<br/>128 samples/frame]
+        PitchBuf[Pitch Buffer<br/>2048 samples]
+        Detect[Autocorrelation<br/>Pitch Detection]
+        KeyScale[Musical Key<br/>Scale Matching]
+        RobotFX[Robot Effect<br/>Wave Shaping]
+        Output[Audio Output]
+
+        Input --> PitchBuf
+        PitchBuf --> Detect
+        Detect --> KeyScale
+        KeyScale --> RobotFX
+        Input --> RobotFX
+        RobotFX --> Output
+    end
+
+    subgraph "Phase Vocoder (Future)"
+        FFT[FFT Analysis<br/>2048 samples]
+        Phase[Phase<br/>Adjustment]
+        IFFT[IFFT Synthesis<br/>Overlap-Add]
+
+        FFT -.-> Phase
+        Phase -.-> IFFT
+    end
+
+    style AutoTune fill:#bbf,stroke:#333,stroke-width:2px
+    style RobotFX fill:#fbf,stroke:#333,stroke-width:2px
+    style Phase fill:#ddd,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
+```
+
+**Key Components:**
+
+**1. Pitch Detection (Autocorrelation)**
+- Buffer size: 2048 samples (~46ms at 44.1kHz)
+- Detection range: 80-800 Hz (vocal range)
+- Algorithm: Autocorrelation with period matching
+- Output: Detected fundamental frequency
+
+**2. Musical Key System**
+- 12 major keys (C, C#, D, ... B)
+- Scale-based note snapping
+- 5 octaves per note (65Hz - 1760Hz)
+- Finds nearest in-scale note to detected pitch
+
+**3. Current Implementation: Robot Effect**
+- **Wave Shaping:** Hard clipping + sine shaping
+- **Harmonic Distortion:** Creates "robotic" quality
+- **Quantization:** 16-level stepped pitch effect
+- **Mixing:** Blends original and processed by strength parameter
+- **Purpose:** Immediately audible auto-tune effect
+
+**4. Phase Vocoder Architecture (Prepared)**
+```javascript
+// Structures ready for phase vocoder implementation:
+fftSize: 2048           // FFT window size
+hopSize: 512            // Overlap factor (4:1)
+analysisWindow: Hann    // Analysis window function
+synthesisWindow: Hann   // Synthesis window function
+inputBuffer: Float32    // Input overlap-add buffer
+outputBuffer: Float32   // Output overlap-add buffer
+overlapBuffer: Float32  // Synthesis accumulator
+```
+
+**Processing Flow:**
+1. **Input** - Microphone audio (128 samples/frame)
+2. **Buffering** - Accumulate 2048 samples for pitch detection
+3. **Pitch Detection** - Autocorrelation finds fundamental frequency
+4. **Scale Matching** - Find nearest in-key note
+5. **Effect Application** - Robot effect (currently) or phase vocoder (future)
+6. **Mixing** - Blend with original based on strength
+7. **Output** - To PA bus (never to IEM - singer doesn't hear their own mic)
+
+**Parameters:**
+| Parameter | Range | Default | Description |
+|-----------|-------|---------|-------------|
+| **Enabled** | on/off | off | Master enable switch |
+| **Strength** | 0-100% | 50% | Effect intensity (dry/wet mix) |
+| **Speed** | 1-100ms | 5ms | Pitch correction speed (smoothing) |
+| **Key** | C, C#...B | C | Musical key for scale snapping |
+
+**Implementation Status:**
+- ✅ AudioWorklet processor (`autoTuneWorklet.js`)
+- ✅ Pitch detection (autocorrelation)
+- ✅ Musical key/scale system
+- ✅ Robot effect (audible auto-tune)
+- ✅ Phase vocoder structures (prepared)
+- ⏳ Phase vocoder pitch shifting (future)
+- ⏳ Visual pitch feedback (future)
+
+**Performance:**
+- Processing: Audio thread (no main thread blocking)
+- Latency: < 5ms (worklet processing)
+- CPU: Minimal (simple wave shaping)
+- Future: Phase vocoder will increase CPU usage but remain real-time
+
+### 6. Web Server & Admin Interface
 
 Remote control and song request system with two distinct UIs.
 
@@ -697,28 +805,28 @@ Artist - Song Title.zip
 ## Technology Stack
 
 ### Main Process
-- **Electron** - Desktop app framework (Chromium + Node.js)
-- **Express** - Web server framework
-- **Socket.io** - Real-time WebSocket communication
-- **yauzl** - ZIP file parsing (streaming)
-- **bcrypt** - Password hashing
-- **Fuse.js** - Fuzzy search for song library
+- **Electron 38** - Desktop app framework (Chromium + Node.js)
+- **Express 5** - Web server framework
+- **Socket.io 4** - Real-time WebSocket communication
+- **yauzl 3** - ZIP file parsing (streaming)
+- **bcrypt 6** - Password hashing
+- **Fuse.js 7** - Fuzzy search for song library
 
 ### Renderer Process
-- **React 18** - Complete UI framework
-- **Vite** - Build tool and dev server
+- **React 19** - Complete UI framework
+- **Vite 7** - Build tool and dev server (lightning-fast HMR)
 - **React Context API** - State management (Player, Audio, Settings)
 - **Custom Hooks** - Reusable logic (audio engine, settings, WebRTC)
 - **Web Audio API** - Real-time audio processing
 - **Opus Decoder** - Audio codec for stem files
-- **Butterchurn** - Audio visualizer (Milkdrop presets)
+- **Butterchurn 2** - Audio visualizer (Milkdrop presets)
 - **Canvas API** - Waveforms, CDG, visual effects
 
 ### Web UI (User + Admin)
-- **React 18** - UI framework (both UIs)
-- **Vite** - Build tool and dev server
-- **Socket.io-client** - Real-time communication
-- **Fuse.js** - Client-side fuzzy search
+- **React 19** - UI framework (both UIs)
+- **Vite 7** - Build tool and dev server
+- **Socket.io-client 4** - Real-time communication
+- **Fuse.js 7** - Client-side fuzzy search
 - **Role-based UI** - User UI (song requests) + Admin UI (full control)
 - **WebBridge** - HTTP/Socket.io adapter implementing BridgeInterface
 
@@ -729,6 +837,13 @@ Artist - Song Title.zip
 - **Service Layer** - effectsService, playerService, settingsService
 - **Pure Functions** - Audio/format utilities
 - **Constants** - IPC channels, defaults
+
+### Build & Packaging
+- **electron-builder 26** - Multi-platform packaging
+- **Vite 7** - Asset bundling (renderer + web)
+- **GitHub Actions** - Automated CI/CD
+- **QEMU** - ARM64 cross-compilation on x64
+- **Flatpak** - Sandboxed Linux distribution
 
 ## Refactoring Status
 
@@ -1139,10 +1254,20 @@ This keeps service functions pure while allowing transport-specific behavior (li
    - Host approves/rejects requests
    - No app installation required
 
-4. **Auto-tune Processing** - Real-time pitch correction
-   - AudioWorklet for low latency
-   - Visual feedback of pitch accuracy
-   - Adjustable strength and speed
+4. **Auto-tune Processing** - Real-time pitch correction with phase vocoder
+   - **AudioWorklet Implementation** - Low-latency processing in audio thread
+   - **Pitch Detection** - Autocorrelation algorithm (80-800 Hz range)
+   - **Musical Key Support** - 12 major keys with scale-based pitch snapping
+   - **Phase Vocoder Architecture** - FFT-based pitch shifting with overlap-add
+     - FFT size: 2048 samples
+     - Hop size: 512 samples (4:1 overlap)
+     - Hann windowing for analysis and synthesis
+   - **Current Implementation** - Robot effect for audible feedback
+     - Wave shaping with harmonic distortion
+     - Quantization for stepped pitch effect
+     - Adjustable strength (0-100%) and speed (1-100ms)
+   - **Future Enhancement** - True phase vocoder pitch shifting
+   - **Controls** - Enable/disable, strength, speed, musical key selection
 
 5. **Unified Architecture** - One codebase, multiple UIs
    - Electron renderer for main interface
@@ -1199,6 +1324,353 @@ This keeps service functions pure while allowing transport-specific behavior (li
 - **Bridge Abstraction** - No direct `window` globals except where necessary (audio engine)
 - **Clean Logging** - Debug logging removed after fixes verified
 
+## Build & Packaging Architecture
+
+### Overview
+
+Loukai uses **electron-builder 26** for cross-platform packaging with comprehensive multi-architecture support. The build system produces 7 distributable packages across 3 platforms.
+
+### Build Pipeline
+
+```mermaid
+graph TB
+    subgraph "Source Code"
+        Renderer[Renderer<br/>React + Vite]
+        Web[Web Admin<br/>React + Vite]
+        Main[Main Process<br/>Node.js ESM]
+    end
+
+    subgraph "Vite Build"
+        VRenderer[dist/renderer.js<br/>336 KB gzipped]
+        VWeb[dist/assets/index.js<br/>359 KB gzipped]
+    end
+
+    subgraph "electron-builder"
+        Linux[Linux Builder]
+        Windows[Windows Builder]
+        macOS[macOS Builder]
+    end
+
+    subgraph "Output Packages"
+        AppX64[AppImage x64<br/>143 MB]
+        AppARM[AppImage ARM64<br/>143 MB]
+        FlatX64[Flatpak x64<br/>104 MB]
+        FlatARM[Flatpak ARM64<br/>104 MB]
+        NSIS[NSIS Installer<br/>~150 MB]
+        DMGIntel[DMG Intel<br/>~150 MB]
+        DMGARM[DMG Apple Silicon<br/>~150 MB]
+    end
+
+    Renderer --> VRenderer
+    Web --> VWeb
+
+    VRenderer --> Linux
+    VWeb --> Linux
+    Main --> Linux
+
+    VRenderer --> Windows
+    VWeb --> Windows
+    Main --> Windows
+
+    VRenderer --> macOS
+    VWeb --> macOS
+    Main --> macOS
+
+    Linux --> AppX64
+    Linux --> AppARM
+    Linux --> FlatX64
+    Linux --> FlatARM
+
+    Windows --> NSIS
+
+    macOS --> DMGIntel
+    macOS --> DMGARM
+
+    style VRenderer fill:#bbf,stroke:#333,stroke-width:2px
+    style VWeb fill:#bfb,stroke:#333,stroke-width:2px
+```
+
+### Platform Configuration
+
+#### Linux (electron-builder)
+
+**Targets:**
+- **AppImage** (x64, ARM64) - Universal Linux binary
+- **Flatpak** (x64, ARM64) - Sandboxed distribution
+
+**Configuration** (package.json:106-141):
+```json
+{
+  "linux": {
+    "target": [
+      { "target": "AppImage", "arch": ["x64", "arm64"] },
+      { "target": "flatpak", "arch": ["x64", "arm64"] }
+    ],
+    "icon": "static/images/logo.png",
+    "category": "AudioVideo"
+  },
+  "flatpak": {
+    "runtime": "org.freedesktop.Platform",
+    "runtimeVersion": "24.08",
+    "sdk": "org.freedesktop.Sdk",
+    "base": "org.electronjs.Electron2.BaseApp",
+    "baseVersion": "24.08",
+    "finishArgs": [
+      "--socket=wayland", "--socket=x11",
+      "--share=ipc", "--device=dri",
+      "--socket=pulseaudio", "--filesystem=home",
+      "--share=network",
+      "--talk-name=org.freedesktop.Notifications"
+    ]
+  }
+}
+```
+
+**Flatpak Dependencies:**
+- Runtime: `org.freedesktop.Platform/24.08`
+- SDK: `org.freedesktop.Sdk/24.08`
+- Base: `org.electronjs.Electron2.BaseApp/24.08`
+- Available for: x64, aarch64 (ARM64)
+
+**Build Requirements:**
+```bash
+# Install flatpak-builder
+sudo apt-get install flatpak-builder flatpak
+
+# Add Flathub remote
+flatpak remote-add --user --if-not-exists flathub \
+  https://flathub.org/repo/flathub.flatpakrepo
+
+# Install runtimes (both architectures)
+flatpak install --user -y flathub \
+  org.electronjs.Electron2.BaseApp/x86_64/24.08 \
+  org.freedesktop.Platform/x86_64/24.08 \
+  org.freedesktop.Sdk/x86_64/24.08 \
+  org.electronjs.Electron2.BaseApp/aarch64/24.08 \
+  org.freedesktop.Platform/aarch64/24.08 \
+  org.freedesktop.Sdk/aarch64/24.08
+```
+
+#### Windows (electron-builder)
+
+**Target:**
+- **NSIS Installer** (x64) - Installable exe with auto-updater
+
+**Configuration** (package.json:143-146):
+```json
+{
+  "win": {
+    "target": "nsis",
+    "icon": "static/images/logo.png"
+  }
+}
+```
+
+**Features:**
+- Auto-updater support (GH_TOKEN)
+- Native bcrypt compilation
+- Windows-specific file associations
+
+#### macOS (electron-builder)
+
+**Targets:**
+- **DMG** (x64 - Intel Macs)
+- **DMG** (ARM64 - Apple Silicon)
+
+**Configuration** (package.json:147-158):
+```json
+{
+  "mac": {
+    "target": [
+      { "target": "dmg", "arch": ["x64", "arm64"] }
+    ],
+    "icon": "static/images/logo.png"
+  }
+}
+```
+
+**Features:**
+- Universal binary support
+- Code signing ready (requires certificates)
+- macOS-specific entitlements
+
+### Multi-Architecture Cross-Compilation
+
+#### ARM64 AppImage (via QEMU)
+
+electron-builder uses **QEMU user-mode emulation** to build ARM64 binaries on x64 hosts:
+
+```bash
+# Install QEMU
+sudo apt-get install -y qemu-user-static
+
+# electron-builder automatically:
+# 1. Downloads Electron ARM64 binary
+# 2. Uses @electron/rebuild to compile bcrypt for ARM64
+# 3. Packages into ARM64 AppImage
+```
+
+**Native Module Compilation:**
+```
+• executing @electron/rebuild  electronVersion=38.2.2 arch=arm64
+• installing native dependencies  arch=arm64
+• preparing       moduleName=bcrypt arch=arm64
+• finished        moduleName=bcrypt arch=arm64
+```
+
+#### ARM64 Flatpak (Native Runtimes)
+
+Flatpak ARM64 builds use **native ARM64 runtimes** from Flathub:
+
+- `org.electronjs.Electron2.BaseApp/aarch64/24.08`
+- `org.freedesktop.Platform/aarch64/24.08`
+- `org.freedesktop.Sdk/aarch64/24.08`
+
+No QEMU needed - flatpak-builder handles cross-compilation internally.
+
+### GitHub Actions CI/CD
+
+**Workflow** (.github/workflows/build.yml):
+
+```yaml
+jobs:
+  build-linux:     # Ubuntu x64 runner
+  build-windows:   # Windows x64 runner
+  build-macos:     # macOS x64 runner (builds both architectures)
+  release:         # Creates GitHub release with all artifacts
+```
+
+**Linux Build Steps:**
+1. Install Node.js 18
+2. Install dependencies (`npm ci`)
+3. Install flatpak-builder + Flatpak
+4. Add Flathub remote
+5. Install Flatpak runtimes (x64 + ARM64)
+6. Install QEMU for ARM64 emulation
+7. Run `npm run build:linux`
+8. Upload artifacts (*.AppImage, *.flatpak)
+
+**Windows Build Steps:**
+1. Install Node.js 18
+2. Install dependencies (`npm ci`)
+3. Run `npm run build:win`
+4. Upload artifact (*.exe)
+
+**macOS Build Steps:**
+1. Install Node.js 18
+2. Install dependencies (`npm ci`)
+3. Run `npm run build:mac`
+4. Upload artifacts (*.dmg x2)
+
+**Release Step:**
+- Downloads all artifacts from previous jobs
+- Creates GitHub release with tag
+- Attaches all 7 packages to release
+
+### Build Output Summary
+
+| Platform | Format | Architecture | Size | Build Time |
+|----------|--------|--------------|------|------------|
+| Linux | AppImage | x64 | 143 MB | ~45s |
+| Linux | AppImage | ARM64 | 143 MB | ~60s (QEMU) |
+| Linux | Flatpak | x64 | 104 MB | ~90s |
+| Linux | Flatpak | ARM64 | 104 MB | ~90s |
+| Windows | NSIS | x64 | ~150 MB | ~60s |
+| macOS | DMG | x64 | ~150 MB | ~50s |
+| macOS | DMG | ARM64 | ~150 MB | ~50s |
+
+**Total:** 7 packages, ~900 MB combined
+
+### Vite Build Configuration
+
+#### Renderer Process (src/renderer/vite.config.js)
+
+```javascript
+export default {
+  build: {
+    outDir: '../../dist',
+    rollupOptions: {
+      input: {
+        renderer: 'src/renderer/index.html'
+      }
+    }
+  }
+}
+```
+
+**Output:**
+- `dist/renderer.js` - 336 KB (93 KB gzipped)
+- `dist/renderer.css` - 42 KB (7 KB gzipped)
+- `dist/renderer.woff2` - 129 KB (fonts)
+- `dist/assets/*.js` - Code-split chunks
+
+#### Web Admin (src/web/vite.config.js)
+
+```javascript
+export default {
+  build: {
+    outDir: '../../dist/web',
+    rollupOptions: {
+      input: {
+        index: 'src/web/index.html'
+      }
+    }
+  }
+}
+```
+
+**Output:**
+- `dist/assets/index.js` - 359 KB (100 KB gzipped)
+- `dist/assets/index.css` - 45 KB (7 KB gzipped)
+- `dist/index.html` - Entry point
+
+### Dependencies & Bundle Size
+
+**Production Dependencies:**
+- React 19 + React-DOM - ~200 KB (biggest dependency)
+- Socket.IO Client 4 - ~50 KB
+- Butterchurn + Presets - ~100 KB
+- Audio worklets + utilities - ~50 KB
+
+**Native Dependencies:**
+- bcrypt 6 - Requires compilation for each architecture
+- Rebuilt via @electron/rebuild for Electron compatibility
+
+**Bundle Optimization:**
+- Code splitting via dynamic imports
+- Tree shaking (Vite default)
+- Minification + gzip compression
+- Lazy loading of Butterchurn presets
+
+### Testing Build Locally
+
+```bash
+# Full build for current platform
+npm run build:linux    # Linux (AppImage + Flatpak)
+npm run build:win      # Windows (NSIS)
+npm run build:mac      # macOS (DMG x2)
+
+# Build output location
+ls -lh dist/
+```
+
+**Verification:**
+```bash
+# Test AppImage
+chmod +x dist/Loukai-1.0.0.AppImage
+./dist/Loukai-1.0.0.AppImage
+
+# Test Flatpak
+flatpak install --user dist/Loukai-1.0.0-x86_64.flatpak
+flatpak run com.loukai.app
+
+# Test on Windows
+dist/Loukai-Setup-1.0.0.exe
+
+# Test on macOS
+open dist/Loukai-1.0.0.dmg
+```
+
 ## Conclusion
 
 Kai Player has evolved from a "vibe-coded" prototype into a well-architected, maintainable application. The recent React migration and bridge pattern implementation represent a major architectural milestone, enabling true code sharing between Electron and web interfaces.
@@ -1210,6 +1682,7 @@ The dual-output routing (vocals → IEM, music → PA, mic → PA after auto-tun
 - **Testable** - Pure functions, dependency injection, mockable bridges
 - **Scalable** - Add new features without duplicating code
 - **Consistent** - Same business logic for IPC and REST endpoints
-- **Modern** - React, ESM modules, hooks, contexts
+- **Modern** - React 19, Vite 7, Electron 38, ESM modules
+- **Distributable** - 7 packages across Linux, Windows, macOS (x64 + ARM64)
 
 The foundation is now solid for future enhancements like automated testing, TypeScript migration, and advanced features.
