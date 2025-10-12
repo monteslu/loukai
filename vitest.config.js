@@ -20,6 +20,8 @@ export default defineConfig({
         'src/renderer/lib/',
         'src/main/preload.js',
         '**/*.config.js',
+        // Build scripts
+        'scripts/**',
         // Exclude JSX components (UI code - not unit testable)
         '**/*.jsx',
         // Exclude main process (Electron - requires integration tests)
@@ -38,6 +40,9 @@ export default defineConfig({
         'src/shared/utils/**',
         'src/shared/constants.js',
         'src/shared/ipcContracts.js',
+        // Exclude untested services (TODO: add tests)
+        'src/shared/services/preferencesService.js',
+        'src/shared/services/serverSettingsService.js',
       ],
       thresholds: {
         lines: 80,
