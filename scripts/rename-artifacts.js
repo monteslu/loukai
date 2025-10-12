@@ -8,8 +8,12 @@ import { readdir, rename } from 'fs/promises';
 import { join } from 'path';
 
 const archMap = {
-  '-x64.': '-x86_64.',
-  '-arm64.': '-aarch64.',
+  '-linux-x64.': '-linux-x86_64.',
+  '-linux-arm64.': '-linux-aarch64.',
+  '-macos-x64.': '-macos-x86_64.',
+  '-macos-arm64.': '-macos-aarch64.',
+  '-windows-x64.': '-windows-x86_64.',
+  '-windows-arm64.': '-windows-aarch64.',
 };
 
 const distDir = 'dist';
