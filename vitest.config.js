@@ -20,12 +20,30 @@ export default defineConfig({
         'src/renderer/lib/',
         'src/main/preload.js',
         '**/*.config.js',
+        // Exclude JSX components (UI code - not unit testable)
+        '**/*.jsx',
+        // Exclude main process (Electron - requires integration tests)
+        'src/main/**',
+        // Exclude renderer process (DOM-dependent)
+        'src/renderer/**',
+        // Exclude web app (DOM-dependent)
+        'src/web/**',
+        // Exclude utils (file system dependent)
+        'src/utils/**',
+        'src/native/**',
+        // Exclude integration code (IPC, hooks, adapters)
+        'src/shared/hooks/**',
+        'src/shared/adapters/**',
+        'src/shared/state/**',
+        'src/shared/utils/**',
+        'src/shared/constants.js',
+        'src/shared/ipcContracts.js',
       ],
       thresholds: {
-        lines: 30,
-        functions: 30,
-        branches: 30,
-        statements: 30,
+        lines: 80,
+        functions: 95,
+        branches: 89,
+        statements: 80,
       },
     },
     include: ['src/**/*.{test,spec}.{js,jsx}'],

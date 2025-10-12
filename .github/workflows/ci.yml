@@ -51,24 +51,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
-        run: npm run test:run
-
-      - name: Generate coverage report
+      - name: Run tests with coverage
         run: npm run test:coverage
-
-      - name: Check coverage threshold
-        run: |
-          # Extract coverage percentage from vitest output
-          COVERAGE=$(npm run test:coverage 2>&1 | grep -oP 'All files\s+\|\s+\K[0-9.]+' | head -1)
-          echo "Current coverage: $COVERAGE%"
-
-          # Fail if coverage is below 5%
-          if (( $(echo "$COVERAGE < 5" | bc -l) )); then
-            echo "❌ Coverage is below 5% threshold"
-            exit 1
-          fi
-          echo "✅ Coverage meets 5% threshold"
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
