@@ -1,6 +1,6 @@
 {
   "name": "loukai",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "type": "module",
   "description": "Loukai - Real-time karaoke player with stem control and coaching",
   "main": "src/main/main.js",
@@ -123,9 +123,11 @@
       "icon": "static/images/logo.png",
       "category": "AudioVideo",
       "desktop": {
-        "Name": "Loukai",
-        "Comment": "Real-time karaoke player with stem control and coaching",
-        "Categories": "AudioVideo;Audio;Player;"
+        "entry": {
+          "Name": "Loukai",
+          "Comment": "Real-time karaoke player with stem control and coaching",
+          "Categories": "AudioVideo;Audio;Player;"
+        }
       },
       "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
     },
