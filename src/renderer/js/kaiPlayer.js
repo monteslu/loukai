@@ -839,7 +839,7 @@ export class KAIPlayer extends PlayerInterface {
   async loadMicSettings() {
     try {
       if (window.kaiAPI.settings && this.micEngine) {
-        const micToSpeakers = await window.kaiAPI.settings.get('micToSpeakers', true);
+        const micToSpeakers = await window.kaiAPI.settings.get('micToSpeakers', false);
         const enableMic = await window.kaiAPI.settings.get('enableMic', true);
         const iemMonoVocals = await window.kaiAPI.settings.get('iemMonoVocals', true);
 
