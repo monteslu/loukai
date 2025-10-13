@@ -176,20 +176,28 @@ class KaiPlayerApp {
       ? path.join(resourcesPath, 'static', 'images', 'logo.png')
       : path.join(process.cwd(), 'static', 'images', 'logo.png');
 
-    this.mainWindow = new BrowserWindow({
+    const windowOptions = {
       width: 1200,
       height: 800,
       minWidth: 800,
       minHeight: 600,
       autoHideMenuBar: true, // Hide menu bar for cleaner, modern UI
-      icon: iconPath,
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
         preload: path.join(__dirname, 'preload.js'),
       },
       title: 'Loukai',
-    });
+    };
+
+    // Only set icon if file exists
+    if (fs.existsSync(iconPath)) {
+      windowOptions.icon = iconPath;
+    } else {
+      console.warn('⚠️ Icon not found at:', iconPath);
+    }
+
+    this.mainWindow = new BrowserWindow(windowOptions);
 
     const rendererPath = path.join(__dirname, '../renderer/index.html');
     this.mainWindow.loadFile(rendererPath);
