@@ -26,26 +26,31 @@ import { registerAutotuneHandlers } from './autotuneHandlers.js';
 export function registerAllHandlers(mainApp) {
   console.log('📡 Registering IPC handlers...');
 
-  // Core handlers
-  registerAudioHandlers(mainApp);
-  registerMixerHandlers(mainApp);
-  registerPlayerHandlers(mainApp);
-  registerLibraryHandlers(mainApp);
-  registerSettingsHandlers(mainApp);
-  registerQueueHandlers(mainApp);
+  try {
+    // Core handlers
+    registerAudioHandlers(mainApp);
+    registerMixerHandlers(mainApp);
+    registerPlayerHandlers(mainApp);
+    registerLibraryHandlers(mainApp);
+    registerSettingsHandlers(mainApp);
+    registerQueueHandlers(mainApp);
 
-  // Feature handlers
-  registerWebServerHandlers(mainApp);
-  registerCanvasHandlers(mainApp);
-  registerEffectsHandlers(mainApp);
-  registerEditorHandlers(mainApp);
-  registerPreferencesHandlers(mainApp);
-  registerAutotuneHandlers(mainApp);
+    // Feature handlers
+    registerWebServerHandlers(mainApp);
+    registerCanvasHandlers(mainApp);
+    registerEffectsHandlers(mainApp);
+    registerEditorHandlers(mainApp);
+    registerPreferencesHandlers(mainApp);
+    registerAutotuneHandlers(mainApp);
 
-  // System handlers
-  registerFileHandlers(mainApp);
-  registerRendererHandlers(mainApp);
-  registerAppHandlers(mainApp);
+    // System handlers
+    registerFileHandlers(mainApp);
+    registerRendererHandlers(mainApp);
+    registerAppHandlers(mainApp);
 
-  console.log('✅ All IPC handlers registered');
+    console.log('✅ All IPC handlers registered');
+  } catch (error) {
+    console.error('❌ Failed to register IPC handlers:', error);
+    throw error;
+  }
 }

@@ -676,7 +676,15 @@ class KaiPlayerApp {
   setupIPC() {
     // All IPC handlers have been organized into handler modules
     // See: src/main/handlers/
-    registerAllHandlers(this);
+    try {
+      console.log('🔧 Setting up IPC handlers...');
+      registerAllHandlers(this);
+      console.log('✅ IPC setup complete');
+    } catch (error) {
+      console.error('❌ Failed to setup IPC handlers:', error);
+      console.error('Stack:', error.stack);
+      throw error;
+    }
   }
 
   async scanForKaiFiles(folderPath) {
