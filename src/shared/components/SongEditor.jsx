@@ -587,10 +587,26 @@ export function SongEditor({ bridge }) {
     );
   };
 
-  // Cleanup on component unmount
+  // Cleanup on component unmount only (not when cleanupAudio changes)
   useEffect(() => {
-    return () => cleanupAudio();
-  }, [cleanupAudio]);
+    return () => {
+      // Direct cleanup without using the callback (to avoid dependency issues)
+      audioElements.forEach(({ audio, source }) => {
+        audio.pause();
+        audio.currentTime = 0;
+        try {
+          source.disconnect();
+        } catch {
+          // Ignore disconnect errors
+        }
+      });
+
+      if (audioContext) {
+        audioContext.close();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on unmount
 
   // Show toast notification
   const showToast = (message, type = 'success') => {
