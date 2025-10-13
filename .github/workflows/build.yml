@@ -25,6 +25,9 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install build tools
+        run: dnf install -y make gcc gcc-c++ python3
+
       - name: Install dependencies
         run: npm ci
 
@@ -77,6 +80,9 @@ jobs:
       - name: Install QEMU for ARM64 builds
         run: |
           dnf install -y qemu-user-static
+
+      - name: Install build tools
+        run: dnf install -y make gcc gcc-c++ python3
 
       - name: Install dependencies
         run: npm ci
