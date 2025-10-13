@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import os from 'os';
 import crypto from 'crypto';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import cookieSession from 'cookie-session';
 import { Server } from 'socket.io';
 import http from 'http';

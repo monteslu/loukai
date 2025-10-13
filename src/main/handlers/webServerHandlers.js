@@ -4,7 +4,7 @@
  */
 
 import { ipcMain } from 'electron';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import * as serverSettingsService from '../../shared/services/serverSettingsService.js';
 import * as requestsService from '../../shared/services/requestsService.js';
 

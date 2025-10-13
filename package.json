@@ -1,6 +1,6 @@
 {
   "name": "loukai",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "type": "module",
   "description": "Loukai - Real-time karaoke player with stem control and coaching",
   "main": "src/main/main.js",
@@ -68,7 +68,7 @@
   "dependencies": {
     "@soundtouchjs/audio-worklet": "^0.2.1",
     "aubiojs": "^0.2.1",
-    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.2",
     "butterchurn": "^2.6.7",
     "butterchurn-presets": "^2.4.7",
     "cdgraphics": "^7.0.0",
