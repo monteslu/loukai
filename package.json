@@ -90,6 +90,10 @@
   "build": {
     "appId": "com.loukai.app",
     "productName": "Loukai",
+    "publish": {
+      "provider": "github",
+      "releaseType": "release"
+    },
     "directories": {
       "output": "dist"
     },
@@ -181,6 +185,7 @@
       "artifactName": "${productName}-${version}-windows-${arch}.${ext}"
     },
     "nsis": {
+      "differentialPackage": false,
       "artifactName": "${productName}-${version}-windows-${arch}-installer.${ext}"
     },
     "portable": {
@@ -199,6 +204,9 @@
       "icon": "static/images/logo.png",
       "artifactName": "${productName}-${version}-macos-${arch}.${ext}",
       "identity": null
+    },
+    "dmg": {
+      "writeUpdateInfo": false
     }
   },
   "lint-staged": {
