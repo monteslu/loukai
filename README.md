@@ -7,7 +7,7 @@
 [![Electron 38](https://img.shields.io/badge/Electron-38-blue)](https://www.electronjs.org/)
 [![Test Coverage](https://img.shields.io/badge/coverage-52%25-green)](./docs/PHASE2-SUMMARY.md)
 
-Loukai is a cross-platform karaoke application built with Electron that supports multiple file formats (KAI, CDG, MP3+CDG pairs), real-time stem mixing, dual audio outputs, visual effects, and a web-based admin interface for remote control and song requests.
+Loukai is a cross-platform karaoke application built with Electron that plays industry-standard M4A Stems files (MPEG-4 multi-track audio) with real-time stem mixing, dual audio outputs, visual effects, and a web-based admin interface for remote control and song requests. Also supports legacy formats (KAI, CDG, MP3+CDG).
 
 ![Loukai Application](./Loukai_app.png)
 
@@ -16,8 +16,12 @@ Loukai is a cross-platform karaoke application built with Electron that supports
 ## Features
 
 ### Audio & Playback
-- **Multi-Format Support**: M4A Stems (recommended), KAI files, CDG/MP3 pairs, and CDG archives (.kar, .zip)
+- **M4A Stems Format (Primary)**: Industry-standard MPEG-4 multi-track audio with embedded WebVTT lyrics
+  - Compatible with DJ software (Traktor, Serato, etc.)
+  - Smaller file sizes than legacy formats
+  - Superior metadata and lyrics embedding
 - **Real-Time Stem Control**: Individual volume, mute, and solo controls for vocals, drums, bass, and other stems
+- **Legacy Format Support**: KAI files, CDG/MP3 pairs, and CDG archives (.kar, .zip)
 - **Dual Output Routing**: Independent PA and IEM (in-ear monitor) outputs with per-stem routing
 - **High-Quality Audio**: Web Audio API with real-time processing and pitch correction
 - **Auto-Tune System**: Real-time pitch correction for microphone input
@@ -39,7 +43,8 @@ Loukai is a cross-platform karaoke application built with Electron that supports
 
 ### Library & Search
 - **Fast Library Scanning**: Automatic metadata extraction from thousands of songs
-- **Multi-Format Support**: M4A Stems, KAI, CDG/MP3 pairs, and CDG archives
+- **M4A Stems Native**: Optimized for MPEG-4 multi-track audio with full metadata support
+- **Multi-Format Support**: Also reads KAI, CDG/MP3 pairs, and CDG archives
 - **Smart Search**: Fuzzy search across titles, artists, and albums
 - **Alphabet Navigation**: Quick filtering by first letter
 - **Pagination**: Efficient handling of large libraries (tested with 23K+ songs)
@@ -238,30 +243,59 @@ Loukai is built with a multi-process architecture:
 
 ## File Formats
 
-### M4A Stems Format (Recommended)
-Industry-standard multi-track M4A files with embedded karaoke data:
+### M4A Stems Format (Primary - Recommended)
+
+**Industry-standard MPEG-4 multi-track audio** - the modern karaoke format:
+
+#### Why M4A Stems?
+- ✅ **DJ Software Compatible**: Works with Traktor, Serato, djay, and other professional DJ software
+- ✅ **Smaller Files**: 30-50% smaller than ZIP-based formats due to MPEG-4 compression
+- ✅ **Better Metadata**: Native MP4 atoms for rich metadata (title, artist, album art, BPM, key)
+- ✅ **WebVTT Lyrics**: Industry-standard subtitle format with word-level timing
+- ✅ **Single File**: No unpacking required - instant playback
+- ✅ **Widely Supported**: Standard MPEG-4 container readable by many audio tools
+
+#### Structure
 - **Multi-track audio**: Separate tracks for mixdown, vocals, drums, bass, other
-- **Embedded lyrics**: WebVTT format with word-level timing
-- **Custom atoms**: `kaid` atom contains karaoke metadata
-- **DJ software compatible**: Works with Traktor, Serato, and other DJ tools
-- **File extension**: `.stem.m4a`
+- **Embedded lyrics**: WebVTT format with word-level timing in MP4 subtitle track
+- **Custom atoms**: `kaid` atom contains karaoke-specific metadata (original artist, etc.)
+- **File extension**: `.stem.m4a` or `.m4a`
 
-Create M4A files using [kai-converter](https://github.com/monteslu/kai-converter) (default output format).
+#### Creating M4A Files
+Use [kai-converter](https://github.com/monteslu/kai-converter) - M4A is the default output format:
 
-### KAI Format (Legacy)
-ZIP containers with audio stems and synchronized lyrics:
+```bash
+# Convert YouTube video to M4A stems
+python -m kai_pack.convert_youtube "https://youtube.com/watch?v=..."
+
+# Convert audio file to M4A stems
+python -m kai_pack.cli --format m4a my-song.mp3
+
+# Batch convert directory
+for file in *.mp3; do python -m kai_pack.cli --format m4a "$file"; done
+```
+
+**Output:** `Song Title - Artist.stem.m4a`
+
+### KAI Format (Legacy - Deprecated)
+
+ZIP containers with audio stems and synchronized lyrics. **This format is deprecated in favor of M4A.**
+
 - `song.json` - Metadata, timing, lyrics
 - Audio stems: `vocals.mp3`, `drums.mp3`, `bass.mp3`, `other.mp3`
 - Optional: `features/` directory with analysis data
 
 **Spec:** [docs/KAI-Play-Spec-v1.0.md](./docs/KAI-Play-Spec-v1.0.md)
 
-Use `--format kai` in kai-converter to create legacy KAI files.
+To create KAI files (not recommended), use `--format kai` in kai-converter.
 
-### CDG Format
-Classic karaoke format with graphics:
+### CDG Format (Legacy)
+
+Classic karaoke format with graphics - widely available but limited features:
+
 - **MP3 + CDG pairs**: `song.mp3` + `song.cdg`
 - **Archives**: `.kar` or `.zip` files containing MP3+CDG
+- **Limitations**: No stem separation, basic graphics, no metadata
 
 ---
 
@@ -295,9 +329,11 @@ All settings are automatically saved to:
 
 ### Loading Songs
 
-1. **Set Songs Folder**: Settings tab → Browse for your karaoke library
+1. **Set Songs Folder**: Settings tab → Browse for your karaoke library (M4A files recommended)
 2. **Scan Library**: Click "Scan Library" to index all songs
 3. **Search & Play**: Use the Library tab to find and play songs
+
+**Tip:** For best results, use `.stem.m4a` files created with [kai-converter](https://github.com/monteslu/kai-converter). M4A files load faster and take less disk space than ZIP-based formats.
 
 ### Playing Karaoke
 
@@ -474,7 +510,8 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 ### Library Not Scanning
 - Ensure songs folder path is correct
 - Check file permissions (read access required)
-- Supported formats: `.kai`, `.cdg`, `.mp3`, `.kar`, `.zip`
+- Supported formats: `.m4a` (recommended), `.stem.m4a`, `.kai`, `.cdg`, `.mp3`, `.kar`, `.zip`
+- For best performance, use M4A Stems format
 
 ### Web Server Not Accessible
 - Check firewall settings
