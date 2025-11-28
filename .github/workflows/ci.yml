@@ -137,12 +137,15 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts
-          path: .
 
       - name: Analyze bundle sizes
         run: |
           echo "📊 Bundle Size Report"
           echo "===================="
+
+          # Debug: Show what was downloaded
+          echo "Downloaded files:"
+          ls -la
 
           # Renderer bundle
           RENDERER_SIZE=$(du -sh src/renderer/dist/ | cut -f1)
