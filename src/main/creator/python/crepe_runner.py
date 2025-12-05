@@ -77,8 +77,8 @@ def main():
         progress(15, f"🎵 Detecting pitch ({model_capacity} model)...")
 
         # Run CREPE
-        # Returns: time, frequency, confidence, activation
-        time, frequency, confidence, _ = torchcrepe.predict(
+        # Returns: (pitch, periodicity) - periodicity is confidence-like (0-1)
+        frequency, periodicity = torchcrepe.predict(
             audio,
             sample_rate,
             hop_length=hop_length,
@@ -91,9 +91,12 @@ def main():
         progress(75, "Processing pitch data")
 
         # Convert to numpy
-        time = time.cpu().numpy().flatten()
         frequency = frequency.cpu().numpy().flatten()
-        confidence = confidence.cpu().numpy().flatten()
+        confidence = periodicity.cpu().numpy().flatten()  # periodicity is the confidence
+
+        # Compute time array from hop_length
+        num_frames = len(frequency)
+        time = np.arange(num_frames) * hop_length / sample_rate
 
         # Calculate stats
         valid_frames = (frequency > 0) & (confidence > 0.5)
