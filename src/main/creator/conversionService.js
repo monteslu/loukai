@@ -17,6 +17,7 @@ import { convertToWav, encodeToAAC } from './ffmpegService.js';
 import { runDemucs, runWhisper, runCrepe } from './pythonRunner.js';
 import { prepareWhisperContext } from './lrclibService.js';
 import { buildStemM4a } from './stemBuilder.js';
+import * as llmService from './llmService.js';
 
 // Active conversion state
 let conversionInProgress = false;
@@ -79,9 +80,16 @@ function checkCancelled() {
  * @param {string} options.referenceLyrics - Reference lyrics for Whisper hints
  * @param {string} options.outputDir - Output directory (defaults to input file directory)
  * @param {Function} onProgress - Progress callback (step, message, progress)
+ * @param {Function} onConsoleOutput - Console output callback (line)
+ * @param {Object} settingsManager - Settings manager for LLM settings
  * @returns {Promise<Object>} Result with outputPath
  */
-export async function runConversion(options, onProgress = () => {}) {
+export async function runConversion(
+  options,
+  onProgress = () => {},
+  onConsoleOutput = null,
+  settingsManager = null
+) {
   const {
     inputPath,
     title,
@@ -144,9 +152,15 @@ export async function runConversion(options, onProgress = () => {}) {
     onProgress('demucs', `[${STEPS.demucs}] Loading Demucs...`, 5);
     checkCancelled();
 
-    const demucsResult = await runDemucs(wavPath, stemsDir, { numStems }, (progress, message) => {
-      onProgress('demucs', `[${STEPS.demucs}] ${message}`, 5 + Math.floor(progress * 0.45));
-    });
+    const demucsResult = await runDemucs(
+      wavPath,
+      stemsDir,
+      { numStems },
+      (progress, message) => {
+        onProgress('demucs', `[${STEPS.demucs}] ${message}`, 5 + Math.floor(progress * 0.45));
+      },
+      onConsoleOutput // Pass console output callback
+    );
 
     checkCancelled();
 
@@ -183,7 +197,7 @@ export async function runConversion(options, onProgress = () => {}) {
     onProgress('whisper', `[${STEPS.whisper}] Loading Whisper...`, 52);
     checkCancelled();
 
-    const whisperResult = await runWhisper(
+    let whisperResult = await runWhisper(
       stemPaths.vocals,
       {
         model: whisperModel,
@@ -192,8 +206,39 @@ export async function runConversion(options, onProgress = () => {}) {
       },
       (progress, message) => {
         onProgress('whisper', `[${STEPS.whisper}] ${message}`, 52 + Math.floor(progress * 0.28));
-      }
+      },
+      onConsoleOutput // Pass console output callback
     );
+
+    checkCancelled();
+
+    // Step 4.5: LLM lyrics correction (optional, 78-80%)
+    let llmStats = null;
+    if (settingsManager && referenceLyrics) {
+      try {
+        const llmSettings = llmService.getLLMSettings(settingsManager);
+        if (llmSettings.enabled && llmSettings.apiKey) {
+          onProgress('whisper', `[${STEPS.whisper}] 🤖 AI correction...`, 78);
+          const llmResult = await llmService.correctLyrics(
+            whisperResult,
+            referenceLyrics,
+            llmSettings
+          );
+          whisperResult = llmResult.output;
+          llmStats = llmResult.stats;
+        }
+      } catch (error) {
+        console.warn('⚠️ LLM correction failed, using original Whisper output:', error.message);
+        // Continue with original Whisper output
+        llmStats = {
+          corrections_applied: 0,
+          suggestions_made: 0,
+          corrections_rejected: 0,
+          failed: true,
+          error: error.message,
+        };
+      }
+    }
 
     checkCancelled();
 
@@ -203,9 +248,15 @@ export async function runConversion(options, onProgress = () => {}) {
       onProgress('crepe', `[${STEPS.crepe}] Loading CREPE...`, 80);
       checkCancelled();
 
-      const crepeResult = await runCrepe(stemPaths.vocals, null, {}, (progress, message) => {
-        onProgress('crepe', `[${STEPS.crepe}] ${message}`, 80 + Math.floor(progress * 0.1));
-      });
+      const crepeResult = await runCrepe(
+        stemPaths.vocals,
+        null,
+        {},
+        (progress, message) => {
+          onProgress('crepe', `[${STEPS.crepe}] ${message}`, 80 + Math.floor(progress * 0.1));
+        },
+        onConsoleOutput // Pass console output callback
+      );
 
       pitchData = crepeResult;
     }
@@ -262,6 +313,7 @@ export async function runConversion(options, onProgress = () => {}) {
       },
       lyrics: whisperResult,
       pitch: pitchData,
+      llmCorrections: llmStats, // LLM corrections metadata
     });
 
     onProgress('complete', '✓ Karaoke file created!', 100);
@@ -282,6 +334,7 @@ export async function runConversion(options, onProgress = () => {}) {
       stems: Object.keys(aacPaths),
       hasLyrics: Boolean(whisperResult?.words?.length),
       hasPitch: Boolean(pitchData),
+      llmStats,
     };
   } catch (error) {
     conversionInProgress = false;

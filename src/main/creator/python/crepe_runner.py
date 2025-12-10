@@ -31,7 +31,7 @@ def main():
     input_path = args.get("input")
     output_path = args.get("output")
     hop_length = args.get("hop_length", 512)  # ~11.6ms at 44100 Hz
-    model_capacity = args.get("model", "full")  # 'tiny', 'small', 'medium', 'large', 'full'
+    model_capacity = args.get("model", "tiny")  # 'tiny', 'small', 'medium', 'large', 'full' - tiny is fast and accurate enough
 
     if not input_path:
         print(json.dumps({"error": "Missing input path"}))
@@ -43,19 +43,22 @@ def main():
         import torchcrepe
         import numpy as np
 
-        # Detect device
+        # Detect device (CREPE has issues with MPS viterbi decoder, use CPU)
         if torch.cuda.is_available():
             device = "cuda"
             device_name = torch.cuda.get_device_name(0)
         else:
+            # Force CPU even on Apple Silicon (CREPE's viterbi decoder hangs on MPS)
             device = "cpu"
             device_name = "CPU"
-        # Note: CREPE doesn't support MPS well, use CPU as fallback
 
         progress(0, f"Loading vocal audio on {device_name}")
 
-        # Load audio
-        audio, sample_rate = torchaudio.load(input_path)
+        # Load audio using soundfile (avoids torchcodec requirement)
+        import soundfile as sf
+        audio_np, sample_rate = sf.read(input_path, always_2d=True)
+        # Convert to torch tensor and transpose to [channels, samples]
+        audio = torch.from_numpy(audio_np.T).float()
         duration = audio.shape[1] / sample_rate
 
         progress(5, f"Loaded {duration:.1f}s of audio")
@@ -68,8 +71,9 @@ def main():
         # Resample to 16kHz (CREPE's expected sample rate)
         if sample_rate != 16000:
             progress(10, f"Resampling from {sample_rate}Hz to 16kHz")
-            resampler = torchaudio.transforms.Resample(sample_rate, 16000)
-            audio = resampler(audio)
+            import torchaudio.functional
+            # Resample on CPU to avoid MPS float64 issues
+            audio = torchaudio.functional.resample(audio, sample_rate, 16000)
             sample_rate = 16000
 
         audio = audio.to(device)
@@ -78,6 +82,9 @@ def main():
 
         # Run CREPE
         # Returns: (pitch, periodicity) - periodicity is confidence-like (0-1)
+        import time
+        start_time = time.time()
+
         frequency, periodicity = torchcrepe.predict(
             audio,
             sample_rate,
@@ -85,10 +92,14 @@ def main():
             model=model_capacity,
             device=device,
             return_periodicity=True,
-            batch_size=2048
+            batch_size=2048,
+            decoder=torchcrepe.decode.argmax  # Use argmax instead of viterbi (viterbi hangs on MPS)
         )
 
-        progress(75, "Processing pitch data")
+        elapsed_time = time.time() - start_time
+        progress(75, f"Processing pitch data (CREPE took {elapsed_time:.1f}s for {duration:.1f}s audio)")
+
+        print(f"⏱️ CREPE timing: {elapsed_time:.1f}s for {duration:.1f}s of audio ({elapsed_time/duration:.2f}x realtime)", file=sys.stderr, flush=True)
 
         # Convert to numpy
         frequency = frequency.cpu().numpy().flatten()

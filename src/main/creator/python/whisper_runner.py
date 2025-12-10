@@ -66,11 +66,16 @@ def main():
         progress(20, f"Transcribing {duration:.1f}s of audio...")
 
         # Build transcription parameters
+        # Note: We don't use word_timestamps because:
+        # 1. MPS doesn't support the DTW algorithm (requires float64)
+        # 2. Singing has different timing than speech (stretching/compression)
+        # 3. LLM corrections break word alignment anyway
+        # We use line-level timing and estimate word positions
         transcribe_params = {
-            "word_timestamps": True,
+            "word_timestamps": False,
             "language": language,
             "task": "transcribe",
-            "verbose": False,
+            "verbose": True,  # Show transcription progress and lyrics in console
             "condition_on_previous_text": False,  # Reduces repetition in singing
             "no_speech_threshold": 0.3,  # More permissive for singing
         }
@@ -85,39 +90,52 @@ def main():
         if num_chunks > 1:
             progress(25, f"Processing ~{num_chunks} segments...")
 
+        # Redirect stdout to stderr during transcription so verbose output doesn't interfere with JSON
+        old_stdout = sys.stdout
+        sys.stdout = sys.stderr
+
         result = model.transcribe(audio, **transcribe_params)
 
-        progress(85, "Extracting word timestamps")
+        # Restore stdout
+        sys.stdout = old_stdout
 
-        # Extract word-level timestamps
+        progress(85, "Extracting line timestamps")
+
+        # Extract line-level timestamps and estimate word positions
         words = []
-        for segment in result.get("segments", []):
-            for word_info in segment.get("words", []):
-                words.append({
-                    "word": word_info["word"].strip(),
-                    "start": round(word_info["start"], 3),
-                    "end": round(word_info["end"], 3),
-                    "probability": round(word_info.get("probability", 1.0), 3)
-                })
-
-        progress(90, f"Found {len(words)} words")
-
-        # Build lines from segments
         lines = []
+
         for segment in result.get("segments", []):
+            segment_text = segment["text"].strip()
+            segment_start = segment["start"]
+            segment_end = segment["end"]
+            segment_duration = segment_end - segment_start
+
+            # Estimate word timings by evenly distributing across segment
+            text_words = segment_text.split()
             segment_words = []
-            for word_info in segment.get("words", []):
-                segment_words.append({
-                    "word": word_info["word"].strip(),
-                    "start": round(word_info["start"], 3),
-                    "end": round(word_info["end"], 3)
-                })
+
+            if text_words:
+                word_duration = segment_duration / len(text_words)
+                for i, word_text in enumerate(text_words):
+                    word_start = segment_start + (i * word_duration)
+                    word_end = word_start + word_duration
+                    word_data = {
+                        "word": word_text,
+                        "start": round(word_start, 3),
+                        "end": round(word_end, 3)
+                    }
+                    segment_words.append(word_data)
+                    words.append({
+                        **word_data,
+                        "probability": 0.9  # Good confidence in text, estimated timing
+                    })
 
             if segment_words:
                 lines.append({
-                    "text": segment["text"].strip(),
-                    "start": round(segment["start"], 3),
-                    "end": round(segment["end"], 3),
+                    "text": segment_text,
+                    "start": round(segment_start, 3),
+                    "end": round(segment_end, 3),
                     "words": segment_words
                 })
 

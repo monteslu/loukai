@@ -231,9 +231,16 @@ export async function getFileInfo(filePath) {
  * Start conversion
  * @param {Object} options - Conversion options
  * @param {Function} onProgress - Progress callback
+ * @param {Function} onConsoleOutput - Console output callback
+ * @param {Object} settingsManager - Settings manager for LLM settings
  * @returns {Promise<Object>} Conversion result
  */
-export async function startConversion(options, onProgress) {
+export async function startConversion(
+  options,
+  onProgress,
+  onConsoleOutput = null,
+  settingsManager = null
+) {
   if (isConversionInProgress()) {
     return { success: false, error: 'Conversion already in progress' };
   }
@@ -245,13 +252,18 @@ export async function startConversion(options, onProgress) {
       progress: 0,
     });
 
-    const result = await runConversion(options, (step, message, progress) => {
-      onProgress?.({
-        step,
-        message,
-        progress,
-      });
-    });
+    const result = await runConversion(
+      options,
+      (step, message, progress) => {
+        onProgress?.({
+          step,
+          message,
+          progress,
+        });
+      },
+      onConsoleOutput,
+      settingsManager
+    );
 
     return result;
   } catch (error) {

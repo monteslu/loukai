@@ -9,7 +9,18 @@
  * 5. Output .stem.m4a file
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+// Format LLM provider name for display
+function formatProviderName(provider) {
+  const names = {
+    anthropic: 'Anthropic Claude',
+    openai: 'OpenAI',
+    gemini: 'Google Gemini',
+    lmstudio: 'Local LLM Server',
+  };
+  return names[provider] || provider;
+}
 
 export function CreateTab({ bridge: _bridge }) {
   const [status, setStatus] = useState('checking'); // checking, setup, ready, creating, complete, installing
@@ -21,6 +32,12 @@ export function CreateTab({ bridge: _bridge }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [conversionProgress, setConversionProgress] = useState(null);
   const [completedFile, setCompletedFile] = useState(null);
+  const [llmStats, setLlmStats] = useState(null);
+  const [songDuration, setSongDuration] = useState(null);
+  const [processingTime, setProcessingTime] = useState(null);
+  const [consoleLog, setConsoleLog] = useState([]);
+  const consoleEndRef = useRef(null);
+  const conversionStartTimeRef = useRef(null);
 
   // Options
   const [options, setOptions] = useState({
@@ -32,6 +49,17 @@ export function CreateTab({ bridge: _bridge }) {
     enableCrepe: true,
     referenceLyrics: '',
   });
+
+  // LLM settings
+  const [llmSettings, setLlmSettings] = useState({
+    enabled: true,
+    provider: 'anthropic',
+    model: '',
+    apiKey: '',
+    baseUrl: 'http://localhost:1234/v1',
+  });
+  const [showLlmSettings, setShowLlmSettings] = useState(false);
+  const [llmTestResult, setLlmTestResult] = useState(null);
 
   const checkComponents = useCallback(async () => {
     setStatus('checking');
@@ -62,6 +90,19 @@ export function CreateTab({ bridge: _bridge }) {
   useEffect(() => {
     checkComponents();
 
+    // Load LLM settings
+    const loadLLMSettings = async () => {
+      try {
+        const settings = await window.kaiAPI?.creator?.getLLMSettings();
+        if (settings) {
+          setLlmSettings(settings);
+        }
+      } catch (err) {
+        console.error('Failed to load LLM settings:', err);
+      }
+    };
+    loadLLMSettings();
+
     // Listen for installation progress
     const onInstallProgress = (_event, progress) => {
       setInstallProgress(progress);
@@ -81,8 +122,41 @@ export function CreateTab({ bridge: _bridge }) {
       setConversionProgress(progress);
     };
 
+    const onConversionConsole = (_event, data) => {
+      const line = data.line;
+
+      setConsoleLog((prev) => {
+        // If line contains progress indicators (%, |, ━), replace last line
+        // This handles tqdm and pip progress bars that use \r
+        if (line.match(/\d+%|[│┃║▌▍▎▏█]|━|█/) && prev.length > 0) {
+          // Check if last line was also a progress line
+          const lastLine = prev[prev.length - 1];
+          if (lastLine.match(/\d+%|[│┃║▌▍▎▏█]|━|█/)) {
+            // Replace last line
+            return [...prev.slice(0, -1), line];
+          }
+        }
+
+        // Otherwise append new line
+        return [...prev, line];
+      });
+
+      // Auto-scroll to bottom
+      setTimeout(() => {
+        consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    };
+
     const onConversionComplete = (_event, result) => {
+      const endTime = Date.now();
+      const elapsed = conversionStartTimeRef.current
+        ? (endTime - conversionStartTimeRef.current) / 1000
+        : null;
+
       setCompletedFile(result.outputPath);
+      setLlmStats(result.llmStats);
+      setSongDuration(result.duration);
+      setProcessingTime(elapsed);
       setStatus('complete');
       setConversionProgress(null);
     };
@@ -96,6 +170,7 @@ export function CreateTab({ bridge: _bridge }) {
     window.kaiAPI?.creator?.onInstallProgress(onInstallProgress);
     window.kaiAPI?.creator?.onInstallError(onInstallError);
     window.kaiAPI?.creator?.onConversionProgress(onConversionProgress);
+    window.kaiAPI?.creator?.onConversionConsole(onConversionConsole);
     window.kaiAPI?.creator?.onConversionComplete(onConversionComplete);
     window.kaiAPI?.creator?.onConversionError(onConversionError);
 
@@ -103,6 +178,7 @@ export function CreateTab({ bridge: _bridge }) {
       window.kaiAPI?.creator?.removeInstallProgressListener(onInstallProgress);
       window.kaiAPI?.creator?.removeInstallErrorListener(onInstallError);
       window.kaiAPI?.creator?.removeConversionProgressListener(onConversionProgress);
+      window.kaiAPI?.creator?.removeConversionConsoleListener(onConversionConsole);
       window.kaiAPI?.creator?.removeConversionCompleteListener(onConversionComplete);
       window.kaiAPI?.creator?.removeConversionErrorListener(onConversionError);
     };
@@ -183,7 +259,9 @@ export function CreateTab({ bridge: _bridge }) {
 
     setStatus('creating');
     setError(null);
+    setConsoleLog([]); // Clear console log
     setConversionProgress({ step: 'starting', message: 'Starting conversion...', progress: 0 });
+    conversionStartTimeRef.current = Date.now();
 
     try {
       const result = await window.kaiAPI?.creator?.startConversion({
@@ -223,6 +301,10 @@ export function CreateTab({ bridge: _bridge }) {
   const handleCreateAnother = () => {
     setSelectedFile(null);
     setCompletedFile(null);
+    setLlmStats(null);
+    setSongDuration(null);
+    setProcessingTime(null);
+    conversionStartTimeRef.current = null;
     setOptions({
       title: '',
       artist: '',
@@ -233,6 +315,33 @@ export function CreateTab({ bridge: _bridge }) {
       referenceLyrics: '',
     });
     setStatus('ready');
+  };
+
+  const handleSaveLLMSettings = async () => {
+    try {
+      await window.kaiAPI?.creator?.saveLLMSettings(llmSettings);
+      setLlmTestResult({ success: true, message: 'Settings saved!' });
+      setTimeout(() => setLlmTestResult(null), 3000);
+    } catch (err) {
+      setLlmTestResult({ success: false, message: err.message });
+    }
+  };
+
+  const handleTestLLMConnection = async () => {
+    if (!llmSettings.apiKey && llmSettings.provider !== 'lmstudio') {
+      setLlmTestResult({ success: false, message: 'API key required' });
+      return;
+    }
+
+    setLlmTestResult({ testing: true, message: 'Testing connection...' });
+
+    try {
+      const result = await window.kaiAPI?.creator?.testLLMConnection(llmSettings);
+      setLlmTestResult(result);
+      setTimeout(() => setLlmTestResult(null), 3000);
+    } catch (err) {
+      setLlmTestResult({ success: false, message: err.message });
+    }
   };
 
   const formatDuration = (seconds) => {
@@ -257,6 +366,7 @@ export function CreateTab({ bridge: _bridge }) {
   const componentDisplay = [
     { key: 'python', label: 'Python 3.10+' },
     { key: 'pytorch', label: 'PyTorch' },
+    { key: 'soundfile', label: 'SoundFile (Audio)' },
     { key: 'demucs', label: 'Demucs (Stems)' },
     { key: 'whisper', label: 'Whisper (Lyrics)' },
     { key: 'crepe', label: 'CREPE (Pitch)' },
@@ -311,8 +421,10 @@ export function CreateTab({ bridge: _bridge }) {
           </p>
 
           {error && (
-            <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-400 px-4 py-3 rounded mb-6">
-              {error}
+            <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-400 px-4 py-3 rounded mb-6 select-text">
+              <div className="font-mono text-sm whitespace-pre-wrap overflow-x-auto max-h-96">
+                {error}
+              </div>
             </div>
           )}
 
@@ -358,40 +470,53 @@ export function CreateTab({ bridge: _bridge }) {
   // Creating state - show progress
   if (status === 'creating') {
     return (
-      <div className="flex items-center justify-center h-full p-8">
-        <div className="max-w-lg w-full text-center">
-          <div className="text-6xl mb-6">⚡</div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-            Creating Karaoke File
-          </h2>
+      <div className="h-full flex flex-col p-8">
+        <div className="max-w-4xl mx-auto w-full">
+          <div className="text-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+              Creating Stems+Karaoke File ⚡
+            </h2>
 
-          <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4 mb-6">
-            <p className="text-gray-700 dark:text-gray-300 font-medium mb-2">
-              {options.artist ? `${options.artist} - ${options.title}` : options.title}
-            </p>
-          </div>
-
-          <div className="mb-6">
-            <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-blue-600 transition-all duration-300"
-                style={{ width: `${conversionProgress?.progress || 0}%` }}
-              />
+            <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4 mb-4">
+              <p className="text-gray-700 dark:text-gray-300 font-medium">
+                {options.artist ? `${options.artist} - ${options.title}` : options.title}
+              </p>
             </div>
-            <p className="text-gray-600 dark:text-gray-400 mt-3">
-              {conversionProgress?.message || 'Starting...'}
-            </p>
-            <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
-              Step: {conversionProgress?.step || 'initializing'}
-            </p>
+
+            <div className="mb-6">
+              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 transition-all duration-300"
+                  style={{ width: `${conversionProgress?.progress || 0}%` }}
+                />
+              </div>
+              <p className="text-gray-600 dark:text-gray-400 mt-3">
+                {conversionProgress?.message || 'Starting...'}
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+                Step: {conversionProgress?.step || 'initializing'}
+              </p>
+            </div>
+
+            <button
+              className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg transition-colors"
+              onClick={handleCancelConversion}
+            >
+              Cancel
+            </button>
           </div>
 
-          <button
-            className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg transition-colors"
-            onClick={handleCancelConversion}
-          >
-            Cancel
-          </button>
+          {/* Console Log Panel */}
+          {consoleLog.length > 0 && (
+            <div className="mt-6 bg-gray-900 dark:bg-black rounded-lg p-4 h-32 overflow-y-auto">
+              <div className="text-xs font-mono text-green-400 whitespace-pre-wrap select-text leading-tight">
+                {consoleLog.map((line, i) => (
+                  <div key={i}>{line}</div>
+                ))}
+                <div ref={consoleEndRef} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -411,6 +536,140 @@ export function CreateTab({ bridge: _bridge }) {
             <p className="text-green-700 dark:text-green-400 font-medium">
               {options.artist ? `${options.artist} - ${options.title}` : options.title}
             </p>
+
+            {/* Processing Stats */}
+            <div className="text-sm text-gray-600 dark:text-gray-400 mt-2 space-y-1">
+              {songDuration && (
+                <p>
+                  🎵 Song length: {Math.floor(songDuration / 60)}:
+                  {Math.floor(songDuration % 60)
+                    .toString()
+                    .padStart(2, '0')}
+                </p>
+              )}
+              {processingTime && (
+                <p>
+                  ⏱️ Processing time: {Math.floor(processingTime / 60)}:
+                  {Math.floor(processingTime % 60)
+                    .toString()
+                    .padStart(2, '0')}
+                  {songDuration && (
+                    <span className="ml-2 text-xs">
+                      ({(songDuration / processingTime).toFixed(1)}x realtime)
+                    </span>
+                  )}
+                </p>
+              )}
+            </div>
+
+            {/* LLM Stats */}
+            {llmStats?.failed ? (
+              <div className="mt-2">
+                <p className="text-sm text-yellow-600 dark:text-yellow-400">
+                  ⚠️ AI correction failed ({formatProviderName(llmStats.provider)}):{' '}
+                  {llmStats.error || 'Unknown error'}
+                </p>
+              </div>
+            ) : llmStats && llmStats.corrections_applied > 0 ? (
+              <div className="mt-2 space-y-2">
+                <p className="text-sm text-green-600 dark:text-green-400">
+                  ✨ {formatProviderName(llmStats.provider)}: {llmStats.suggestions_made} suggestion
+                  {llmStats.suggestions_made !== 1 ? 's' : ''} ({llmStats.corrections_applied}{' '}
+                  applied
+                  {llmStats.missing_lines_suggested > 0 &&
+                    `, ${llmStats.missing_lines_suggested} for review`}
+                  )
+                </p>
+                {llmStats.corrections && llmStats.corrections.length > 0 && (
+                  <details className="text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded p-2">
+                    <summary className="cursor-pointer font-semibold">
+                      ✅ {llmStats.corrections.length} correction
+                      {llmStats.corrections.length !== 1 ? 's' : ''} applied
+                    </summary>
+                    <ul className="mt-2 space-y-1 ml-4 list-disc max-h-40 overflow-y-auto">
+                      {llmStats.corrections.map((corr, i) => (
+                        <li key={i}>
+                          Line #{corr.line_num}:{' '}
+                          <span className="text-red-600 dark:text-red-400 line-through">
+                            {corr.old_text}
+                          </span>{' '}
+                          →{' '}
+                          <span className="text-green-600 dark:text-green-400">
+                            {corr.new_text}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+                {llmStats.missing_lines && llmStats.missing_lines.length > 0 && (
+                  <details className="text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded p-2">
+                    <summary className="cursor-pointer font-semibold">
+                      💡 {llmStats.missing_lines.length} missing line
+                      {llmStats.missing_lines.length !== 1 ? 's' : ''} suggested (not applied)
+                    </summary>
+                    <ul className="mt-2 space-y-1 ml-4 list-disc max-h-40 overflow-y-auto">
+                      {llmStats.missing_lines.map((line, i) => (
+                        <li key={i}>
+                          <span className="text-blue-600 dark:text-blue-400">
+                            "{line.suggested_text}"
+                          </span>{' '}
+                          <span className="text-gray-500 dark:text-gray-400">
+                            ({line.start?.toFixed(1)}s-{line.end?.toFixed(1)}s, {line.confidence}{' '}
+                            confidence)
+                          </span>
+                          {line.reason && (
+                            <div className="text-gray-500 dark:text-gray-400 ml-2">
+                              → {line.reason}
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            ) : llmStats && llmStats.corrections_applied === 0 ? (
+              <div className="mt-2">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  ✓ {formatProviderName(llmStats.provider)}: No corrections applied
+                  {llmStats.missing_lines_suggested > 0
+                    ? `, ${llmStats.missing_lines_suggested} missing line${llmStats.missing_lines_suggested !== 1 ? 's' : ''} suggested`
+                    : ''}
+                </p>
+                {llmStats.missing_lines && llmStats.missing_lines.length > 0 && (
+                  <details className="text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded p-2 mt-2">
+                    <summary className="cursor-pointer font-semibold">
+                      💡 {llmStats.missing_lines.length} missing line
+                      {llmStats.missing_lines.length !== 1 ? 's' : ''} suggested (not applied)
+                    </summary>
+                    <ul className="mt-2 space-y-1 ml-4 list-disc max-h-40 overflow-y-auto">
+                      {llmStats.missing_lines.map((line, i) => (
+                        <li key={i}>
+                          <span className="text-blue-600 dark:text-blue-400">
+                            "{line.suggested_text}"
+                          </span>{' '}
+                          <span className="text-gray-500 dark:text-gray-400">
+                            ({line.start?.toFixed(1)}s-{line.end?.toFixed(1)}s, {line.confidence}{' '}
+                            confidence)
+                          </span>
+                          {line.reason && (
+                            <div className="text-gray-500 dark:text-gray-400 ml-2">
+                              → {line.reason}
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                AI correction not used
+              </p>
+            )}
+
             <p className="text-sm text-green-600 dark:text-green-500 mt-2 break-all">
               {completedFile}
             </p>
@@ -434,18 +693,20 @@ export function CreateTab({ bridge: _bridge }) {
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-2xl mx-auto">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-          Create Karaoke File
+          Create Stems+Karaoke File ⚡
         </h2>
 
         {error && (
-          <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-400 px-4 py-3 rounded mb-6">
-            {error}
+          <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-400 px-4 py-3 rounded mb-6 select-text">
             <button
-              className="float-right text-red-700 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
+              className="float-right text-red-700 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 text-xl leading-none"
               onClick={() => setError(null)}
             >
               ×
             </button>
+            <div className="font-mono text-sm whitespace-pre-wrap overflow-x-auto max-h-96">
+              {error}
+            </div>
           </div>
         )}
 
@@ -621,6 +882,167 @@ export function CreateTab({ bridge: _bridge }) {
           </div>
         </div>
 
+        {/* Advanced Settings - LLM */}
+        <div className="bg-gray-100 dark:bg-gray-800 rounded-lg mb-6">
+          <button
+            className="w-full px-6 py-4 flex justify-between items-center text-left hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors rounded-lg"
+            onClick={() => setShowLlmSettings(!showLlmSettings)}
+          >
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              4. Advanced: AI Lyrics Correction (Optional)
+            </h3>
+            <span className="text-gray-500">{showLlmSettings ? '▼' : '▶'}</span>
+          </button>
+
+          {showLlmSettings && (
+            <div className="px-6 pb-6 space-y-4">
+              <div className="flex items-center mb-4">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  checked={llmSettings.enabled}
+                  onChange={(e) =>
+                    setLlmSettings((prev) => ({ ...prev, enabled: e.target.checked }))
+                  }
+                />
+                <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                  Use AI to improve lyrics accuracy (compares Whisper output to reference lyrics)
+                </label>
+              </div>
+
+              {llmSettings.enabled && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      AI Provider
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      value={llmSettings.provider}
+                      onChange={(e) =>
+                        setLlmSettings((prev) => ({ ...prev, provider: e.target.value }))
+                      }
+                    >
+                      <option value="anthropic">Anthropic Claude</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="gemini">Google Gemini</option>
+                      <option value="lmstudio">Local LLM Server (LM Studio, Ollama, etc.)</option>
+                    </select>
+                  </div>
+
+                  {llmSettings.provider !== 'lmstudio' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        API Key
+                      </label>
+                      <input
+                        type="password"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        value={llmSettings.apiKey}
+                        onChange={(e) =>
+                          setLlmSettings((prev) => ({ ...prev, apiKey: e.target.value }))
+                        }
+                        placeholder={`Enter ${llmSettings.provider} API key...`}
+                      />
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {llmSettings.provider === 'anthropic' && (
+                          <>
+                            Get your key from{' '}
+                            <a
+                              href="https://console.anthropic.com/"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 dark:text-blue-400 hover:underline"
+                            >
+                              console.anthropic.com
+                            </a>
+                          </>
+                        )}
+                        {llmSettings.provider === 'openai' && (
+                          <>
+                            Get your key from{' '}
+                            <a
+                              href="https://platform.openai.com/api-keys"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 dark:text-blue-400 hover:underline"
+                            >
+                              platform.openai.com
+                            </a>
+                          </>
+                        )}
+                        {llmSettings.provider === 'gemini' && (
+                          <>
+                            Get your key from{' '}
+                            <a
+                              href="https://aistudio.google.com/app/apikey"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 dark:text-blue-400 hover:underline"
+                            >
+                              Google AI Studio
+                            </a>
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  )}
+
+                  {llmSettings.provider === 'lmstudio' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Server Base URL
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        value={llmSettings.baseUrl}
+                        onChange={(e) =>
+                          setLlmSettings((prev) => ({ ...prev, baseUrl: e.target.value }))
+                        }
+                        placeholder="http://localhost:1234/v1"
+                      />
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        OpenAI-compatible API endpoint (LM Studio, Ollama, text-generation-webui,
+                        etc.)
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors"
+                      onClick={handleTestLLMConnection}
+                      disabled={llmTestResult?.testing}
+                    >
+                      {llmTestResult?.testing ? 'Testing...' : 'Test Connection'}
+                    </button>
+                    <button
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+                      onClick={handleSaveLLMSettings}
+                    >
+                      Save Settings
+                    </button>
+                  </div>
+
+                  {llmTestResult && !llmTestResult.testing && (
+                    <div
+                      className={`px-4 py-2 rounded-lg ${
+                        llmTestResult.success
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                      }`}
+                    >
+                      {llmTestResult.success ? '✓' : '✗'}{' '}
+                      {llmTestResult.message || llmTestResult.error}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Create Button */}
         <div className="text-center">
           <button
@@ -628,7 +1050,7 @@ export function CreateTab({ bridge: _bridge }) {
             onClick={handleStartConversion}
             disabled={!selectedFile}
           >
-            ⚡ Create Karaoke File
+            Create Stems+Karaoke File ⚡
           </button>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-3">
             Processing time depends on song length and your hardware (typically 2-10 minutes)

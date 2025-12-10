@@ -227,6 +227,13 @@ export async function checkCrepe() {
 }
 
 /**
+ * Check SoundFile (audio backend for torchaudio)
+ */
+export async function checkSoundFile() {
+  return checkPythonPackage('soundfile', '__version__');
+}
+
+/**
  * Get the FFmpeg executable path
  * Returns system ffmpeg if available, otherwise cached version
  */
@@ -350,9 +357,10 @@ export function checkDemucsModel(_modelName = 'htdemucs_ft') {
  * Perform complete system check
  */
 export async function checkAllComponents() {
-  const [python, pytorch, demucs, whisper, crepe] = await Promise.all([
+  const [python, pytorch, soundfile, demucs, whisper, crepe] = await Promise.all([
     checkPython(),
     checkPyTorch(),
+    checkSoundFile(),
     checkDemucs(),
     checkWhisper(),
     checkCrepe(),
@@ -365,6 +373,7 @@ export async function checkAllComponents() {
   const components = {
     python,
     pytorch,
+    soundfile,
     demucs,
     whisper,
     crepe,
@@ -377,6 +386,7 @@ export async function checkAllComponents() {
   const allInstalled =
     python.installed &&
     pytorch.installed &&
+    soundfile.installed &&
     demucs.installed &&
     whisper.installed &&
     crepe.installed &&

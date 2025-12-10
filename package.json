@@ -66,6 +66,8 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.1",
+    "@google/generative-ai": "^0.24.1",
     "@soundtouchjs/audio-worklet": "^0.2.1",
     "aubiojs": "^0.2.1",
     "bcryptjs": "^3.0.2",
@@ -80,11 +82,13 @@
     "m4a-stems": "^0.1.0",
     "music-metadata": "^11.9.0",
     "node-id3": "^0.2.9",
+    "openai": "^6.10.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
+    "tar": "^7.5.2",
     "ws": "^8.13.0",
     "yauzl": "^3.0.0",
     "yazl": "^3.3.1"

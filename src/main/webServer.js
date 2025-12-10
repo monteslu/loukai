@@ -1747,9 +1747,16 @@ class WebServer {
         res.json({ success: true, message: 'Conversion started' });
 
         // Run conversion with Socket.IO progress updates
-        const result = await creatorService.startConversion(options, (progress) => {
-          this.io.to('admin-clients').emit('creator:conversion-progress', progress);
-        });
+        const result = await creatorService.startConversion(
+          options,
+          (progress) => {
+            this.io.to('admin-clients').emit('creator:conversion-progress', progress);
+          },
+          (consoleLine) => {
+            this.io.to('admin-clients').emit('creator:conversion-console', { line: consoleLine });
+          },
+          this.mainApp.settings // Pass settings manager for LLM
+        );
 
         if (result.success) {
           this.io.to('admin-clients').emit('creator:conversion-complete', {
@@ -1758,6 +1765,7 @@ class WebServer {
             stems: result.stems,
             hasLyrics: result.hasLyrics,
             hasPitch: result.hasPitch,
+            llmStats: result.llmStats,
           });
         } else if (result.cancelled) {
           // User cancelled - no error event needed

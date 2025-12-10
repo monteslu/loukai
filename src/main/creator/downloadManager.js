@@ -60,28 +60,73 @@ function getPythonBuildUrl() {
  */
 function downloadFile(url, destPath, onProgress = null) {
   return new Promise((resolve, reject) => {
-    const protocol = url.startsWith('https') ? https : http;
+    console.log(`📥 Downloading: ${url}`);
+    console.log(`   Destination: ${destPath}`);
+
+    let protocol;
+    try {
+      protocol = url.startsWith('https') ? https : http;
+    } catch (error) {
+      console.error('❌ Invalid URL:', url);
+      console.error('Error:', error);
+      console.error('Stack:', error.stack);
+      reject(new Error(`Invalid URL: ${url} - ${error.message}`));
+      return;
+    }
 
     // Ensure directory exists
     const dir = dirname(destPath);
     if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
+      try {
+        mkdirSync(dir, { recursive: true });
+        console.log(`✅ Created directory: ${dir}`);
+      } catch (error) {
+        console.error(`❌ Failed to create directory: ${dir}`);
+        console.error('Error:', error);
+        console.error('Stack:', error.stack);
+        reject(new Error(`Failed to create directory ${dir}: ${error.message}`));
+        return;
+      }
     }
 
     const request = protocol.get(url, (response) => {
+      console.log(`📡 Response status: ${response.statusCode} ${response.statusMessage}`);
+      console.log(`   Headers:`, JSON.stringify(response.headers, null, 2));
+
       // Handle redirects
       if (response.statusCode === 301 || response.statusCode === 302) {
-        downloadFile(response.headers.location, destPath, onProgress).then(resolve).catch(reject);
+        const location = response.headers.location;
+        console.log(`🔀 Redirect to: ${location}`);
+
+        try {
+          // Handle relative redirects by resolving against original URL
+          const redirectUrl = location.startsWith('http') ? location : new URL(location, url).href;
+          console.log(`🔀 Resolved redirect URL: ${redirectUrl}`);
+          downloadFile(redirectUrl, destPath, onProgress).then(resolve).catch(reject);
+        } catch (error) {
+          console.error(`❌ Failed to resolve redirect URL`);
+          console.error('Original URL:', url);
+          console.error('Location header:', location);
+          console.error('Error:', error);
+          console.error('Stack:', error.stack);
+          reject(
+            new Error(`Failed to resolve redirect from ${url} to ${location}: ${error.message}`)
+          );
+        }
         return;
       }
 
       if (response.statusCode !== 200) {
-        reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`));
+        const errorMsg = `HTTP ${response.statusCode}: ${response.statusMessage} for ${url}`;
+        console.error(`❌ ${errorMsg}`);
+        reject(new Error(errorMsg));
         return;
       }
 
       const totalBytes = parseInt(response.headers['content-length'] || '0', 10);
+      console.log(`📦 Content length: ${(totalBytes / 1024 / 1024).toFixed(2)} MB`);
       let downloadedBytes = 0;
+      let lastLoggedPercent = -1;
 
       const fileStream = createWriteStream(destPath);
 
@@ -89,6 +134,15 @@ function downloadFile(url, destPath, onProgress = null) {
         downloadedBytes += chunk.length;
         if (onProgress && totalBytes > 0) {
           const percent = Math.floor((downloadedBytes / totalBytes) * 100);
+
+          // Log progress every 10%
+          if (percent >= lastLoggedPercent + 10 || percent === 100) {
+            console.log(
+              `   Progress: ${percent}% (${(downloadedBytes / 1024 / 1024).toFixed(2)} / ${(totalBytes / 1024 / 1024).toFixed(2)} MB)`
+            );
+            lastLoggedPercent = percent;
+          }
+
           onProgress(percent, downloadedBytes, totalBytes);
         }
       });
@@ -97,16 +151,27 @@ function downloadFile(url, destPath, onProgress = null) {
 
       fileStream.on('finish', () => {
         fileStream.close();
+        console.log(`✅ Download complete: ${destPath}`);
+        console.log(`   Size: ${(downloadedBytes / 1024 / 1024).toFixed(2)} MB`);
         resolve();
       });
 
       fileStream.on('error', (error) => {
         fileStream.close();
-        reject(error);
+        console.error(`❌ File stream error for ${destPath}`);
+        console.error('Error:', error);
+        console.error('Stack:', error.stack);
+        reject(new Error(`File write failed for ${destPath}: ${error.message}`));
       });
     });
 
-    request.on('error', reject);
+    request.on('error', (error) => {
+      console.error(`❌ Request error for ${url}`);
+      console.error('Error:', error);
+      console.error('Stack:', error.stack);
+      reject(new Error(`Download failed for ${url}: ${error.message}`));
+    });
+
     request.end();
   });
 }
@@ -268,52 +333,67 @@ function detectGPU() {
  * Download and install Python
  */
 export async function downloadPython(onProgress = null) {
+  console.log('🐍 Starting Python installation...');
   const cacheDir = getCacheDir();
   const pythonDir = join(cacheDir, 'python');
+  console.log(`   Cache dir: ${cacheDir}`);
+  console.log(`   Python dir: ${pythonDir}`);
 
   // Check if already installed
   const pythonPath = getPythonPath();
+  console.log(`   Checking for existing Python: ${pythonPath}`);
   if (existsSync(pythonPath)) {
+    console.log('✅ Python already installed');
     if (onProgress) onProgress('complete', 'Python already installed');
     return { success: true, path: pythonPath };
   }
 
   try {
     const url = getPythonBuildUrl();
+    console.log(`🌐 Python download URL: ${url}`);
     const tarPath = join(cacheDir, 'python.tar.gz');
 
     // Download
+    console.log('📥 Starting Python download...');
     if (onProgress) onProgress('downloading', 'Downloading Python...');
     await downloadFile(url, tarPath, (percent) => {
       if (onProgress) onProgress('downloading', `Downloading Python... ${percent}%`);
     });
 
     // Extract
+    console.log('📦 Extracting Python...');
     if (onProgress) onProgress('extracting', 'Extracting Python...');
 
     // Create python directory
     if (!existsSync(pythonDir)) {
+      console.log(`   Creating Python directory: ${pythonDir}`);
       mkdirSync(pythonDir, { recursive: true });
     }
 
     // Use tar to extract (available on all platforms)
+    console.log('   Loading tar module...');
     const tar = await import('tar');
+    console.log('   Extracting tarball...');
     await tar.extract({
       file: tarPath,
       cwd: pythonDir,
       strip: 1,
     });
+    console.log('✅ Extraction complete');
 
     // Remove quarantine on macOS
     if (process.platform === 'darwin') {
+      console.log('🍎 Removing macOS quarantine attributes...');
       try {
         execSync(`xattr -cr "${pythonDir}"`, { stdio: 'ignore' });
-      } catch {
-        // Non-fatal
+        console.log('✅ Quarantine removed');
+      } catch (error) {
+        console.warn('⚠️ Failed to remove quarantine (non-fatal):', error.message);
       }
     }
 
     // Clean up tarball
+    console.log('🧹 Cleaning up tarball...');
     rmSync(tarPath, { force: true });
 
     // Upgrade pip and setuptools, fix common conflicts
@@ -327,9 +407,13 @@ export async function downloadPython(onProgress = null) {
       // Non-fatal - coverage may not be installed
     }
 
+    console.log('✅ Python installation complete');
     if (onProgress) onProgress('complete', 'Python installed successfully');
     return { success: true, path: pythonPath };
   } catch (error) {
+    console.error('❌ Python installation failed');
+    console.error('Error:', error);
+    console.error('Stack:', error.stack);
     return { success: false, error: error.message };
   }
 }
@@ -368,16 +452,16 @@ export async function downloadPyTorch(variant = 'auto', onProgress = null) {
 }
 
 /**
- * Download and install TorchCodec (required by torchaudio for audio loading)
+ * Download and install SoundFile (audio backend for torchaudio)
  */
-export async function downloadTorchCodec(onProgress = null) {
+export async function downloadSoundFile(onProgress = null) {
   try {
-    if (onProgress) onProgress('installing', 'Installing TorchCodec...');
-    await pipInstall('torchcodec', (stage, msg) => {
+    if (onProgress) onProgress('installing', 'Installing SoundFile...');
+    await pipInstall('soundfile', (stage, msg) => {
       if (onProgress) onProgress(stage, msg);
     });
 
-    if (onProgress) onProgress('complete', 'TorchCodec installed');
+    if (onProgress) onProgress('complete', 'SoundFile installed');
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -565,19 +649,25 @@ except Exception as e:
  * Download FFmpeg binary
  */
 export async function downloadFFmpeg(onProgress = null) {
+  console.log('🎬 Starting FFmpeg installation...');
   const cacheDir = getCacheDir();
   const binDir = join(cacheDir, 'bin');
+  console.log(`   Binary dir: ${binDir}`);
 
   if (!existsSync(binDir)) {
     mkdirSync(binDir, { recursive: true });
+    console.log(`   Created binary directory`);
   }
 
   const plat = process.platform;
   const binaryName = plat === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
   const binaryPath = join(binDir, binaryName);
+  console.log(`   Platform: ${plat}`);
+  console.log(`   Binary path: ${binaryPath}`);
 
   // Check if already exists
   if (existsSync(binaryPath)) {
+    console.log('✅ FFmpeg already installed');
     if (onProgress) onProgress('complete', 'FFmpeg already downloaded');
     return { success: true, path: binaryPath };
   }
@@ -592,16 +682,20 @@ export async function downloadFFmpeg(onProgress = null) {
     } else {
       url = 'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz';
     }
+    console.log(`🌐 FFmpeg download URL: ${url}`);
 
     const archivePath = join(binDir, plat === 'linux' ? 'ffmpeg.tar.xz' : 'ffmpeg.zip');
+    console.log(`   Archive path: ${archivePath}`);
 
     // Download
+    console.log('📥 Starting FFmpeg download...');
     if (onProgress) onProgress('downloading', 'Downloading FFmpeg...');
     await downloadFile(url, archivePath, (percent) => {
       if (onProgress) onProgress('downloading', `Downloading FFmpeg... ${percent}%`);
     });
 
     // Extract
+    console.log('📦 Extracting FFmpeg...');
     if (onProgress) onProgress('extracting', 'Extracting FFmpeg...');
 
     // Extract and find ffmpeg binary
@@ -610,11 +704,15 @@ export async function downloadFFmpeg(onProgress = null) {
     const tempDir = mkdtempSync(join(tmpdir(), 'ffmpeg-'));
 
     try {
+      console.log(`   Extracting to temp dir: ${tempDir}`);
       if (plat === 'linux') {
+        console.log('   Using tar to extract...');
         execSync(`tar -xf "${archivePath}" -C "${tempDir}"`);
       } else {
+        console.log('   Using unzip to extract...');
         execSync(`unzip -q "${archivePath}" -d "${tempDir}"`);
       }
+      console.log('   Extraction complete, searching for binary...');
 
       // Find ffmpeg binary recursively
       const findBinary = (dir, name) => {
@@ -637,25 +735,40 @@ export async function downloadFFmpeg(onProgress = null) {
 
       const ffmpegFound = findBinary(tempDir, binaryName);
       if (ffmpegFound) {
+        console.log(`   Found binary: ${ffmpegFound}`);
+        console.log(`   Copying to: ${binaryPath}`);
         copyFileSync(ffmpegFound, binaryPath);
         if (plat !== 'win32') {
+          console.log('   Setting executable permissions...');
           chmodSync(binaryPath, 0o755);
         }
+        console.log('✅ FFmpeg binary installed');
       } else {
+        console.error('❌ FFmpeg binary not found in archive');
+        console.error(`   Searched in: ${tempDir}`);
+        console.error(`   Looking for: ${binaryName}`);
         throw new Error('FFmpeg binary not found in archive');
       }
 
       // Clean up
+      console.log('🧹 Cleaning up temporary files...');
       rmSync(tempDir, { recursive: true, force: true });
       rmSync(archivePath, { force: true });
 
+      console.log('✅ FFmpeg installation complete');
       if (onProgress) onProgress('complete', 'FFmpeg installed');
       return { success: true, path: binaryPath };
     } catch (extractError) {
+      console.error('❌ FFmpeg extraction failed');
+      console.error('Error:', extractError);
+      console.error('Stack:', extractError.stack);
       rmSync(tempDir, { recursive: true, force: true });
       throw extractError;
     }
   } catch (error) {
+    console.error('❌ FFmpeg installation failed');
+    console.error('Error:', error);
+    console.error('Stack:', error.stack);
     return { success: false, error: error.message };
   }
 }
@@ -664,6 +777,10 @@ export async function downloadFFmpeg(onProgress = null) {
  * Install all components in order
  */
 export async function installAllComponents(onProgress = null) {
+  console.log('🚀 Starting installation of all components...');
+  console.log(`   Platform: ${process.platform}`);
+  console.log(`   Architecture: ${process.arch}`);
+
   const results = {};
 
   // Define steps with human-readable labels and estimated sizes
@@ -676,7 +793,7 @@ export async function installAllComponents(onProgress = null) {
       weight: 35,
       size: '~2 GB',
     },
-    { name: 'torchcodec', label: 'TorchCodec', fn: downloadTorchCodec, weight: 3, size: '~10 MB' },
+    { name: 'soundfile', label: 'SoundFile', fn: downloadSoundFile, weight: 2, size: '~5 MB' },
     { name: 'demucs', label: 'Demucs', fn: downloadDemucs, weight: 8, size: '~100 MB' },
     { name: 'whisper', label: 'Whisper', fn: downloadWhisper, weight: 8, size: '~50 MB' },
     { name: 'crepe', label: 'CREPE', fn: downloadCrepe, weight: 4, size: '~20 MB' },
@@ -697,6 +814,11 @@ export async function installAllComponents(onProgress = null) {
     },
   ];
 
+  console.log(`📋 Installation plan: ${steps.length} components`);
+  steps.forEach((s, i) => {
+    console.log(`   ${i + 1}. ${s.label} (${s.size})`);
+  });
+
   let completedWeight = 0;
   const totalWeight = steps.reduce((sum, s) => sum + s.weight, 0);
 
@@ -704,6 +826,8 @@ export async function installAllComponents(onProgress = null) {
     const step = steps[i];
     const stepNumber = i + 1;
     const totalSteps = steps.length;
+
+    console.log(`\n📦 [${stepNumber}/${totalSteps}] Installing ${step.label}...`);
 
     if (onProgress) {
       const percent = Math.floor((completedWeight / totalWeight) * 100);
@@ -736,6 +860,8 @@ export async function installAllComponents(onProgress = null) {
     results[step.name] = result;
 
     if (!result.success) {
+      console.error(`❌ [${stepNumber}/${totalSteps}] Failed to install ${step.label}`);
+      console.error('   Error:', result.error);
       if (onProgress) {
         onProgress(
           Math.floor((completedWeight / totalWeight) * 100),
@@ -745,6 +871,8 @@ export async function installAllComponents(onProgress = null) {
       return { success: false, failed: step.name, error: result.error, results };
     }
 
+    console.log(`✅ [${stepNumber}/${totalSteps}] ${step.label} installed successfully`);
+
     completedWeight += step.weight;
 
     if (onProgress) {
@@ -753,6 +881,12 @@ export async function installAllComponents(onProgress = null) {
     }
   }
 
+  console.log('\n🎉 All components installed successfully!');
+  console.log('Installation results:');
+  Object.entries(results).forEach(([name, result]) => {
+    console.log(`   ${result.success ? '✅' : '❌'} ${name}`);
+  });
+
   if (onProgress) onProgress(100, 'All components installed successfully!');
   return { success: true, results };
 }
@@ -760,7 +894,7 @@ export async function installAllComponents(onProgress = null) {
 export default {
   downloadPython,
   downloadPyTorch,
-  downloadTorchCodec,
+  downloadSoundFile,
   downloadDemucs,
   downloadWhisper,
   downloadCrepe,

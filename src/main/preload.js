@@ -209,9 +209,15 @@ const api = {
     startConversion: (options) => ipcRenderer.invoke('creator:startConversion', options),
     cancelConversion: () => ipcRenderer.invoke('creator:cancelConversion'),
 
+    // LLM settings
+    getLLMSettings: () => ipcRenderer.invoke('creator:getLLMSettings'),
+    saveLLMSettings: (settings) => ipcRenderer.invoke('creator:saveLLMSettings', settings),
+    testLLMConnection: (settings) => ipcRenderer.invoke('creator:testLLMConnection', settings),
+
     onInstallProgress: (callback) => ipcRenderer.on('creator:installProgress', callback),
     onInstallError: (callback) => ipcRenderer.on('creator:installError', callback),
     onConversionProgress: (callback) => ipcRenderer.on('creator:conversionProgress', callback),
+    onConversionConsole: (callback) => ipcRenderer.on('creator:conversionConsole', callback),
     onConversionComplete: (callback) => ipcRenderer.on('creator:conversionComplete', callback),
     onConversionError: (callback) => ipcRenderer.on('creator:conversionError', callback),
     removeInstallProgressListener: (callback) =>
@@ -220,6 +226,8 @@ const api = {
       ipcRenderer.removeListener('creator:installError', callback),
     removeConversionProgressListener: (callback) =>
       ipcRenderer.removeListener('creator:conversionProgress', callback),
+    removeConversionConsoleListener: (callback) =>
+      ipcRenderer.removeListener('creator:conversionConsole', callback),
     removeConversionCompleteListener: (callback) =>
       ipcRenderer.removeListener('creator:conversionComplete', callback),
     removeConversionErrorListener: (callback) =>

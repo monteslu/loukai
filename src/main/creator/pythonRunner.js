@@ -27,9 +27,10 @@ const PYTHON_SCRIPTS_DIR = join(__dirname, 'python');
  * @param {string} scriptName - Name of script (e.g., 'demucs_runner.py')
  * @param {Object} args - Arguments to pass as JSON
  * @param {Function} onProgress - Progress callback (step, message, progress%)
+ * @param {Function} onConsoleOutput - Raw console output callback (line)
  * @returns {Promise<Object>} Parsed JSON result from script
  */
-export function runPythonScript(scriptName, args, onProgress = null) {
+export function runPythonScript(scriptName, args, onProgress = null, onConsoleOutput = null) {
   return new Promise((resolve, reject) => {
     const pythonPath = getPythonPath();
     const scriptPath = join(PYTHON_SCRIPTS_DIR, scriptName);
@@ -58,6 +59,11 @@ export function runPythonScript(scriptName, args, onProgress = null) {
       const lines = text.split('\n');
 
       for (const line of lines) {
+        // Emit raw console output
+        if (onConsoleOutput && line.trim()) {
+          onConsoleOutput(line);
+        }
+
         // Parse our PROGRESS: updates
         if (line.startsWith('PROGRESS:')) {
           const parts = line.split(':');
@@ -105,17 +111,24 @@ export function runPythonScript(scriptName, args, onProgress = null) {
         const result = JSON.parse(stdout.trim());
 
         if (result.error) {
-          reject(new Error(result.error));
+          // Include full traceback if available
+          const errorMsg = result.traceback
+            ? `${result.error}\n\nTraceback:\n${result.traceback}`
+            : result.error;
+          console.error('❌ Python script error:', errorMsg);
+          reject(new Error(errorMsg));
         } else {
           resolve(result);
         }
       } catch (e) {
         if (code !== 0) {
-          reject(new Error(`Python script failed (code ${code}): ${stderr.slice(-1000)}`));
+          const errorMsg = `Python script failed (code ${code}):\n${stderr}`;
+          console.error('❌ Python script failed:', errorMsg);
+          reject(new Error(errorMsg));
         } else {
-          reject(
-            new Error(`Failed to parse Python output: ${e.message}\nOutput: ${stdout.slice(-500)}`)
-          );
+          const errorMsg = `Failed to parse Python output: ${e.message}\nStderr: ${stderr}\nStdout: ${stdout.slice(-500)}`;
+          console.error('❌ Failed to parse Python output:', errorMsg);
+          reject(new Error(errorMsg));
         }
       }
     });
@@ -135,9 +148,16 @@ export function runPythonScript(scriptName, args, onProgress = null) {
  * @param {string} options.model - Demucs model (default 'htdemucs_ft')
  * @param {number} options.numStems - Number of stems (2 or 4)
  * @param {Function} onProgress - Progress callback
+ * @param {Function} onConsoleOutput - Raw console output callback
  * @returns {Promise<Object>} Result with stem file paths
  */
-export function runDemucs(inputPath, outputDir, options = {}, onProgress = null) {
+export function runDemucs(
+  inputPath,
+  outputDir,
+  options = {},
+  onProgress = null,
+  onConsoleOutput = null
+) {
   return runPythonScript(
     'demucs_runner.py',
     {
@@ -146,7 +166,8 @@ export function runDemucs(inputPath, outputDir, options = {}, onProgress = null)
       model: options.model || 'htdemucs_ft',
       num_stems: options.numStems || 4,
     },
-    onProgress
+    onProgress,
+    onConsoleOutput
   );
 }
 
@@ -159,9 +180,10 @@ export function runDemucs(inputPath, outputDir, options = {}, onProgress = null)
  * @param {string} options.initialPrompt - Initial prompt with vocabulary hints
  * @param {string} options.language - Language code (default 'en')
  * @param {Function} onProgress - Progress callback
+ * @param {Function} onConsoleOutput - Raw console output callback
  * @returns {Promise<Object>} Transcription result with word timestamps
  */
-export function runWhisper(inputPath, options = {}, onProgress = null) {
+export function runWhisper(inputPath, options = {}, onProgress = null, onConsoleOutput = null) {
   return runPythonScript(
     'whisper_runner.py',
     {
@@ -170,7 +192,8 @@ export function runWhisper(inputPath, options = {}, onProgress = null) {
       initial_prompt: options.initialPrompt || null,
       language: options.language || 'en',
     },
-    onProgress
+    onProgress,
+    onConsoleOutput
   );
 }
 
@@ -183,18 +206,26 @@ export function runWhisper(inputPath, options = {}, onProgress = null) {
  * @param {string} options.model - CREPE model capacity (default 'full')
  * @param {number} options.hopLength - Hop length in samples (default 512)
  * @param {Function} onProgress - Progress callback
+ * @param {Function} onConsoleOutput - Raw console output callback
  * @returns {Promise<Object>} Pitch detection result
  */
-export function runCrepe(inputPath, outputPath = null, options = {}, onProgress = null) {
+export function runCrepe(
+  inputPath,
+  outputPath = null,
+  options = {},
+  onProgress = null,
+  onConsoleOutput = null
+) {
   return runPythonScript(
     'crepe_runner.py',
     {
       input: inputPath,
       output: outputPath,
-      model: options.model || 'full',
+      model: options.model || 'tiny',
       hop_length: options.hopLength || 512,
     },
-    onProgress
+    onProgress,
+    onConsoleOutput
   );
 }
 

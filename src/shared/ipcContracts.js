@@ -231,10 +231,17 @@ export const CREATOR_CHANNELS = {
   START_CONVERSION: 'creator:startConversion',
   CANCEL_CONVERSION: 'creator:cancelConversion',
 
+  // LLM settings
+  GET_LLM_SETTINGS: 'creator:getLLMSettings',
+  SAVE_LLM_SETTINGS: 'creator:saveLLMSettings',
+  TEST_LLM_CONNECTION: 'creator:testLLMConnection',
+
   // Events (main → renderer)
   INSTALL_PROGRESS: 'creator:installProgress',
+  INSTALL_CONSOLE: 'creator:installConsole',
   INSTALL_ERROR: 'creator:installError',
   CONVERSION_PROGRESS: 'creator:conversionProgress',
+  CONVERSION_CONSOLE: 'creator:conversionConsole',
   CONVERSION_COMPLETE: 'creator:conversionComplete',
   CONVERSION_ERROR: 'creator:conversionError',
 };

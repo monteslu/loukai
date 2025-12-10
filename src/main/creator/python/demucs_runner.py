@@ -73,13 +73,16 @@ def main():
 
         progress(5, "Loading audio file")
 
-        # Load audio
-        audio, sample_rate = torchaudio.load(input_path)
+        # Load audio using soundfile (avoids torchcodec requirement)
+        import soundfile as sf
+        audio_np, sample_rate = sf.read(input_path, always_2d=True)
+        # Convert to torch tensor and transpose to [channels, samples]
+        audio = torch.from_numpy(audio_np.T).float()
         duration = audio.shape[1] / sample_rate
 
         progress(8, f"Loaded {duration:.1f}s audio")
 
-        # Convert to model format
+        # Convert to model format and move to device
         audio = convert_audio(
             audio.unsqueeze(0),
             sample_rate,
@@ -107,6 +110,7 @@ def main():
         # Resample if needed
         if model.samplerate != sample_rate:
             progress(83, f"Resampling to {sample_rate}Hz")
+            import torchaudio.functional
             sources = torchaudio.functional.resample(
                 sources.squeeze(0),
                 model.samplerate,
@@ -127,7 +131,8 @@ def main():
 
             stem_audio = sources[0, i].cpu()
             stem_path = output_path / f"{name}.wav"
-            torchaudio.save(str(stem_path), stem_audio, sample_rate)
+            # Save using soundfile (avoids torchcodec requirement)
+            sf.write(str(stem_path), stem_audio.numpy().T, sample_rate)
             stem_files[name] = str(stem_path)
 
         progress(100, f"✓ Saved {num_sources} stems")

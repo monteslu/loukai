@@ -8,6 +8,7 @@
 import { ipcMain, dialog } from 'electron';
 import { CREATOR_CHANNELS } from '../../shared/ipcContracts.js';
 import * as creatorService from '../../shared/services/creatorService.js';
+import * as llmService from '../creator/llmService.js';
 
 /**
  * Register all creator-related IPC handlers
@@ -100,9 +101,16 @@ export function registerCreatorHandlers(mainApp) {
 
   // Start conversion
   ipcMain.handle(CREATOR_CHANNELS.START_CONVERSION, async (_event, options) => {
-    const result = await creatorService.startConversion(options, (progress) => {
-      mainApp.sendToRenderer(CREATOR_CHANNELS.CONVERSION_PROGRESS, progress);
-    });
+    const result = await creatorService.startConversion(
+      options,
+      (progress) => {
+        mainApp.sendToRenderer(CREATOR_CHANNELS.CONVERSION_PROGRESS, progress);
+      },
+      (consoleLine) => {
+        mainApp.sendToRenderer(CREATOR_CHANNELS.CONVERSION_CONSOLE, { line: consoleLine });
+      },
+      mainApp.settings // Pass settings manager for LLM
+    );
 
     if (result.success) {
       mainApp.sendToRenderer(CREATOR_CHANNELS.CONVERSION_COMPLETE, {
@@ -111,6 +119,7 @@ export function registerCreatorHandlers(mainApp) {
         stems: result.stems,
         hasLyrics: result.hasLyrics,
         hasPitch: result.hasPitch,
+        llmStats: result.llmStats,
       });
     } else if (!result.cancelled) {
       mainApp.sendToRenderer(CREATOR_CHANNELS.CONVERSION_ERROR, {
@@ -124,6 +133,22 @@ export function registerCreatorHandlers(mainApp) {
   // Cancel conversion
   ipcMain.handle(CREATOR_CHANNELS.CANCEL_CONVERSION, () => {
     return creatorService.stopConversion();
+  });
+
+  // Get LLM settings
+  ipcMain.handle(CREATOR_CHANNELS.GET_LLM_SETTINGS, () => {
+    return llmService.getLLMSettings(mainApp.settings);
+  });
+
+  // Save LLM settings
+  ipcMain.handle(CREATOR_CHANNELS.SAVE_LLM_SETTINGS, async (_event, settings) => {
+    llmService.saveLLMSettings(mainApp.settings, settings);
+    return { success: true };
+  });
+
+  // Test LLM connection
+  ipcMain.handle(CREATOR_CHANNELS.TEST_LLM_CONNECTION, async (_event, settings) => {
+    return llmService.testLLMConnection(settings);
   });
 
   console.log('✅ Creator handlers registered');

@@ -17,6 +17,7 @@
 import { readFileSync, writeFileSync } from 'fs';
 import { spawn } from 'child_process';
 import { getFFmpegPath } from './systemChecker.js';
+import { Atoms as M4AAtoms } from 'm4a-stems';
 
 /**
  * Build a .stem.m4a file from individual stem files
@@ -30,7 +31,7 @@ import { getFFmpegPath } from './systemChecker.js';
  * @returns {Promise<void>}
  */
 export async function buildStemM4a(options) {
-  const { outputPath, stems, metadata, lyrics, pitch } = options;
+  const { outputPath, stems, metadata, lyrics, pitch, llmCorrections } = options;
 
   // For now, use ffmpeg to mux stems into a single file
   // The stem.m4a format requires custom atom injection
@@ -138,179 +139,123 @@ export async function buildStemM4a(options) {
     });
   });
 
-  // Now inject custom atoms for karaoke data
-  injectKaraokeAtoms(outputPath, { lyrics, pitch, metadata, stems: stemNames });
+  // Now inject kara atom for karaoke data using m4a-stems library
+  await injectKaraokeAtoms(outputPath, {
+    lyrics,
+    pitch,
+    metadata,
+    stems: stemNames,
+    llmCorrections,
+  });
 }
 
 /**
- * Inject custom karaoke atoms into an M4A file
+ * Inject karaoke atoms into an M4A file using m4a-stems library
  *
  * @param {string} filePath - Path to M4A file
  * @param {Object} data - Karaoke data to embed
  */
-function injectKaraokeAtoms(filePath, data) {
-  const { lyrics, pitch, metadata, stems } = data;
+async function injectKaraokeAtoms(filePath, data) {
+  const { lyrics, pitch, metadata, stems, llmCorrections } = data;
 
-  // Read the existing file
-  const fileBuffer = readFileSync(filePath);
-
-  // Build custom atoms
-  const atoms = [];
-
-  // kaid atom - Karaoke ID (metadata as JSON)
-  // Include all original tags for the player to use
-  const originalTags = metadata.tags || {};
-  const kaidData = JSON.stringify({
-    version: 1,
-    format: 'stem.m4a',
-    title: metadata.title || '',
-    artist: metadata.artist || '',
-    album: originalTags.album || '',
-    duration: metadata.duration || 0,
-    stems: stems,
-    createdAt: new Date().toISOString(),
-    creator: 'Loukai',
-    // Preserve all original ID3 tags
-    tags: originalTags,
-  });
-  atoms.push(buildAtom('kaid', Buffer.from(kaidData, 'utf8')));
-
-  // kons atom - Karaoke Onsets/Lyrics (word timestamps)
-  if (lyrics && lyrics.words && lyrics.words.length > 0) {
-    const konsData = JSON.stringify({
-      version: 1,
-      language: lyrics.language || 'en',
-      words: lyrics.words.map((w) => ({
-        w: w.word,
-        s: Math.round(w.start * 1000), // ms
-        e: Math.round(w.end * 1000), // ms
-        c: w.confidence || 1,
-      })),
-      segments: lyrics.segments || [],
-    });
-    atoms.push(buildAtom('kons', Buffer.from(konsData, 'utf8')));
+  // Convert lyrics segments to lines format expected by kara atom
+  const lines = [];
+  if (lyrics && lyrics.lines && lyrics.lines.length > 0) {
+    for (const line of lyrics.lines) {
+      lines.push({
+        start: line.start,
+        end: line.end,
+        text: line.text,
+      });
+    }
   }
 
-  // vpch atom - Vocal Pitch (CREPE data, compressed)
-  if (pitch && pitch.frequencies && pitch.frequencies.length > 0) {
-    // Compress pitch data - store as delta-encoded integers
-    const pitchData = {
-      version: 1,
-      sampleRate: pitch.sampleRate || 100, // samples per second
-      frequencies: compressPitchData(pitch.frequencies),
-      confidence: compressConfidenceData(pitch.confidence || []),
+  // Build audio sources from stems
+  const audioSources = stems.map((stemName, index) => ({
+    id: stemName,
+    role: stemName,
+    track: index,
+  }));
+
+  // Build kara data structure for m4a-stems
+  const karaData = {
+    // Audio configuration
+    audio: {
+      sources: audioSources,
+      profile: stems.length === 4 ? 'STEMS-4' : 'STEMS-2',
+      encoder_delay_samples: 0,
+      presets: [],
+    },
+
+    // Timing information
+    timing: {
+      offset_sec: 0,
+    },
+
+    // Lyrics (lines)
+    lines: lines,
+  };
+
+  // Add LLM corrections metadata if available
+  if (
+    llmCorrections &&
+    (llmCorrections.corrections?.length > 0 || llmCorrections.missing_lines?.length > 0)
+  ) {
+    karaData.meta = {
+      llm_corrections: {
+        provider: llmCorrections.provider,
+        model: llmCorrections.model,
+        corrections: llmCorrections.corrections || [],
+        missing_lines: llmCorrections.missing_lines || [],
+        corrections_applied: llmCorrections.corrections_applied || 0,
+        missing_lines_suggested: llmCorrections.missing_lines_suggested || 0,
+      },
     };
-    atoms.push(buildAtom('vpch', Buffer.from(JSON.stringify(pitchData), 'utf8')));
   }
 
-  // stem atom - Stem mapping (NI Stems format compatibility)
-  const stemData = {
-    version: 1,
-    stems: stems.map((name, index) => ({
-      name,
-      index,
-      color: getStemColor(name),
-    })),
-  };
-  atoms.push(buildAtom('stem', Buffer.from(JSON.stringify(stemData), 'utf8')));
+  // Write kara atom using m4a-stems library
+  console.log(`💾 Writing kara atom: ${lines.length} lines, ${audioSources.length} stems`);
+  await M4AAtoms.writeKaraAtom(filePath, karaData);
 
-  // Combine atoms
-  const atomsBuffer = Buffer.concat(atoms);
+  // Write vocal pitch atom if we have pitch data
+  if (pitch && pitch.pitch_data) {
+    // Convert CREPE format to m4a-stems format
+    const crepeData = pitch.pitch_data;
+    const pitchSampleRate = crepeData.sample_rate / crepeData.hop_length; // samples per second of pitch data
 
-  // Append atoms to file
-  // M4A files can have atoms at the end after mdat
-  const outputBuffer = Buffer.concat([fileBuffer, atomsBuffer]);
+    const vpchData = {
+      sampleRate: Math.round(pitchSampleRate),
+      data: crepeData.midi.map((midiFloat) => {
+        if (midiFloat === 0) {
+          return { midi: 0, cents: 0 }; // Unvoiced
+        }
+        const midiInt = Math.floor(midiFloat);
+        const cents = Math.round((midiFloat - midiInt) * 100);
+        return { midi: midiInt, cents };
+      }),
+    };
 
-  writeFileSync(filePath, outputBuffer);
-}
-
-/**
- * Build an MP4/M4A atom
- *
- * @param {string} type - 4-character atom type
- * @param {Buffer} data - Atom payload
- * @returns {Buffer}
- */
-function buildAtom(type, data) {
-  // Atom structure: [4 bytes size][4 bytes type][data]
-  const size = 8 + data.length;
-  const buffer = Buffer.alloc(size);
-
-  // Write size (big-endian)
-  buffer.writeUInt32BE(size, 0);
-
-  // Write type
-  buffer.write(type, 4, 4, 'ascii');
-
-  // Write data
-  data.copy(buffer, 8);
-
-  return buffer;
-}
-
-/**
- * Compress pitch frequency data using delta encoding
- *
- * @param {number[]} frequencies - Array of frequencies in Hz
- * @returns {string} Base64 encoded compressed data
- */
-function compressPitchData(frequencies) {
-  // Convert to MIDI note numbers (more compressible than Hz)
-  const midiNotes = frequencies.map((f) => {
-    if (f <= 0) return 0;
-    return Math.round(12 * Math.log2(f / 440) + 69);
-  });
-
-  // Delta encode
-  const deltas = [];
-  let prev = 0;
-  for (const note of midiNotes) {
-    deltas.push(note - prev);
-    prev = note;
+    console.log(
+      `🎵 Writing vocal pitch atom: ${vpchData.data.length} frames at ${vpchData.sampleRate}Hz`
+    );
+    await M4AAtoms.writeVpchAtom(filePath, vpchData);
   }
 
-  // Pack as int8 (clamped)
-  const packed = Buffer.alloc(deltas.length);
-  for (let i = 0; i < deltas.length; i++) {
-    packed.writeInt8(Math.max(-127, Math.min(127, deltas[i])), i);
+  // Write onsets atom if we have word timestamps
+  if (lyrics && lyrics.words && lyrics.words.length > 0) {
+    // Convert words to onset format (just start times)
+    const onsets = lyrics.words
+      .map((w) => w.start)
+      .filter((t) => t > 0)
+      .sort((a, b) => a - b);
+
+    if (onsets.length > 0) {
+      console.log(`🎯 Writing onsets atom: ${onsets.length} onsets`);
+      await M4AAtoms.writeKonsAtom(filePath, onsets);
+    }
   }
 
-  return packed.toString('base64');
-}
-
-/**
- * Compress confidence data
- *
- * @param {number[]} confidence - Array of confidence values 0-1
- * @returns {string} Base64 encoded compressed data
- */
-function compressConfidenceData(confidence) {
-  // Quantize to uint8 (0-255)
-  const packed = Buffer.alloc(confidence.length);
-  for (let i = 0; i < confidence.length; i++) {
-    packed.writeUInt8(Math.round(confidence[i] * 255), i);
-  }
-
-  return packed.toString('base64');
-}
-
-/**
- * Get default color for a stem type
- *
- * @param {string} stemName - Stem name
- * @returns {string} Hex color
- */
-function getStemColor(stemName) {
-  const colors = {
-    vocals: '#FF6B6B',
-    drums: '#4ECDC4',
-    bass: '#45B7D1',
-    other: '#96CEB4',
-    no_vocals: '#9B59B6',
-    instrumental: '#3498DB',
-  };
-
-  return colors[stemName.toLowerCase()] || '#95A5A6';
+  console.log('✅ Karaoke atoms written successfully');
 }
 
 export default {
