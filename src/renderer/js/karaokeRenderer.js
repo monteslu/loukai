@@ -279,9 +279,11 @@ export class KaraokeRenderer {
   }
 
   setupResponsiveCanvas() {
+    // Get container reference for ResizeObserver
+    const container = this.canvas.parentElement;
+
     // Function to maintain 16:9 aspect ratio (1920:1080) while scaling to fit container
     const resizeCanvas = () => {
-      const container = this.canvas.parentElement;
       if (!container) return;
 
       const containerRect = container.getBoundingClientRect();
@@ -325,6 +327,15 @@ export class KaraokeRenderer {
 
     // Resize on window resize
     window.addEventListener('resize', resizeCanvas);
+
+    // Watch container for size changes (e.g., sidebar drawer open/close)
+    // This catches layout changes that don't trigger window resize events
+    if (container && typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        resizeCanvas();
+      });
+      this.resizeObserver.observe(container);
+    }
 
     // Store reference to remove listener on destroy
     this.resizeHandler = resizeCanvas;
@@ -2801,9 +2812,13 @@ export class KaraokeRenderer {
       cancelAnimationFrame(this.animationFrame);
     }
 
-    // Clean up resize listener
+    // Clean up resize listener and observer
     if (this.resizeHandler) {
       window.removeEventListener('resize', this.resizeHandler);
+    }
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
     }
 
     // Destroy Butterchurn instance and ALL related components

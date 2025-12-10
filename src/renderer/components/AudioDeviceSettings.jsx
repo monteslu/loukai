@@ -5,9 +5,13 @@
  * native audio device enumeration via Web Audio API.
  *
  * NOT shared with web admin (browser can't access system audio devices).
+ *
+ * NOTE: Uses PortalSelect instead of native <select> due to Electron Wayland bug.
+ * See PortalSelect.jsx for details.
  */
 
 import React from 'react';
+import { PortalSelect } from './PortalSelect.jsx';
 
 export function AudioDeviceSettings({
   devices = { pa: [], iem: [], input: [] },
@@ -17,6 +21,31 @@ export function AudioDeviceSettings({
   onSettingChange,
   onRefreshDevices,
 }) {
+  // Convert device arrays to PortalSelect options format
+  const paOptions = [
+    { value: '', label: 'Default' },
+    ...(devices.pa || []).map((dev) => ({
+      value: dev.deviceId,
+      label: dev.label || dev.deviceId,
+    })),
+  ];
+
+  const iemOptions = [
+    { value: '', label: 'Default' },
+    ...(devices.iem || []).map((dev) => ({
+      value: dev.deviceId,
+      label: dev.label || dev.deviceId,
+    })),
+  ];
+
+  const inputOptions = [
+    { value: '', label: 'Default' },
+    ...(devices.input || []).map((dev) => ({
+      value: dev.deviceId,
+      label: dev.label || dev.deviceId,
+    })),
+  ];
+
   return (
     <>
       {/* Audio Device Settings */}
@@ -34,38 +63,24 @@ export function AudioDeviceSettings({
 
         <div className="my-3">
           <label className="block mb-2 text-gray-600 dark:text-gray-400 text-sm">PA Output:</label>
-          <select
+          <PortalSelect
             id="paDeviceSelect"
-            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-gray-100 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={selected.pa || ''}
             onChange={(e) => onDeviceChange && onDeviceChange('pa', e.target.value)}
-          >
-            <option value="">Default</option>
-            {devices.pa &&
-              devices.pa.map((dev) => (
-                <option key={dev.deviceId} value={dev.deviceId}>
-                  {dev.label || dev.deviceId}
-                </option>
-              ))}
-          </select>
+            options={paOptions}
+            placeholder="Default"
+          />
         </div>
 
         <div className="my-3">
           <label className="block mb-2 text-gray-600 dark:text-gray-400 text-sm">IEM Output:</label>
-          <select
+          <PortalSelect
             id="iemDeviceSelect"
-            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-gray-100 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={selected.iem || ''}
             onChange={(e) => onDeviceChange && onDeviceChange('iem', e.target.value)}
-          >
-            <option value="">Default</option>
-            {devices.iem &&
-              devices.iem.map((dev) => (
-                <option key={dev.deviceId} value={dev.deviceId}>
-                  {dev.label || dev.deviceId}
-                </option>
-              ))}
-          </select>
+            options={iemOptions}
+            placeholder="Default"
+          />
         </div>
 
         <div className="my-3">
@@ -90,20 +105,13 @@ export function AudioDeviceSettings({
 
         <div className="my-3">
           <label className="block mb-2 text-gray-600 dark:text-gray-400 text-sm">Mic Input:</label>
-          <select
+          <PortalSelect
             id="inputDeviceSelect"
-            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-gray-100 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={selected.input || ''}
             onChange={(e) => onDeviceChange && onDeviceChange('input', e.target.value)}
-          >
-            <option value="">Default</option>
-            {devices.input &&
-              devices.input.map((dev) => (
-                <option key={dev.deviceId} value={dev.deviceId}>
-                  {dev.label || dev.deviceId}
-                </option>
-              ))}
-          </select>
+            options={inputOptions}
+            placeholder="Default"
+          />
         </div>
 
         <div className="flex flex-col gap-3">

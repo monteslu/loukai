@@ -28,6 +28,16 @@ console.log('✅ registerAllHandlers imported:', typeof registerAllHandlers);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// TODO: Electron 38+ has Wayland bugs causing select dropdowns to render at wrong
+// position (top-left corner). Major Electron apps (VS Code, Slack, Discord) default
+// to XWayland, but forcing X11 mode breaks WebGL on some systems.
+// For now, we accept the select dropdown bug until Electron fixes Wayland support.
+// See: https://github.com/electron/electron/issues/44607
+// Workaround options:
+// - Use custom select component (breaks design principle of using native elements)
+// - Wait for Electron to fix Wayland popup positioning
+// - Let users manually set --ozone-platform=x11 if they prefer working dropdowns over WebGL
+
 class KaiPlayerApp {
   constructor() {
     this.mainWindow = null;
@@ -147,10 +157,6 @@ class KaiPlayerApp {
       resourcesPath: process.resourcesPath,
       cwd: process.cwd(),
     });
-
-    // Disable Electron's default error dialogs
-    app.commandLine.appendSwitch('disable-dev-shm-usage');
-    app.commandLine.appendSwitch('no-sandbox');
 
     await this.settings.load();
 
