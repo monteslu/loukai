@@ -197,26 +197,13 @@ async function injectKaraokeAtoms(filePath, data) {
     }
   }
 
-  // Build audio sources from stems (NI Stems format: master + 4 stems = 5 tracks)
-  const audioSources = stems.map((stemName, index) => ({
-    id: stemName,
-    role: stemName === 'master' ? 'master' : stemName,
-    track: index,
-  }));
-
   // Build kara data structure for m4a-stems
+  // Note: Audio sources are read from the NI Stems 'stem' atom, not stored in kara
   const karaData = {
-    // Audio configuration
-    audio: {
-      sources: audioSources,
-      profile: 'STEMS-4', // NI Stems format (master + 4 stems)
-      encoder_delay_samples: 0,
-      presets: [],
-    },
-
     // Timing information
     timing: {
       offset_sec: 0,
+      encoder_delay_samples: 0,
     },
 
     // Tags for filtering (e.g., 'edited', 'ai_corrected')
@@ -260,7 +247,7 @@ async function injectKaraokeAtoms(filePath, data) {
   }
 
   // Write kara atom using m4a-stems library
-  console.log(`💾 Writing kara atom: ${lines.length} lines, ${audioSources.length} stems`);
+  console.log(`💾 Writing kara atom: ${lines.length} lines`);
   await M4AAtoms.writeKaraAtom(filePath, karaData);
 
   // Write vocal pitch atom if we have pitch data
@@ -321,7 +308,7 @@ export async function injectLyricsIntoStemFile(options) {
 
   console.log(`🎤 Injecting lyrics into existing stem file: ${filePath}`);
 
-  // Read existing kara atom to preserve audio configuration
+  // Read existing kara atom to preserve timing/tags
   let existingKara = null;
   try {
     existingKara = await M4AAtoms.readKaraAtom(filePath);
@@ -341,24 +328,11 @@ export async function injectLyricsIntoStemFile(options) {
     }
   }
 
-  // Preserve existing audio configuration or create default
-  const audioSources = existingKara?.audio?.sources || [
-    { id: 'master', role: 'master', track: 0 },
-    { id: 'drums', role: 'drums', track: 1 },
-    { id: 'bass', role: 'bass', track: 2 },
-    { id: 'other', role: 'other', track: 3 },
-    { id: 'vocals', role: 'vocals', track: 4 },
-  ];
-
+  // Note: Audio sources are read from the NI Stems 'stem' atom, not stored in kara
   const karaData = {
-    audio: {
-      sources: audioSources,
-      profile: existingKara?.audio?.profile || 'STEMS-4',
-      encoder_delay_samples: existingKara?.audio?.encoder_delay_samples || 0,
-      presets: existingKara?.audio?.presets || [],
-    },
     timing: {
       offset_sec: existingKara?.timing?.offset_sec || 0,
+      encoder_delay_samples: existingKara?.timing?.encoder_delay_samples || 0,
     },
     tags: tags || [],
     lines: lines,

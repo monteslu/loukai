@@ -144,6 +144,43 @@ class M4ALoader {
       const mm = await import('music-metadata');
       const mmData = await mm.parseFile(m4aPath);
 
+      // Read NI Stems metadata from stem atom (source of truth for audio tracks)
+      let stemMetadata = null;
+      try {
+        stemMetadata = await M4AAtoms.readNiStemsMetadata(m4aPath);
+      } catch {
+        // No stem atom found
+      }
+
+      // Build audio sources from NI Stems metadata
+      // Per NI Stems spec: track 0 = master, tracks 1-4 = stems[0-3]
+      let audioSources = [];
+      let profile = 'STEMS-4';
+
+      if (stemMetadata && stemMetadata.stems) {
+        // Add master track (always track 0)
+        audioSources.push({ id: 'master', role: 'master', track: 0 });
+
+        // Add stem tracks from NI Stems metadata
+        stemMetadata.stems.forEach((stem, index) => {
+          audioSources.push({
+            id: stem.name,
+            role: stem.name,
+            track: index + 1, // stems[0] = track 1, etc.
+          });
+        });
+
+        profile = `STEMS-${stemMetadata.stems.length}`;
+      } else {
+        console.warn(
+          '⚠️  M4A file does not contain NI Stems metadata - creating default structure'
+        );
+
+        // Fallback for non-stem files
+        audioSources = [{ id: 'master', role: 'master', track: 0 }];
+        profile = 'STEMS-1';
+      }
+
       // Extract kara atom (karaoke data) using m4a-stems
       let karaData = null;
       try {
@@ -152,30 +189,10 @@ class M4ALoader {
         // No kara atom found - will create default structure below
       }
 
-      // If no kara atom found, create default structure for new karaoke file
+      // If no kara atom found, create minimal structure
       if (!karaData) {
         console.warn('⚠️  M4A file does not contain kara atom - creating default structure');
-
-        // Get track count from format
-        const trackCount = mmData.format?.numberOfChannels || 2;
-
-        // Create default audio sources
-        const defaultSources = [];
-        for (let i = 0; i < trackCount; i++) {
-          defaultSources.push({
-            id: `track${i}`,
-            role: `track${i}`,
-            track: i,
-          });
-        }
-
-        // Create minimal kara structure
         karaData = {
-          audio: {
-            sources: defaultSources,
-            profile: 'STEMS-2',
-            encoder_delay_samples: 0,
-          },
           lines: [],
           singers: [],
         };
@@ -214,24 +231,22 @@ class M4ALoader {
 
       // Extract audio tracks from M4A container
       console.log('🎵 Extracting audio tracks from M4A container...');
-      const audioFiles = await this.extractAllTracks(m4aPath, karaData.audio.sources);
+      const audioFiles = await this.extractAllTracks(m4aPath, audioSources);
 
-      // Build audio sources from kara data with extracted audio buffers
+      // Build audio sources with extracted audio buffers
       const sources = [];
-      if (karaData.audio && karaData.audio.sources) {
-        for (const source of karaData.audio.sources) {
-          const sourceName = source.role || source.id;
-          sources.push({
-            name: sourceName,
-            filename: `track_${source.track}.m4a`, // Virtual filename for track reference
-            gain: 0,
-            pan: 0,
-            solo: false,
-            mute: false,
-            trackIndex: source.track, // M4A track index
-            audioData: audioFiles.get(sourceName) || null, // Extracted audio buffer
-          });
-        }
+      for (const source of audioSources) {
+        const sourceName = source.role || source.id;
+        sources.push({
+          name: sourceName,
+          filename: `track_${source.track}.m4a`, // Virtual filename for track reference
+          gain: 0,
+          pan: 0,
+          solo: false,
+          mute: false,
+          trackIndex: source.track, // M4A track index
+          audioData: audioFiles.get(sourceName) || null, // Extracted audio buffer
+        });
       }
 
       // Extract lyrics from kara data and transform property names
@@ -254,8 +269,8 @@ class M4ALoader {
 
         meta: {
           format: 'm4a-stems',
-          profile: karaData.audio?.profile || 'STEMS-4',
-          encoder_delay_samples: karaData.audio?.encoder_delay_samples || 0,
+          profile,
+          encoder_delay_samples: karaData.timing?.encoder_delay_samples || 0,
           // Include corrections metadata from kara atom
           ...(karaData.meta?.corrections && { corrections: karaData.meta.corrections }),
         },
@@ -263,14 +278,14 @@ class M4ALoader {
         audio: {
           sources,
 
-          presets: karaData.audio?.presets || this.generatePresets(sources),
+          presets: this.generatePresets(sources),
 
           timing: {
             offsetSec: karaData.timing?.offset_sec || 0,
-            encoderDelaySamples: karaData.audio?.encoder_delay_samples || 0,
+            encoderDelaySamples: karaData.timing?.encoder_delay_samples || 0,
           },
 
-          profile: karaData.audio?.profile || 'STEMS-4',
+          profile,
         },
 
         lyrics,

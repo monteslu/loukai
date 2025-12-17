@@ -4,6 +4,12 @@
 
 Loukai is a professional karaoke system that uses AI stem separation and dual-output audio routing to provide coaching capabilities. The system separates vocals from backing music and routes them to different audio devices - vocals to in-ear monitors (IEM) for the singer, music to PA speakers for the audience.
 
+**Key Design Decision:** Loukai uses an open file format (`.stem.m4a`) that serves dual purposes:
+- **DJ Software**: Files work in Traktor and Mixxx via standard NI Stems metadata
+- **Karaoke**: Additional atoms provide lyrics, pitch tracking, and multi-singer support
+
+This means the same files can be used for both DJing and karaoke without conversion.
+
 ## System Architecture
 
 ```mermaid
@@ -158,7 +164,8 @@ Song creation system for converting regular audio to karaoke format:
 graph LR
     Audio[Source Audio] --> Stems[Stem Separation<br/>Demucs]
     Stems --> Lyrics[Lyrics Detection<br/>Whisper]
-    Lyrics --> LLM[LLM Correction<br/>Optional]
+    Lyrics --> Pitch[Pitch Detection<br/>CREPE]
+    Pitch --> LLM[LLM Correction<br/>Optional]
     LLM --> M4A[.stem.m4a<br/>Output]
 ```
 
@@ -166,9 +173,15 @@ graph LR
 - `systemChecker.js` - Verifies Python, FFmpeg, ML models
 - `downloadManager.js` - Downloads FFmpeg, Python packages
 - `conversionService.js` - Orchestrates conversion pipeline
-- `stemBuilder.js` - Creates .stem.m4a with kara atom
+- `stemBuilder.js` - Creates .stem.m4a with NI Stems + karaoke atoms
 - `llmService.js` - AI-powered lyrics correction
 - `lrclibService.js` - External lyrics lookup
+- `keyDetection.js` - Musical key detection
+
+**Output File Structure:**
+The stemBuilder creates files with dual metadata for maximum compatibility:
+1. **NI Stems metadata** (`stem` atom) - For DJ software (Traktor, Mixxx)
+2. **Karaoke atoms** (`kara`, `vpch`, `kons`) - For lyrics, pitch, word timing
 
 ## Shared Services Layer
 
@@ -213,65 +226,69 @@ app.post('/queue/add', (req, res) => {
 
 ### M4A Stems Format (Primary)
 
-Industry-standard MP4 container with embedded karaoke data via custom atoms.
+Industry-standard MP4 container built on [NI Stems](https://www.native-instruments.com/en/specials/stems/) with karaoke extensions. Files contain **dual metadata** for maximum compatibility:
+
+1. **NI Stems metadata** - For DJ software (Traktor, Mixxx)
+2. **Karaoke atoms** - For lyrics, pitch tracking, word timing
 
 **Structure:**
 ```
 song.stem.m4a
 ├── Audio Tracks (AAC)
-│   ├── Track 0: master (mixed)
-│   ├── Track 1: drums
-│   ├── Track 2: bass
-│   ├── Track 3: other
-│   └── Track 4: vocals
-├── Standard MP4 Atoms
-│   ├── ©nam (title)
-│   ├── ©ART (artist)
-│   ├── ©alb (album)
-│   ├── tmpo (tempo/BPM)
-│   └── ----:com.apple.iTunes:initialkey
-└── Custom Atoms
-    ├── kara (karaoke data - JSON)
-    ├── vpch (vocal pitch data - binary)
-    └── kons (onset times - binary)
+│   ├── Track 0: master (enabled - plays in normal players)
+│   ├── Track 1: drums (disabled)
+│   ├── Track 2: bass (disabled)
+│   ├── Track 3: other (disabled)
+│   └── Track 4: vocals (disabled)
+├── moov/udta/
+│   ├── stem (NI Stems metadata - JSON)
+│   └── meta/ilst/
+│       ├── ©nam, ©ART, etc. (standard metadata)
+│       ├── ----:com.stems:kara (karaoke data - JSON)
+│       ├── ----:com.stems:vpch (vocal pitch - binary)
+│       └── ----:com.stems:kons (word onsets - binary)
+└── mdat (compressed audio data)
 ```
 
-**Kara Atom Structure:**
+**NI Stems Atom** (`moov/udta/stem`) - Required for Mixxx/Traktor:
 ```json
 {
-  "audio": {
-    "sources": [
-      { "id": "master", "role": "master", "track": 0 },
-      { "id": "drums", "role": "drums", "track": 1 },
-      { "id": "bass", "role": "bass", "track": 2 },
-      { "id": "other", "role": "other", "track": 3 },
-      { "id": "vocals", "role": "vocals", "track": 4 }
-    ],
-    "profile": "STEMS-4",
-    "encoder_delay_samples": 0
+  "version": 1,
+  "mastering_dsp": {
+    "compressor": { "enabled": true, "threshold": -6.0, "ratio": 2.0, ... },
+    "limiter": { "enabled": true, "ceiling": -0.3, ... }
   },
-  "timing": { "offset_sec": 0 },
+  "stems": [
+    { "name": "drums", "color": "#FF0000" },
+    { "name": "bass", "color": "#00FF00" },
+    { "name": "other", "color": "#0000FF" },
+    { "name": "vocals", "color": "#FFFF00" }
+  ]
+}
+```
+
+**Kara Atom** (`moov/udta/meta/ilst/----:com.stems:kara`) - Karaoke data:
+```json
+{
+  "timing": { "offset_sec": 0, "encoder_delay_samples": 0 },
   "lines": [
-    {
-      "start": 10.5,
-      "end": 15.2,
-      "text": "Hello world",
-      "singer": "main"
-    }
+    { "start": 10.5, "end": 15.2, "text": "Hello world" },
+    { "start": 15.8, "end": 18.1, "text": "Backup line", "singer": "backup:PA" }
   ],
-  "singers": [
-    { "id": "main", "name": "Lead", "color": "#00ff00" },
-    { "id": "backup", "name": "Backup", "color": "#ffff00" }
-  ],
+  "singers": {
+    "A": { "name": "Lead" },
+    "B": { "name": "Duet Partner" }
+  },
+  "tags": ["edited", "ai_corrected"],
   "meta": {
-    "corrections": {
-      "applied": [...],
-      "rejected": [...],
-      "missing_lines_suggested": [...]
-    }
+    "corrections": { "applied": [...], "rejected": [...] }
   }
 }
 ```
+
+**Note:** Audio track information (sources, track mapping) is read from the NI Stems `stem` atom, not the kara atom. This avoids duplication since both DJ software and Loukai need the same track info.
+
+See [m4a_format.md](m4a_format.md) for complete format specification.
 
 ### CDG Format (Legacy Support)
 
@@ -319,23 +336,29 @@ The SongEditor component provides metadata and lyrics editing:
 **Features:**
 - Edit title, artist, album, year, genre, key
 - Edit lyrics with visual timeline
-- Multi-singer support with per-line singer assignment
+- Multi-singer support with per-line singer assignment (`singer: "backup:PA"` for punchthrough)
 - Review AI corrections (applied/rejected)
 - Review suggested missing lines
 - Accept/reject suggestions
+- Tag management (`edited`, `ai_corrected`, custom tags)
 
 **Corrections Flow:**
 ```
-Creator generates corrections
+Creator generates corrections (LLM)
     ↓
-Saved in meta.corrections.applied
+Saved in kara.meta.corrections.applied
     ↓
 Editor shows for review
     ↓
-User can reject → moves to meta.corrections.rejected
+User can reject → moves to kara.meta.corrections.rejected
     ↓
-Save writes updated corrections to kara atom
+Save writes updated kara atom to file
 ```
+
+**What Gets Saved:**
+- Standard metadata (title, artist, etc.) → MP4 atoms (©nam, ©ART, etc.)
+- Lyrics, timing, singers, tags → `kara` atom
+- NI Stems metadata is preserved (not modified by editor)
 
 ## Auto-Tune System
 
@@ -381,7 +404,7 @@ Channels organized by domain:
 - **Electron 38** - Desktop framework
 - **Express 5** - Web server
 - **Socket.io 4** - Real-time communication
-- **m4a-stems** - M4A atom reading/writing
+- **m4a-stems** - NI Stems + karaoke atom reading/writing
 - **music-metadata** - Audio metadata parsing
 - **yauzl/yazl** - ZIP handling
 - **Fuse.js 7** - Fuzzy search
@@ -455,15 +478,19 @@ sequenceDiagram
     User->>Renderer: Select song
     Renderer->>Main: IPC: file:loadKai
     Main->>M4ALoader: load(path)
-    M4ALoader->>M4ALoader: Read kara atom
-    M4ALoader->>M4ALoader: Extract audio tracks
-    M4ALoader-->>Main: Song data
+    M4ALoader->>M4ALoader: Read stem atom (track info)
+    M4ALoader->>M4ALoader: Read kara atom (lyrics, timing)
+    M4ALoader->>M4ALoader: Read vpch atom (pitch data)
+    M4ALoader->>M4ALoader: Extract 5 audio tracks
+    M4ALoader-->>Main: Song data + metadata
     Main->>Renderer: IPC: song:data
     Renderer->>Player: loadSong(data)
     Player->>Player: Route stems to buses
     User->>Renderer: Click Play
     Renderer->>Player: play()
 ```
+
+Note: The NI `stem` atom provides audio track info for both DJ software and Loukai. The `kara` atom only contains karaoke-specific data (lyrics, timing, singers).
 
 ### Song Request Flow
 

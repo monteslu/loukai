@@ -136,22 +136,12 @@ async function saveM4ASong(path, updates) {
   }
 
   // Prepare kara data structure for m4a-stems
+  // Note: Audio sources are read from the NI Stems 'stem' atom, not stored in kara
   const karaData = {
-    // Audio configuration
-    audio: {
-      sources: (dataToSave.audio?.sources || []).map((source, index) => ({
-        id: source.name || source.filename,
-        role: source.name || source.filename,
-        track: source.trackIndex !== undefined ? source.trackIndex : index,
-      })),
-      profile: dataToSave.audio?.profile || dataToSave.meta?.profile || 'STEMS-4',
-      encoder_delay_samples: dataToSave.audio?.timing?.encoderDelaySamples || 0,
-      presets: dataToSave.audio?.presets || [],
-    },
-
     // Timing information
     timing: {
       offset_sec: dataToSave.audio?.timing?.offsetSec || 0,
+      encoder_delay_samples: dataToSave.audio?.timing?.encoderDelaySamples || 0,
     },
 
     // Tags for filtering (e.g., 'edited', 'ai_corrected')
@@ -197,7 +187,7 @@ async function saveM4ASong(path, updates) {
   console.log('💾 Saving M4A kara atom:', path);
   console.log('📝 kara data prepared:', {
     lyricsCount: karaData.lines?.length || 0,
-    audioSources: karaData.audio?.sources?.length || 0,
+    tagsCount: karaData.tags?.length || 0,
   });
 
   await Atoms.writeKaraAtom(path, karaData);
