@@ -139,7 +139,7 @@ export class KaraokeRenderer {
 
       // Backup singer animation settings
       backupFadeDuration: 0.8, // seconds to fade in/out
-      backupMaxAlpha: 0.6, // maximum opacity for backup singers (60%)
+      backupMaxAlpha: 0.5, // maximum opacity for backup singers (50% - subtle background feel)
       backupMinAlpha: 0.0, // minimum opacity (fully transparent)
       backupAnimationEasing: 'ease-out', // animation curve
 
@@ -1955,10 +1955,10 @@ export class KaraokeRenderer {
     const mainLines = activeLines.filter((line) => !line.isBackup);
     const backupLines = activeLines.filter((line) => line.isBackup);
 
-    // Calculate vertical positioning - stack multiple lines if needed
-    const totalLines = Math.max(1, mainLines.length + backupLines.length); // At least 1 for spacing calculation
+    // Calculate vertical positioning for main lines only (backup renders at bottom separately)
+    const totalMainLines = Math.max(1, mainLines.length);
     const lineSpacing = this.settings.lineHeight * 1.2;
-    const totalHeight = totalLines * lineSpacing;
+    const totalHeight = totalMainLines * lineSpacing;
     let currentY = canvasHeight / 2 - totalHeight / 2 + lineSpacing - 180; // Move up by 180 pixels for more room below
 
     // Draw main singer lines
@@ -1967,13 +1967,51 @@ export class KaraokeRenderer {
       currentY = nextY || currentY + lineSpacing; // Use returned Y or fallback to old spacing
     });
 
-    // Draw backup singer lines below main singers with animation
-    backupLines.forEach((line) => {
-      const animation = this.backupAnimations.get(line.index);
-      const alpha = animation ? animation.alpha : this.settings.backupMaxAlpha;
-      const nextY = this.drawSingleLine(line, canvasWidth, currentY, true, alpha); // true = backup singer
-      currentY = nextY || currentY + lineSpacing; // Use returned Y or fallback to old spacing
-    });
+    // Draw backup singer lines at bottom of screen (fixed position)
+    // This keeps them out of the way and makes them feel less jarring
+    if (backupLines.length > 0) {
+      const bottomPadding = 10; // Distance from bottom of screen
+
+      // Pre-calculate total height needed for backup lines (accounting for text wrapping)
+      const maxWidth = canvasWidth * 0.9;
+      let totalBackupHeight = 0;
+
+      // Set font for measurement (italic for backup)
+      this.ctx.font = `italic ${this.settings.fontSize}px ${this.settings.fontFamily}`;
+
+      backupLines.forEach((line) => {
+        const text = line.text || '';
+        const words = text.split(' ');
+        let wrappedLineCount = 1;
+        let currentLine = '';
+
+        for (const word of words) {
+          const testLine = currentLine ? currentLine + ' ' + word : word;
+          const testWidth = this.ctx.measureText(testLine).width;
+
+          if (testWidth <= maxWidth) {
+            currentLine = testLine;
+          } else {
+            if (currentLine) {
+              wrappedLineCount++;
+              currentLine = word;
+            }
+          }
+        }
+
+        totalBackupHeight += wrappedLineCount * this.settings.lineHeight * 0.8;
+      });
+
+      // Position so bottom of backup content is at bottomPadding from screen bottom
+      let backupY = canvasHeight - bottomPadding - totalBackupHeight;
+
+      backupLines.forEach((line) => {
+        const animation = this.backupAnimations.get(line.index);
+        const alpha = animation ? animation.alpha : this.settings.backupMaxAlpha;
+        const nextY = this.drawSingleLine(line, canvasWidth, backupY, true, alpha); // true = backup singer
+        backupY = nextY || backupY + this.settings.lineHeight * 0.8;
+      });
+    }
 
     // Save the bottom position after drawing active lyrics (only if there were active lyrics)
     const hasActiveLyrics = activeLines.length > 0;

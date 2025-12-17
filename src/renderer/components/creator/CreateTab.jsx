@@ -125,6 +125,7 @@ export function CreateTab({ bridge: _bridge }) {
   const [songDuration, setSongDuration] = useState(null);
   const [processingTime, setProcessingTime] = useState(null);
   const [consoleLog, setConsoleLog] = useState([]);
+  const [isLyricsOnlyMode, setIsLyricsOnlyMode] = useState(false); // Track if we started in lyrics-only mode
   const consoleEndRef = useRef(null);
   const conversionStartTimeRef = useRef(null);
 
@@ -387,6 +388,10 @@ export function CreateTab({ bridge: _bridge }) {
         }
       }
 
+      // Determine if this is a lyrics-only conversion (stem file without lyrics)
+      const lyricsOnlyMode = selectedFile.hasStems && !selectedFile.hasLyrics;
+      setIsLyricsOnlyMode(lyricsOnlyMode);
+
       const result = await window.kaiAPI?.creator?.startConversion({
         inputPath: selectedFile.path,
         title: options.title || selectedFile.title,
@@ -398,6 +403,9 @@ export function CreateTab({ bridge: _bridge }) {
         enableCrepe: enableCrepe,
         referenceLyrics: options.referenceLyrics,
         outputDir,
+        // Lyrics-only mode options
+        lyricsOnlyMode,
+        vocalsTrackIndex: selectedFile.vocalsTrackIndex ?? 4,
       });
 
       if (!result?.success) {
@@ -428,6 +436,7 @@ export function CreateTab({ bridge: _bridge }) {
     setLlmStats(null);
     setSongDuration(null);
     setProcessingTime(null);
+    setIsLyricsOnlyMode(false);
     conversionStartTimeRef.current = null;
     setOptions({
       title: '',
@@ -584,7 +593,9 @@ export function CreateTab({ bridge: _bridge }) {
         <div className="max-w-4xl mx-auto w-full">
           <div className="text-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-              Creating Stems+Karaoke File ⚡
+              {isLyricsOnlyMode
+                ? 'Adding Lyrics to Stem File 🎤'
+                : 'Creating Stems+Karaoke File ⚡'}
             </h2>
 
             <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4 mb-4">
@@ -607,7 +618,7 @@ export function CreateTab({ bridge: _bridge }) {
 
             {/* Console Log Panel */}
             {consoleLog.length > 0 && (
-              <div className="mb-6 bg-gray-900 dark:bg-black rounded-lg p-4 h-32 overflow-y-auto">
+              <div className="mb-6 bg-gray-900 dark:bg-black rounded-lg p-4 h-48 overflow-y-auto">
                 <div className="text-xs font-mono text-green-400 whitespace-pre-wrap select-text leading-tight">
                   {consoleLog.map((line, i) => (
                     <div key={i}>{line}</div>
@@ -633,7 +644,7 @@ export function CreateTab({ bridge: _bridge }) {
         <div className="max-w-lg w-full text-center">
           <div className="text-6xl mb-6">✅</div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-            Karaoke File Created!
+            {isLyricsOnlyMode ? 'Lyrics Added!' : 'Karaoke File Created!'}
           </h2>
 
           <div className="bg-green-100 dark:bg-green-900/30 rounded-lg p-4 mb-6">
@@ -1009,23 +1020,47 @@ export function CreateTab({ bridge: _bridge }) {
                   <Spinner size="sm" message="Reading file info & searching lyrics..." />
                 </div>
               ) : selectedFile ? (
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-gray-900 dark:text-white font-medium truncate">
-                      {selectedFile.name}
-                    </p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {formatDuration(selectedFile.duration)} •{' '}
-                      {selectedFile.codec?.toUpperCase() || 'Unknown'}{' '}
-                      {selectedFile.isVideo && '• Video'}
-                    </p>
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-gray-900 dark:text-white font-medium truncate">
+                        {selectedFile.name}
+                      </p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        {formatDuration(selectedFile.duration)} •{' '}
+                        {selectedFile.codec?.toUpperCase() || 'Unknown'}{' '}
+                        {selectedFile.isVideo && '• Video'}
+                      </p>
+                    </div>
+                    <button
+                      className="ml-4 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg transition-colors"
+                      onClick={handleSelectFile}
+                    >
+                      Change
+                    </button>
                   </div>
-                  <button
-                    className="ml-4 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg transition-colors"
-                    onClick={handleSelectFile}
-                  >
-                    Change
-                  </button>
+                  {/* Stem file detection indicator */}
+                  {selectedFile.hasStems && !selectedFile.hasLyrics && (
+                    <div className="mt-3 px-3 py-2 bg-purple-100 dark:bg-purple-900/30 border border-purple-300 dark:border-purple-700 rounded-lg">
+                      <p className="text-sm text-purple-700 dark:text-purple-300 font-medium">
+                        🎛️ Stem file detected ({selectedFile.audioStreamCount} tracks)
+                      </p>
+                      <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
+                        Stems: {selectedFile.stemNames?.join(', ')} • Will add lyrics only (no stem
+                        separation needed)
+                      </p>
+                    </div>
+                  )}
+                  {selectedFile.hasStems && selectedFile.hasLyrics && (
+                    <div className="mt-3 px-3 py-2 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 rounded-lg">
+                      <p className="text-sm text-yellow-700 dark:text-yellow-300 font-medium">
+                        ⚠️ This file already has karaoke lyrics
+                      </p>
+                      <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                        Processing will replace existing lyrics with new transcription
+                      </p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <button
@@ -1135,14 +1170,22 @@ export function CreateTab({ bridge: _bridge }) {
             {/* Create Button */}
             <div className="text-center">
               <button
-                className="px-8 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold text-lg rounded-lg transition-colors"
+                className={`px-8 py-4 ${
+                  selectedFile?.hasStems && !selectedFile?.hasLyrics
+                    ? 'bg-purple-600 hover:bg-purple-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                } disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold text-lg rounded-lg transition-colors`}
                 onClick={handleStartConversion}
                 disabled={!selectedFile}
               >
-                Create Stems+Karaoke File
+                {selectedFile?.hasStems && !selectedFile?.hasLyrics
+                  ? 'Add Lyrics to Stem File'
+                  : 'Create Stems+Karaoke File'}
               </button>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-3">
-                Processing time depends on song length and your hardware (typically 2-10 minutes)
+                {selectedFile?.hasStems && !selectedFile?.hasLyrics
+                  ? 'Lyrics-only mode is much faster (typically under 1 minute)'
+                  : 'Processing time depends on song length and your hardware (typically 2-10 minutes)'}
               </p>
             </div>
           </>

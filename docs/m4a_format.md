@@ -86,6 +86,7 @@ Contains lyrics, timing, audio configuration, and singer metadata in JSON format
     "B": { "name": "Duet Partner" },
     "duet": { "name": "Both", "color": "#22C55E" }
   },
+  "tags": ["edited", "ai_corrected"],
   "lines": [
     {
       "start": 12.5,
@@ -158,6 +159,27 @@ In this example:
 **Backward Compatibility:**
 
 Files without `singers` or `line.singer` fields work exactly as before - all lines are treated as lead vocals with the standard karaoke behavior.
+
+#### Tags (Optional)
+
+The `tags` array provides searchable labels for filtering and organizing songs:
+
+```json
+{
+  "tags": ["edited", "ai_corrected", "favorite", "needs_review"]
+}
+```
+
+**Standard tags added automatically:**
+
+| Tag | When Added |
+|-----|------------|
+| `edited` | Song was manually edited in the Song Editor |
+| `ai_corrected` | LLM made corrections to lyrics during creation |
+
+**Custom tags:**
+
+Users can add any custom tags for their own organization. Tags are simple lowercase strings.
 
 ### `vpch` - Vocal Pitch
 

@@ -379,7 +379,9 @@ export function SongEditor({ bridge }) {
           );
 
           // Load AI corrections if available
-          const kaiRejections = result.data.songJson?.meta?.corrections?.rejected || [];
+          // Check both 'rejected' (user-rejected) and 'applied' (LLM-applied) for compatibility
+          const corrections = result.data.songJson?.meta?.corrections || {};
+          const kaiRejections = corrections.rejected || corrections.applied || [];
           setRejections(
             kaiRejections.map((rejection) => ({
               line_num: rejection.line,
@@ -393,8 +395,7 @@ export function SongEditor({ bridge }) {
             }))
           );
 
-          const kaiSuggestions =
-            result.data.songJson?.meta?.corrections?.missing_lines_suggested || [];
+          const kaiSuggestions = corrections.missing_lines_suggested || [];
           setSuggestions(
             kaiSuggestions.map((suggestion) => ({
               suggested_text: suggestion.suggested_text,

@@ -69,6 +69,27 @@ function SongInfoModal({ song, onClose }) {
               <span className="font-semibold text-gray-300 dark:text-gray-400">Format:</span>
               <span className="text-white">{song.format || 'N/A'}</span>
             </div>
+            {song.tags && song.tags.length > 0 && (
+              <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5 border-b border-gray-700/50 dark:border-gray-800/50">
+                <span className="font-semibold text-gray-300 dark:text-gray-400">Tags:</span>
+                <span className="text-white flex flex-wrap gap-1.5">
+                  {song.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        tag === 'edited'
+                          ? 'bg-blue-600/30 text-blue-300'
+                          : tag === 'ai_corrected'
+                            ? 'bg-purple-600/30 text-purple-300'
+                            : 'bg-gray-600/30 text-gray-300'
+                      }`}
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </span>
+              </div>
+            )}
             <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5">
               <span className="font-semibold text-gray-300 dark:text-gray-400">Path:</span>
               <span className="text-white break-all text-[11px]">{song.path}</span>

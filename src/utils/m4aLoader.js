@@ -256,6 +256,8 @@ class M4ALoader {
           format: 'm4a-stems',
           profile: karaData.audio?.profile || 'STEMS-4',
           encoder_delay_samples: karaData.audio?.encoder_delay_samples || 0,
+          // Include corrections metadata from kara atom
+          ...(karaData.meta?.corrections && { corrections: karaData.meta.corrections }),
         },
 
         audio: {
@@ -297,6 +299,9 @@ class M4ALoader {
 
         // Store singers if available
         singers: karaData.singers || [],
+
+        // Store tags for filtering (e.g., 'edited', 'ai_corrected')
+        tags: karaData.tags || [],
 
         // Store original song metadata
         song: metadata,

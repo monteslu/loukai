@@ -22,7 +22,9 @@ import {
   cancelConversion,
   isConversionInProgress,
 } from '../../main/creator/conversionService.js';
+import { repairStemFile, repairStemFiles } from '../../main/creator/stemBuilder.js';
 import { basename } from 'path';
+import { Atoms as M4AAtoms } from 'm4a-stems';
 
 // Track installation state
 let installationInProgress = false;
@@ -163,6 +165,7 @@ export async function getWhisperContext(title, artist, existingLyrics) {
  * Get file info for a path
  * Reads ID3 tags if available, falls back to filename parsing.
  * Auto-searches LRCLIB for lyrics if artist and title are found.
+ * Detects M4A files with existing stems but no karaoke lyrics.
  *
  * @param {string} filePath - Path to audio/video file
  * @returns {Promise<Object>} File info with optional lyrics
@@ -172,6 +175,7 @@ export async function getFileInfo(filePath) {
     const fileName = basename(filePath);
     const audioInfo = await getAudioInfo(filePath);
     const isVideo = await isVideoFile(filePath);
+    const lowerPath = filePath.toLowerCase();
 
     // Prefer ID3 tags, fall back to filename parsing
     let title = audioInfo.title || '';
@@ -185,6 +189,43 @@ export async function getFileInfo(filePath) {
       if (dashMatch) {
         artist = artist || dashMatch[1].trim();
         title = dashMatch[2].trim();
+      }
+    }
+
+    // Check for M4A with existing stems (NI Stems format has 5 audio streams: master + 4 stems)
+    let hasStems = false;
+    let hasLyrics = false;
+    let stemNames = [];
+    let vocalsTrackIndex = null;
+
+    if (lowerPath.endsWith('.m4a') || lowerPath.endsWith('.mp4')) {
+      // Check for multiple audio streams (stems)
+      if (audioInfo.audioStreamCount >= 4) {
+        hasStems = true;
+        stemNames = audioInfo.audioStreams.map((s) => s.title);
+
+        // Find vocals track index
+        const vocalsStream = audioInfo.audioStreams.find((s) => s.title.toLowerCase() === 'vocals');
+        if (vocalsStream) {
+          vocalsTrackIndex = vocalsStream.index;
+        }
+
+        console.log(
+          `🎵 Detected stem file: ${audioInfo.audioStreamCount} tracks [${stemNames.join(', ')}]`
+        );
+      }
+
+      // Check for existing kara atom with lyrics
+      if (hasStems) {
+        try {
+          const karaData = await M4AAtoms.readKaraAtom(filePath);
+          if (karaData && karaData.lines && karaData.lines.length > 0) {
+            hasLyrics = true;
+            console.log(`📝 Found existing lyrics: ${karaData.lines.length} lines`);
+          }
+        } catch {
+          // No kara atom - that's fine, we'll add one
+        }
       }
     }
 
@@ -204,6 +245,12 @@ export async function getFileInfo(filePath) {
         hasId3Tags: Boolean(audioInfo.title || audioInfo.artist),
         // Preserve ALL original tags for inclusion in output file
         tags: audioInfo.tags || {},
+        // Stem detection info
+        hasStems,
+        hasLyrics,
+        stemNames,
+        vocalsTrackIndex,
+        audioStreamCount: audioInfo.audioStreamCount,
       },
     };
 
@@ -281,6 +328,36 @@ export function stopConversion() {
   return { success: cancelled };
 }
 
+/**
+ * Repair a stem file to fix NI Stems metadata
+ * @param {string} filePath - Path to .stem.m4a file
+ * @returns {Promise<Object>} Repair result
+ */
+export async function repairStem(filePath) {
+  try {
+    const result = await repairStemFile(filePath);
+    return result;
+  } catch (error) {
+    console.error('Failed to repair stem file:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Batch repair multiple stem files
+ * @param {string[]} filePaths - Array of paths to .stem.m4a files
+ * @returns {Promise<Object>} Batch repair results
+ */
+export async function repairStems(filePaths) {
+  try {
+    const result = await repairStemFiles(filePaths);
+    return result;
+  } catch (error) {
+    console.error('Failed to batch repair stem files:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 export default {
   checkComponents,
   getStatus,
@@ -291,4 +368,6 @@ export default {
   getFileInfo,
   startConversion,
   stopConversion,
+  repairStem,
+  repairStems,
 };

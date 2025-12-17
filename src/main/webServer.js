@@ -1027,52 +1027,6 @@ class WebServer {
       }
     });
 
-    // Download KAI audio file
-    this.app.get('/admin/editor/kai-audio/:fileId', async (req, res) => {
-      try {
-        const { fileId } = req.params;
-
-        // Decode the fileId to get path and filename
-        const decoded = Buffer.from(fileId, 'base64url').toString('utf8');
-        const [kaiPath, filename] = decoded.split(':');
-
-        // Load the KAI file to extract the audio
-        const KaiLoader = (await import('../utils/kaiLoader.js')).default;
-        const kaiData = await KaiLoader.load(kaiPath);
-
-        // Find the audio file
-        const audioSource = kaiData.audio.sources.find((s) => {
-          const sourceName = s.filename || s.name;
-          return sourceName === filename;
-        });
-
-        if (!audioSource || !audioSource.audioData) {
-          return res.status(404).json({
-            success: false,
-            error: 'Audio file not found in KAI archive',
-          });
-        }
-
-        // Send the audio file
-        const ext = filename.split('.').pop().toLowerCase();
-        const mimeTypes = {
-          mp3: 'audio/mpeg',
-          wav: 'audio/wav',
-          flac: 'audio/flac',
-        };
-
-        res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.send(audioSource.audioData);
-      } catch (error) {
-        console.error('Failed to download KAI audio:', error);
-        res.status(500).json({
-          success: false,
-          error: error.message,
-        });
-      }
-    });
-
     // Download M4A audio track (extracted from M4A Stems file)
     this.app.get('/admin/editor/m4a-audio/:fileId', async (req, res) => {
       try {
@@ -1780,11 +1734,11 @@ class WebServer {
     // Get audio files that can be converted (from library or direct path)
     this.app.get('/admin/creator/sources', async (req, res) => {
       try {
-        // Get library songs that are audio files (not already .kai or .stem.m4a)
+        // Get library songs that are audio files (not already .stem.m4a)
         const allSongs = await this.getCachedSongs();
 
         // Filter to songs that could be source files for conversion
-        // (exclude .kai and .stem.m4a which are already karaoke files)
+        // (exclude .stem.m4a which are already karaoke files)
         const sourceCandidates = allSongs.filter((song) => {
           const ext = song.path.split('.').pop().toLowerCase();
           return [

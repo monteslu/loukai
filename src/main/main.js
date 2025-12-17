@@ -7,7 +7,6 @@ import os from 'os';
 import yauzl from 'yauzl';
 import { io } from 'socket.io-client';
 import AudioEngine from './audioEngine.js';
-import KaiLoader from '../utils/kaiLoader.js';
 import CDGLoader from '../utils/cdgLoader.js';
 import M4ALoader from '../utils/m4aLoader.js';
 import { Atoms as M4AAtoms } from 'm4a-stems';
@@ -794,26 +793,7 @@ class KaiPlayerApp {
           // eslint-disable-next-line no-await-in-loop
           const subFiles = await this.scanForKaiFiles(fullPath);
           files.push(...subFiles);
-        } else if (lowerName.endsWith('.kai')) {
-          // KAI format - sequential file I/O to avoid overwhelming filesystem
-          // eslint-disable-next-line no-await-in-loop
-          const stats = await fsPromises.stat(fullPath);
-          // eslint-disable-next-line no-await-in-loop
-          const metadata = await this.extractKaiMetadata(fullPath);
-
-          files.push({
-            name: fullPath,
-            path: fullPath,
-            size: stats.size,
-            modified: stats.mtime,
-            folder: path.relative(this.settings.getSongsFolder(), folderPath) || '.',
-            format: 'kai',
-            ...metadata,
-          });
-        } else if (
-          lowerName.endsWith('.kar') ||
-          (lowerName.endsWith('.zip') && !lowerName.endsWith('.kai.zip'))
-        ) {
+        } else if (lowerName.endsWith('.kar') || lowerName.endsWith('.zip')) {
           // CDG archive format (.kar or .zip) - sequential file I/O
           // eslint-disable-next-line no-await-in-loop
           const metadata = await this.extractCDGArchiveMetadata(fullPath);
@@ -884,85 +864,6 @@ class KaiPlayerApp {
     }
 
     return files;
-  }
-
-  extractKaiMetadata(kaiFilePath) {
-    // yauzl already imported
-
-    return new Promise((resolve) => {
-      const metadata = {
-        title: null,
-        artist: null,
-        album: null,
-        genre: null,
-        key: null,
-        year: null,
-        duration: null,
-        stems: [],
-        stemCount: 0,
-      };
-
-      yauzl.open(kaiFilePath, { lazyEntries: true }, (err, zipfile) => {
-        if (err) {
-          console.warn('❌ Could not read KAI metadata from:', kaiFilePath, err.message);
-          return resolve(metadata);
-        }
-
-        zipfile.readEntry();
-
-        zipfile.on('entry', (entry) => {
-          if (entry.fileName === 'song.json') {
-            zipfile.openReadStream(entry, (err, readStream) => {
-              if (err) {
-                zipfile.readEntry();
-                return;
-              }
-
-              let jsonData = '';
-              readStream.on('data', (chunk) => {
-                jsonData += chunk.toString();
-              });
-
-              readStream.on('end', () => {
-                try {
-                  const songData = JSON.parse(jsonData);
-
-                  // Extract metadata from song.song object
-                  if (songData.song) {
-                    metadata.title = songData.song.title || null;
-                    metadata.artist = songData.song.artist || null;
-                    metadata.album = songData.song.album || null;
-                    metadata.genre = songData.song.genre || null;
-                    metadata.key = songData.song.key || null;
-                    metadata.year = songData.song.year || null;
-                    metadata.duration = songData.song.duration_sec || null;
-                  }
-
-                  // Extract stems info from audio.sources
-                  if (songData.audio && songData.audio.sources) {
-                    metadata.stems = songData.audio.sources.map(
-                      (source) => source.role || source.id
-                    );
-                    metadata.stemCount = metadata.stems.length;
-                  }
-                } catch (parseErr) {
-                  console.warn('❌ Could not parse song.json from:', kaiFilePath, parseErr.message);
-                }
-
-                zipfile.close();
-                resolve(metadata);
-              });
-            });
-          } else {
-            zipfile.readEntry();
-          }
-        });
-
-        zipfile.on('end', () => {
-          resolve(metadata);
-        });
-      });
-    });
   }
 
   extractCDGArchiveMetadata(archivePath) {
@@ -1181,6 +1082,7 @@ class KaiPlayerApp {
       hasKaraoke: false,
       stems: [],
       stemCount: 0,
+      tags: [],
     };
 
     try {
@@ -1221,6 +1123,11 @@ class KaiPlayerApp {
           if (karaData.audio && karaData.audio.sources) {
             metadata.stems = karaData.audio.sources.map((source) => source.role || source.id);
             metadata.stemCount = metadata.stems.length;
+          }
+
+          // Extract tags if available
+          if (karaData.tags && Array.isArray(karaData.tags)) {
+            metadata.tags = karaData.tags;
           }
         }
       } catch {
@@ -1263,66 +1170,6 @@ class KaiPlayerApp {
     return metadata;
   }
 
-  readKaiSongJson(kaiFilePath) {
-    // yauzl already imported
-
-    return new Promise((resolve) => {
-      yauzl.open(kaiFilePath, { lazyEntries: true }, (err, zipfile) => {
-        if (err) {
-          console.warn('❌ Could not read KAI file:', kaiFilePath, err.message);
-          return resolve(null);
-        }
-
-        zipfile.readEntry();
-
-        zipfile.on('entry', (entry) => {
-          if (entry.fileName === 'song.json') {
-            zipfile.openReadStream(entry, (err, readStream) => {
-              if (err) {
-                zipfile.close();
-                return resolve(null);
-              }
-
-              let jsonData = '';
-              readStream.on('data', (chunk) => {
-                jsonData += chunk.toString();
-              });
-
-              readStream.on('end', () => {
-                try {
-                  const songData = JSON.parse(jsonData);
-                  zipfile.close();
-                  resolve(songData);
-                } catch (parseError) {
-                  console.warn(
-                    '❌ Could not parse song.json from:',
-                    kaiFilePath,
-                    parseError.message
-                  );
-                  zipfile.close();
-                  resolve(null);
-                }
-              });
-            });
-          } else {
-            zipfile.readEntry();
-          }
-        });
-
-        zipfile.on('end', () => {
-          zipfile.close();
-          resolve(null);
-        });
-
-        zipfile.on('error', (err) => {
-          console.warn('❌ Error reading KAI file:', kaiFilePath, err.message);
-          zipfile.close();
-          resolve(null);
-        });
-      });
-    });
-  }
-
   async loadKaiFile(filePath, queueItemId = null) {
     // Detect format and load accordingly
     const format = await this.detectSongFormat(filePath);
@@ -1335,78 +1182,12 @@ class KaiPlayerApp {
       return this.loadM4AFile(filePath, queueItemId);
     }
 
-    // Get requester from queue if queueItemId is provided
-    let requester = 'KJ';
-    if (queueItemId) {
-      const queueItem = this.appState.getQueue().find((item) => item.id === queueItemId);
-      if (queueItem) {
-        requester = queueItem.requester || queueItem.singer || 'KJ';
-      }
-    }
-
-    // Default: KAI format
-    try {
-      const kaiData = await KaiLoader.load(filePath);
-
-      // Add original file path to the song data
-      kaiData.originalFilePath = filePath;
-      // Add requester to kaiData so it's available in renderer
-      kaiData.requester = requester;
-
-      if (this.audioEngine) {
-        await this.audioEngine.loadSong(kaiData);
-      }
-
-      this.currentSong = kaiData;
-
-      // Update AppState with new song (this resets position to 0)
-      // Set isLoading: true initially, will be cleared when song fully loads
-      const songData = {
-        path: filePath,
-        title: kaiData.metadata?.title || 'Unknown',
-        artist: kaiData.metadata?.artist || 'Unknown',
-        duration: kaiData.metadata?.duration || 0,
-        requester: requester,
-        isLoading: true, // Song is being loaded
-        format: 'kai', // Format for display icon
-        queueItemId: queueItemId, // Track which queue item (for duplicate songs)
-      };
-      this.appState.setCurrentSong(songData);
-
-      console.log('Sending to renderer:', {
-        metadata: kaiData.metadata,
-        hasMetadata: Boolean(kaiData.metadata),
-      });
-      this.sendToRenderer('song:loaded', kaiData.metadata || {});
-      this.sendToRenderer('song:data', kaiData);
-
-      // Broadcast song loaded to web clients via Socket.IO (use songData, not kaiData!)
-      if (this.webServer) {
-        this.webServer.broadcastSongLoaded(songData);
-      }
-
-      // Notify queue manager that this song is now current
-      console.log('📡 Main: Sending queue:songStarted IPC event for:', filePath);
-
-      // Add a small delay to ensure renderer is ready
-      setTimeout(() => {
-        console.log('📡 Main: Delayed sending of queue:songStarted after 100ms');
-        this.sendToRenderer('queue:songStarted', filePath);
-      }, 100);
-
-      return {
-        success: true,
-        metadata: kaiData.metadata,
-        meta: kaiData.meta,
-        stems: kaiData.audio.sources,
-      };
-    } catch (error) {
-      console.error('Failed to load KAI file:', error);
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
+    // Unsupported format
+    console.error('Unsupported file format:', filePath);
+    return {
+      success: false,
+      error: `Unsupported file format: ${path.extname(filePath)}`,
+    };
   }
 
   detectSongFormat(filePath) {
@@ -1417,11 +1198,8 @@ class KaiPlayerApp {
       return { type: 'm4a', format: 'm4a-stems', cdgPath: null };
     }
 
-    // Check for CDG archive (.kar or .zip but not .kai.zip)
-    if (
-      lowerPath.endsWith('.kar') ||
-      (lowerPath.endsWith('.zip') && !lowerPath.endsWith('.kai.zip'))
-    ) {
+    // Check for CDG archive (.kar or .zip)
+    if (lowerPath.endsWith('.kar') || lowerPath.endsWith('.zip')) {
       return { type: 'cdg', format: 'cdg-archive', cdgPath: null };
     }
 
@@ -1435,8 +1213,8 @@ class KaiPlayerApp {
       }
     }
 
-    // Default: KAI format
-    return { type: 'kai', format: 'kai', cdgPath: null };
+    // Unsupported format
+    return { type: 'unsupported', format: 'unsupported', cdgPath: null };
   }
 
   async loadCDGFile(mp3Path, cdgPath, format, queueItemId = null) {
@@ -1732,12 +1510,8 @@ class KaiPlayerApp {
         } else {
           const lowerName = entry.name.toLowerCase();
 
-          // KAI files
-          if (lowerName.endsWith('.kai')) {
-            fileInfos.push({ path: fullPath, type: 'kai' });
-          }
           // CDG archives
-          else if (
+          if (
             lowerName.endsWith('.kar') ||
             (lowerName.endsWith('.zip') && !processedPairs.has(fullPath))
           ) {
@@ -1785,24 +1559,7 @@ class KaiPlayerApp {
       const fullPath = fileInfo.path;
 
       try {
-        if (fileInfo.type === 'kai') {
-          // Sequential metadata extraction - intentional to avoid overwhelming filesystem
-          // eslint-disable-next-line no-await-in-loop
-          const metadata = await this.readKaiSongJson(fullPath);
-          if (metadata) {
-            const songData = {
-              ...metadata.song,
-              duration: metadata.song.duration_sec,
-            };
-            files.push({
-              name: fullPath,
-              path: fullPath,
-              file: fullPath,
-              format: 'kai',
-              ...songData,
-            });
-          }
-        } else if (fileInfo.type === 'archive') {
+        if (fileInfo.type === 'archive') {
           // Sequential metadata extraction for CDG archives
           // eslint-disable-next-line no-await-in-loop
           const metadata = await this.extractCDGArchiveMetadata(fullPath);
@@ -1858,6 +1615,7 @@ class KaiPlayerApp {
               duration: metadata.duration,
               stems: metadata.stems,
               stemCount: metadata.stemCount,
+              tags: metadata.tags,
             });
           }
         }
@@ -1899,12 +1657,8 @@ class KaiPlayerApp {
         } else {
           const lowerName = entry.name.toLowerCase();
 
-          // KAI files
-          if (lowerName.endsWith('.kai')) {
-            allFiles.push(fullPath);
-          }
           // CDG archives
-          else if (
+          if (
             lowerName.endsWith('.kar') ||
             (lowerName.endsWith('.zip') && !processedPairs.has(fullPath))
           ) {
@@ -1947,27 +1701,8 @@ class KaiPlayerApp {
       const lowerName = fullPath.toLowerCase();
 
       try {
-        // KAI files
-        if (lowerName.endsWith('.kai')) {
-          // Sequential metadata extraction - intentional to avoid overwhelming filesystem
-          // eslint-disable-next-line no-await-in-loop
-          const metadata = await this.readKaiSongJson(fullPath);
-          if (metadata) {
-            const songData = {
-              ...metadata.song,
-              duration: metadata.song.duration_sec,
-            };
-            files.push({
-              name: fullPath,
-              path: fullPath,
-              file: fullPath,
-              format: 'kai',
-              ...songData,
-            });
-          }
-        }
         // CDG archives
-        else if (lowerName.endsWith('.kar') || lowerName.endsWith('.zip')) {
+        if (lowerName.endsWith('.kar') || lowerName.endsWith('.zip')) {
           // Sequential CDG archive metadata extraction
           // eslint-disable-next-line no-await-in-loop
           const metadata = await this.extractCDGArchiveMetadata(fullPath);
@@ -2075,29 +1810,8 @@ class KaiPlayerApp {
         } else {
           const lowerName = entry.name.toLowerCase();
 
-          // KAI files
-          if (lowerName.endsWith('.kai') && !processedPaths.has(fullPath)) {
-            processedPaths.add(fullPath);
-            // Sequential metadata extraction with progress reporting
-            // eslint-disable-next-line no-await-in-loop
-            const metadata = await self.readKaiSongJson(fullPath);
-            if (metadata) {
-              const songData = {
-                ...metadata.song,
-                duration: metadata.song.duration_sec,
-              };
-              files.push({
-                name: fullPath,
-                path: fullPath,
-                format: 'kai',
-                ...songData,
-              });
-            }
-            processedCount++;
-            reportProgress();
-          }
           // CDG archives
-          else if (
+          if (
             (lowerName.endsWith('.kar') || lowerName.endsWith('.zip')) &&
             !processedPaths.has(fullPath)
           ) {

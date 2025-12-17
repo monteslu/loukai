@@ -28,9 +28,16 @@ const PYTHON_SCRIPTS_DIR = join(__dirname, 'python');
  * @param {Object} args - Arguments to pass as JSON
  * @param {Function} onProgress - Progress callback (step, message, progress%)
  * @param {Function} onConsoleOutput - Raw console output callback (line)
+ * @param {Function} onProcess - Callback to receive the spawned process (for cancellation)
  * @returns {Promise<Object>} Parsed JSON result from script
  */
-export function runPythonScript(scriptName, args, onProgress = null, onConsoleOutput = null) {
+export function runPythonScript(
+  scriptName,
+  args,
+  onProgress = null,
+  onConsoleOutput = null,
+  onProcess = null
+) {
   return new Promise((resolve, reject) => {
     const pythonPath = getPythonPath();
     const scriptPath = join(PYTHON_SCRIPTS_DIR, scriptName);
@@ -40,6 +47,11 @@ export function runPythonScript(scriptName, args, onProgress = null, onConsoleOu
       env: getPythonEnv(),
       timeout: 3600000, // 1 hour timeout for long operations
     });
+
+    // Allow caller to track the process for cancellation
+    if (onProcess) {
+      onProcess(proc);
+    }
 
     let stdout = '';
     let stderr = '';
@@ -149,6 +161,7 @@ export function runPythonScript(scriptName, args, onProgress = null, onConsoleOu
  * @param {number} options.numStems - Number of stems (2 or 4)
  * @param {Function} onProgress - Progress callback
  * @param {Function} onConsoleOutput - Raw console output callback
+ * @param {Function} onProcess - Process callback for cancellation
  * @returns {Promise<Object>} Result with stem file paths
  */
 export function runDemucs(
@@ -156,7 +169,8 @@ export function runDemucs(
   outputDir,
   options = {},
   onProgress = null,
-  onConsoleOutput = null
+  onConsoleOutput = null,
+  onProcess = null
 ) {
   return runPythonScript(
     'demucs_runner.py',
@@ -167,7 +181,8 @@ export function runDemucs(
       num_stems: options.numStems || 4,
     },
     onProgress,
-    onConsoleOutput
+    onConsoleOutput,
+    onProcess
   );
 }
 
@@ -181,9 +196,16 @@ export function runDemucs(
  * @param {string} options.language - Language code (default 'en')
  * @param {Function} onProgress - Progress callback
  * @param {Function} onConsoleOutput - Raw console output callback
+ * @param {Function} onProcess - Process callback for cancellation
  * @returns {Promise<Object>} Transcription result with word timestamps
  */
-export function runWhisper(inputPath, options = {}, onProgress = null, onConsoleOutput = null) {
+export function runWhisper(
+  inputPath,
+  options = {},
+  onProgress = null,
+  onConsoleOutput = null,
+  onProcess = null
+) {
   return runPythonScript(
     'whisper_runner.py',
     {
@@ -193,7 +215,8 @@ export function runWhisper(inputPath, options = {}, onProgress = null, onConsole
       language: options.language || 'en',
     },
     onProgress,
-    onConsoleOutput
+    onConsoleOutput,
+    onProcess
   );
 }
 
@@ -207,6 +230,7 @@ export function runWhisper(inputPath, options = {}, onProgress = null, onConsole
  * @param {number} options.hopLength - Hop length in samples (default 512)
  * @param {Function} onProgress - Progress callback
  * @param {Function} onConsoleOutput - Raw console output callback
+ * @param {Function} onProcess - Process callback for cancellation
  * @returns {Promise<Object>} Pitch detection result
  */
 export function runCrepe(
@@ -214,7 +238,8 @@ export function runCrepe(
   outputPath = null,
   options = {},
   onProgress = null,
-  onConsoleOutput = null
+  onConsoleOutput = null,
+  onProcess = null
 ) {
   return runPythonScript(
     'crepe_runner.py',
@@ -225,7 +250,8 @@ export function runCrepe(
       hop_length: options.hopLength || 512,
     },
     onProgress,
-    onConsoleOutput
+    onConsoleOutput,
+    onProcess
   );
 }
 

@@ -18,7 +18,7 @@ class MockMainApp {
     this.findAllKaiFiles = vi.fn();
     this.scanFilesystemForSync = vi.fn();
     this.parseMetadataWithProgress = vi.fn();
-    this.extractKaiMetadata = vi.fn();
+    this.extractM4AMetadata = vi.fn();
     this.extractCDGArchiveMetadata = vi.fn();
   }
 }
@@ -359,17 +359,17 @@ describe('libraryService', () => {
       expect(result.fromCache).toBe(true);
     });
 
-    it('should extract metadata for KAI file not in cache', async () => {
-      const mockMetadata = { title: 'New Song', artist: 'New Artist' };
-      mainApp.extractKaiMetadata.mockResolvedValue(mockMetadata);
+    it('should extract metadata for M4A file not in cache', async () => {
+      const mockMetadata = { title: 'New Song', artist: 'New Artist', hasKaraoke: true };
+      mainApp.extractM4AMetadata.mockResolvedValue(mockMetadata);
 
-      const result = await libraryService.getSongInfo(mainApp, '/music/new.kai');
+      const result = await libraryService.getSongInfo(mainApp, '/music/new.m4a');
 
       expect(result.success).toBe(true);
       expect(result.song.title).toBe('New Song');
-      expect(result.song.format).toBe('kai');
+      expect(result.song.format).toBe('m4a-stems');
       expect(result.fromCache).toBe(false);
-      expect(mainApp.extractKaiMetadata).toHaveBeenCalledWith('/music/new.kai');
+      expect(mainApp.extractM4AMetadata).toHaveBeenCalledWith('/music/new.m4a');
     });
 
     it('should extract metadata for CDG archive', async () => {
@@ -399,9 +399,9 @@ describe('libraryService', () => {
     });
 
     it('should handle metadata extraction errors', async () => {
-      mainApp.extractKaiMetadata.mockRejectedValue(new Error('Corrupt file'));
+      mainApp.extractM4AMetadata.mockRejectedValue(new Error('Corrupt file'));
 
-      const result = await libraryService.getSongInfo(mainApp, '/music/corrupt.kai');
+      const result = await libraryService.getSongInfo(mainApp, '/music/corrupt.m4a');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Corrupt file');

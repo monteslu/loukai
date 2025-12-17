@@ -132,6 +132,16 @@ export function getAudioInfo(inputPath) {
           tags[key.toLowerCase()] = value;
         }
 
+        // Count all audio streams and get their metadata
+        const audioStreams = info.streams?.filter((s) => s.codec_type === 'audio') || [];
+        const streamInfo = audioStreams.map((s, idx) => ({
+          index: idx,
+          title: s.tags?.title || `track${idx}`,
+          codec: s.codec_name,
+          channels: s.channels,
+          sampleRate: parseInt(s.sample_rate, 10),
+        }));
+
         resolve({
           duration: parseFloat(info.format?.duration || audioStream.duration || 0),
           sampleRate: parseInt(audioStream.sample_rate, 10),
@@ -144,6 +154,9 @@ export function getAudioInfo(inputPath) {
           artist: tags.artist || tags.album_artist || '',
           album: tags.album || '',
           tags,
+          // Stem detection info
+          audioStreamCount: audioStreams.length,
+          audioStreams: streamInfo,
         });
       } catch (e) {
         reject(new Error(`Failed to parse ffprobe output: ${e.message}`));
@@ -407,6 +420,61 @@ export function isVideoFile(inputPath) {
   });
 }
 
+/**
+ * Extract a specific audio track from an M4A stems file to WAV
+ *
+ * @param {string} inputPath - Input M4A file with multiple audio streams
+ * @param {string} outputPath - Output WAV file path
+ * @param {number} trackIndex - Audio track index (0-based)
+ * @param {Object} options - Extraction options
+ * @param {number} options.sampleRate - Target sample rate (default 44100)
+ * @returns {Promise<void>}
+ */
+export function extractStemTrack(inputPath, outputPath, trackIndex, options = {}) {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = getFFmpegPath();
+    const sampleRate = options.sampleRate || 44100;
+
+    // -map 0:a:{trackIndex} selects the specific audio stream
+    const args = [
+      '-y',
+      '-i',
+      inputPath,
+      '-map',
+      `0:a:${trackIndex}`,
+      '-ar',
+      String(sampleRate),
+      '-ac',
+      '2',
+      '-f',
+      'wav',
+      outputPath,
+    ];
+
+    console.log(`🎤 Extracting audio track ${trackIndex} to WAV...`);
+    const proc = spawn(ffmpeg, args, { timeout: 300000 }); // 5 min timeout
+
+    let stderr = '';
+
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Track extraction failed: ${stderr.slice(-500)}`));
+        return;
+      }
+      console.log(`✅ Track ${trackIndex} extracted successfully`);
+      resolve();
+    });
+
+    proc.on('error', (err) => {
+      reject(new Error(`Failed to spawn ffmpeg: ${err.message}`));
+    });
+  });
+}
+
 export default {
   getFFmpegPath,
   getFFprobePath,
@@ -414,5 +482,6 @@ export default {
   convertToWav,
   encodeToAAC,
   extractAudio,
+  extractStemTrack,
   isVideoFile,
 };

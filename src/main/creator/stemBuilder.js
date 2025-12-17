@@ -28,10 +28,11 @@ import { Atoms as M4AAtoms } from 'm4a-stems';
  * @param {Object} options.metadata - Song metadata (title, artist, duration)
  * @param {Object} options.lyrics - Whisper transcription result with word timestamps
  * @param {Object} options.pitch - CREPE pitch detection result
+ * @param {string[]} options.tags - Tags array for filtering (e.g., ['ai_corrected'])
  * @returns {Promise<void>}
  */
 export async function buildStemM4a(options) {
-  const { outputPath, stems, metadata, lyrics, pitch, llmCorrections } = options;
+  const { outputPath, stems, metadata, lyrics, pitch, llmCorrections, tags } = options;
 
   // For now, use ffmpeg to mux stems into a single file
   // The stem.m4a format requires custom atom injection
@@ -57,33 +58,33 @@ export async function buildStemM4a(options) {
     args.push('-map', `${i}:a`);
   }
 
-  // Set metadata - copy ALL original tags
-  const tags = metadata.tags || {};
+  // Set metadata - copy ALL original ID3 tags
+  const id3Tags = metadata.tags || {};
 
   // Standard ID3 tags to preserve
   const tagMapping = {
-    title: metadata.title || tags.title,
-    artist: metadata.artist || tags.artist,
-    album: tags.album,
-    album_artist: tags.album_artist || tags.albumartist,
-    composer: tags.composer,
-    genre: tags.genre,
-    date: tags.date || tags.year,
-    track: tags.track || tags.tracknumber,
-    disc: tags.disc || tags.discnumber,
-    comment: tags.comment,
-    copyright: tags.copyright,
-    publisher: tags.publisher,
-    encoded_by: tags.encoded_by,
-    language: tags.language,
-    lyrics: tags.lyrics || tags.unsyncedlyrics,
-    bpm: tags.bpm || tags.tbpm,
-    initialkey: pitch?.detected_key?.key || tags.initialkey || tags.key,
-    isrc: tags.isrc,
-    barcode: tags.barcode,
-    catalog: tags.catalog,
-    compilation: tags.compilation,
-    grouping: tags.grouping,
+    title: metadata.title || id3Tags.title,
+    artist: metadata.artist || id3Tags.artist,
+    album: id3Tags.album,
+    album_artist: id3Tags.album_artist || id3Tags.albumartist,
+    composer: id3Tags.composer,
+    genre: id3Tags.genre,
+    date: id3Tags.date || id3Tags.year,
+    track: id3Tags.track || id3Tags.tracknumber,
+    disc: id3Tags.disc || id3Tags.discnumber,
+    comment: id3Tags.comment,
+    copyright: id3Tags.copyright,
+    publisher: id3Tags.publisher,
+    encoded_by: id3Tags.encoded_by,
+    language: id3Tags.language,
+    lyrics: id3Tags.lyrics || id3Tags.unsyncedlyrics,
+    bpm: id3Tags.bpm || id3Tags.tbpm,
+    initialkey: pitch?.detected_key?.key || id3Tags.initialkey || id3Tags.key,
+    isrc: id3Tags.isrc,
+    barcode: id3Tags.barcode,
+    catalog: id3Tags.catalog,
+    compilation: id3Tags.compilation,
+    grouping: id3Tags.grouping,
   };
 
   // Add all non-empty tags
@@ -93,8 +94,8 @@ export async function buildStemM4a(options) {
     }
   }
 
-  // Also pass through any additional tags we might have missed
-  for (const [key, value] of Object.entries(tags)) {
+  // Also pass through any additional ID3 tags we might have missed
+  for (const [key, value] of Object.entries(id3Tags)) {
     const lowerKey = key.toLowerCase();
     // Skip if already handled above
     if (!tagMapping[lowerKey] && value) {
@@ -117,6 +118,13 @@ export async function buildStemM4a(options) {
     const stemName = stemNames[i];
     // Use metadata to label streams
     args.push(`-metadata:s:a:${i}`, `title=${stemName}`);
+  }
+
+  // Per NI Stems spec: Track 1 (master) should be "enabled"/default,
+  // Tracks 2-5 (stems) should be "disabled" so normal players only play master
+  args.push('-disposition:a:0', 'default'); // Master track is default
+  for (let i = 1; i < stemNames.length; i++) {
+    args.push(`-disposition:a:${i}`, '0'); // Clear disposition flags for stem tracks
   }
 
   // Output format
@@ -148,6 +156,15 @@ export async function buildStemM4a(options) {
     });
   });
 
+  // Add NI Stems metadata so Mixxx/Traktor recognize this as a stem file
+  // Per NI Stems spec, stems array should have exactly 4 entries (NOT including master)
+  // Track order: drums, bass, other, vocals (corresponding to tracks 2-5)
+  const stemPartsOnly = stemNames.filter((name) => name !== 'master');
+  console.log(
+    `🎛️ Writing NI Stems metadata for ${stemPartsOnly.length} stem parts: ${stemPartsOnly.join(', ')}`
+  );
+  await M4AAtoms.addNiStemsMetadata(outputPath, stemPartsOnly);
+
   // Now inject kara atom for karaoke data using m4a-stems library
   await injectKaraokeAtoms(outputPath, {
     lyrics,
@@ -155,6 +172,7 @@ export async function buildStemM4a(options) {
     metadata,
     stems: stemNames,
     llmCorrections,
+    tags,
   });
 }
 
@@ -165,7 +183,7 @@ export async function buildStemM4a(options) {
  * @param {Object} data - Karaoke data to embed
  */
 async function injectKaraokeAtoms(filePath, data) {
-  const { lyrics, pitch, metadata, stems, llmCorrections } = data;
+  const { lyrics, pitch, metadata, stems, llmCorrections, tags } = data;
 
   // Convert lyrics segments to lines format expected by kara atom
   const lines = [];
@@ -201,23 +219,42 @@ async function injectKaraokeAtoms(filePath, data) {
       offset_sec: 0,
     },
 
+    // Tags for filtering (e.g., 'edited', 'ai_corrected')
+    tags: tags || [],
+
     // Lyrics (lines)
     lines: lines,
   };
 
   // Add LLM corrections metadata if available
+  // Uses same structure as KAI format for consistency with SongEditor
   if (
     llmCorrections &&
     (llmCorrections.corrections?.length > 0 || llmCorrections.missing_lines?.length > 0)
   ) {
     karaData.meta = {
-      llm_corrections: {
+      corrections: {
+        // Applied corrections (for reference/audit)
+        applied: (llmCorrections.corrections || []).map((c) => ({
+          line: c.line_num,
+          start: c.start_time,
+          end: c.end_time,
+          old: c.old_text,
+          new: c.new_text,
+          reason: c.reason,
+          word_retention: c.retention_rate,
+        })),
+        // Suggested missing lines (user can review/add in editor)
+        missing_lines_suggested: (llmCorrections.missing_lines || []).map((s) => ({
+          suggested_text: s.suggested_text,
+          start: s.start_time,
+          end: s.end_time,
+          confidence: s.confidence,
+          reason: s.reason,
+        })),
+        // Stats
         provider: llmCorrections.provider,
         model: llmCorrections.model,
-        corrections: llmCorrections.corrections || [],
-        missing_lines: llmCorrections.missing_lines || [],
-        corrections_applied: llmCorrections.corrections_applied || 0,
-        missing_lines_suggested: llmCorrections.missing_lines_suggested || 0,
       },
     };
   }
@@ -267,6 +304,206 @@ async function injectKaraokeAtoms(filePath, data) {
   console.log('✅ Karaoke atoms written successfully');
 }
 
+/**
+ * Inject lyrics into an existing .stem.m4a file
+ * Used for "lyrics only" mode when stems already exist
+ *
+ * @param {Object} options - Injection options
+ * @param {string} options.filePath - Path to existing .stem.m4a file
+ * @param {Object} options.lyrics - Whisper transcription result with word timestamps
+ * @param {Object} options.pitch - CREPE pitch detection result
+ * @param {Object} options.llmCorrections - LLM correction stats
+ * @param {string[]} options.tags - Tags array for filtering
+ * @returns {Promise<void>}
+ */
+export async function injectLyricsIntoStemFile(options) {
+  const { filePath, lyrics, pitch, llmCorrections, tags } = options;
+
+  console.log(`🎤 Injecting lyrics into existing stem file: ${filePath}`);
+
+  // Read existing kara atom to preserve audio configuration
+  let existingKara = null;
+  try {
+    existingKara = await M4AAtoms.readKaraAtom(filePath);
+  } catch {
+    // No existing kara atom - that's fine
+  }
+
+  // Build kara data structure
+  const lines = [];
+  if (lyrics && lyrics.lines && lyrics.lines.length > 0) {
+    for (const line of lyrics.lines) {
+      lines.push({
+        start: line.start,
+        end: line.end,
+        text: line.text,
+      });
+    }
+  }
+
+  // Preserve existing audio configuration or create default
+  const audioSources = existingKara?.audio?.sources || [
+    { id: 'master', role: 'master', track: 0 },
+    { id: 'drums', role: 'drums', track: 1 },
+    { id: 'bass', role: 'bass', track: 2 },
+    { id: 'other', role: 'other', track: 3 },
+    { id: 'vocals', role: 'vocals', track: 4 },
+  ];
+
+  const karaData = {
+    audio: {
+      sources: audioSources,
+      profile: existingKara?.audio?.profile || 'STEMS-4',
+      encoder_delay_samples: existingKara?.audio?.encoder_delay_samples || 0,
+      presets: existingKara?.audio?.presets || [],
+    },
+    timing: {
+      offset_sec: existingKara?.timing?.offset_sec || 0,
+    },
+    tags: tags || [],
+    lines: lines,
+  };
+
+  // Add LLM corrections metadata if available
+  if (
+    llmCorrections &&
+    (llmCorrections.corrections?.length > 0 || llmCorrections.missing_lines?.length > 0)
+  ) {
+    karaData.meta = {
+      corrections: {
+        applied: (llmCorrections.corrections || []).map((c) => ({
+          line: c.line_num,
+          start: c.start_time,
+          end: c.end_time,
+          old: c.old_text,
+          new: c.new_text,
+          reason: c.reason,
+          word_retention: c.retention_rate,
+        })),
+        missing_lines_suggested: (llmCorrections.missing_lines || []).map((s) => ({
+          suggested_text: s.suggested_text,
+          start: s.start_time,
+          end: s.end_time,
+          confidence: s.confidence,
+          reason: s.reason,
+        })),
+        provider: llmCorrections.provider,
+        model: llmCorrections.model,
+      },
+    };
+  }
+
+  // Write kara atom
+  console.log(`💾 Writing kara atom: ${lines.length} lines`);
+  await M4AAtoms.writeKaraAtom(filePath, karaData);
+
+  // Write vocal pitch atom if we have pitch data
+  if (pitch && pitch.pitch_data) {
+    const crepeData = pitch.pitch_data;
+    const pitchSampleRate = crepeData.sample_rate / crepeData.hop_length;
+
+    const vpchData = {
+      sampleRate: Math.round(pitchSampleRate),
+      data: crepeData.midi.map((midiFloat) => {
+        if (midiFloat === 0) {
+          return { midi: 0, cents: 0 };
+        }
+        const midiInt = Math.floor(midiFloat);
+        const cents = Math.round((midiFloat - midiInt) * 100);
+        return { midi: midiInt, cents };
+      }),
+    };
+
+    console.log(
+      `🎵 Writing vocal pitch atom: ${vpchData.data.length} frames at ${vpchData.sampleRate}Hz`
+    );
+    await M4AAtoms.writeVpchAtom(filePath, vpchData);
+  }
+
+  // Write onsets atom if we have word timestamps
+  if (lyrics && lyrics.words && lyrics.words.length > 0) {
+    const onsets = lyrics.words
+      .map((w) => w.start)
+      .filter((t) => t > 0)
+      .sort((a, b) => a - b);
+
+    if (onsets.length > 0) {
+      console.log(`🎯 Writing onsets atom: ${onsets.length} onsets`);
+      await M4AAtoms.writeKonsAtom(filePath, onsets);
+    }
+  }
+
+  console.log('✅ Lyrics injected successfully');
+}
+
+/**
+ * Repair an existing .stem.m4a file to fix NI Stems metadata
+ * This fixes files created before the spec-compliant stem atom was implemented
+ *
+ * @param {string} filePath - Path to existing .stem.m4a file
+ * @returns {Promise<Object>} Repair result
+ */
+export async function repairStemFile(filePath) {
+  console.log(`🔧 Repairing stem file: ${filePath}`);
+
+  // Default NI Stems order (excluding master, which is track 0)
+  const stemPartsOnly = ['drums', 'bass', 'other', 'vocals'];
+
+  try {
+    // Re-write the stem atom with correct 4-stem metadata
+    console.log(`🎛️ Writing corrected NI Stems metadata for ${stemPartsOnly.length} stem parts`);
+    await M4AAtoms.addNiStemsMetadata(filePath, stemPartsOnly);
+
+    console.log('✅ Stem file repaired successfully');
+    console.log('⚠️  Note: Track disposition flags cannot be fixed without re-encoding.');
+    console.log('    File should work in Mixxx/Traktor but may play wrong track in some players.');
+
+    return {
+      success: true,
+      filePath,
+      stemsFixed: stemPartsOnly,
+    };
+  } catch (error) {
+    console.error('❌ Failed to repair stem file:', error.message);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+}
+
+/**
+ * Batch repair multiple stem files
+ * @param {string[]} filePaths - Array of paths to .stem.m4a files
+ * @returns {Promise<Object>} Batch repair results
+ */
+export async function repairStemFiles(filePaths) {
+  console.log(`🔧 Batch repairing ${filePaths.length} stem files...`);
+
+  const results = {
+    total: filePaths.length,
+    success: 0,
+    failed: 0,
+    files: [],
+  };
+
+  for (const filePath of filePaths) {
+    const result = await repairStemFile(filePath);
+    results.files.push(result);
+    if (result.success) {
+      results.success++;
+    } else {
+      results.failed++;
+    }
+  }
+
+  console.log(`\n📊 Repair complete: ${results.success}/${results.total} files fixed`);
+  return results;
+}
+
 export default {
   buildStemM4a,
+  injectLyricsIntoStemFile,
+  repairStemFile,
+  repairStemFiles,
 };
