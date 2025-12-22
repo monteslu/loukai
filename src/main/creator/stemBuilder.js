@@ -378,17 +378,43 @@ export async function injectLyricsIntoStemFile(options) {
  * This fixes files created before the spec-compliant stem atom was implemented
  *
  * @param {string} filePath - Path to existing .stem.m4a file
+ * @param {Object} options - Repair options
+ * @param {boolean} options.force - Force rewrite even if metadata exists
  * @returns {Promise<Object>} Repair result
  */
-export async function repairStemFile(filePath) {
-  console.log(`🔧 Repairing stem file: ${filePath}`);
+export async function repairStemFile(filePath, options = {}) {
+  console.log(`🔧 Checking stem file: ${filePath}`);
 
   // Default NI Stems order (excluding master, which is track 0)
   const stemPartsOnly = ['drums', 'bass', 'other', 'vocals'];
 
   try {
-    // Re-write the stem atom with correct 4-stem metadata
-    console.log(`🎛️ Writing corrected NI Stems metadata for ${stemPartsOnly.length} stem parts`);
+    // Check if NI Stems metadata already exists
+    let existingMetadata = null;
+    try {
+      existingMetadata = await M4AAtoms.readNiStemsMetadata(filePath);
+    } catch {
+      // No existing metadata
+    }
+
+    if (existingMetadata && existingMetadata.stems && !options.force) {
+      const existingStems = existingMetadata.stems.map((s) => s.name).join(', ');
+      console.log(`✅ File already has valid NI Stems metadata: ${existingStems}`);
+      console.log('   Use --force to rewrite anyway.');
+      return {
+        success: true,
+        filePath,
+        alreadyValid: true,
+        existingStems: existingMetadata.stems.map((s) => s.name),
+      };
+    }
+
+    // Write the stem atom with correct 4-stem metadata
+    if (existingMetadata) {
+      console.log(`🔄 Force rewriting NI Stems metadata for ${stemPartsOnly.length} stem parts`);
+    } else {
+      console.log(`🎛️ Adding NI Stems metadata for ${stemPartsOnly.length} stem parts`);
+    }
     await M4AAtoms.addNiStemsMetadata(filePath, stemPartsOnly);
 
     console.log('✅ Stem file repaired successfully');
@@ -412,29 +438,39 @@ export async function repairStemFile(filePath) {
 /**
  * Batch repair multiple stem files
  * @param {string[]} filePaths - Array of paths to .stem.m4a files
+ * @param {Object} options - Repair options (passed to each repairStemFile call)
  * @returns {Promise<Object>} Batch repair results
  */
-export async function repairStemFiles(filePaths) {
-  console.log(`🔧 Batch repairing ${filePaths.length} stem files...`);
+export async function repairStemFiles(filePaths, options = {}) {
+  console.log(`🔧 Batch checking ${filePaths.length} stem files...`);
 
   const results = {
     total: filePaths.length,
     success: 0,
     failed: 0,
+    alreadyValid: 0,
+    repaired: 0,
     files: [],
   };
 
   for (const filePath of filePaths) {
-    const result = await repairStemFile(filePath);
+    const result = await repairStemFile(filePath, options);
     results.files.push(result);
     if (result.success) {
       results.success++;
+      if (result.alreadyValid) {
+        results.alreadyValid++;
+      } else {
+        results.repaired++;
+      }
     } else {
       results.failed++;
     }
   }
 
-  console.log(`\n📊 Repair complete: ${results.success}/${results.total} files fixed`);
+  console.log(
+    `\n📊 Complete: ${results.alreadyValid} already valid, ${results.repaired} repaired, ${results.failed} failed`
+  );
   return results;
 }
 

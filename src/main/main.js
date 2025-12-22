@@ -1689,6 +1689,10 @@ class KaiPlayerApp {
               // No paired MP3, skip this CDG
             }
           }
+          // M4A/MP4 stem files
+          else if (lowerName.endsWith('.m4a') || lowerName.endsWith('.mp4')) {
+            allFiles.push(fullPath);
+          }
         }
       }
     }
@@ -1874,6 +1878,35 @@ class KaiPlayerApp {
               processedCount++;
               reportProgress();
             }
+          }
+          // M4A/MP4 stem files
+          else if (
+            (lowerName.endsWith('.m4a') || lowerName.endsWith('.mp4')) &&
+            !processedPaths.has(fullPath)
+          ) {
+            processedPaths.add(fullPath);
+            // Sequential M4A metadata extraction with progress reporting
+            // eslint-disable-next-line no-await-in-loop
+            const metadata = await self.extractM4AMetadata(fullPath);
+            if (metadata && metadata.hasKaraoke) {
+              files.push({
+                name: fullPath,
+                path: fullPath,
+                format: 'm4a-stems',
+                title: metadata.title,
+                artist: metadata.artist,
+                album: metadata.album,
+                genre: metadata.genre,
+                year: metadata.year,
+                key: metadata.key,
+                duration: metadata.duration,
+                stems: metadata.stems,
+                stemCount: metadata.stemCount,
+                tags: metadata.tags,
+              });
+            }
+            processedCount++;
+            reportProgress();
           }
         }
       }

@@ -5,7 +5,76 @@
  * Works with both ElectronBridge and WebBridge via callbacks
  */
 
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+
+/**
+ * PortalTooltip - Tooltip that renders via portal for consistent positioning on Wayland
+ */
+function PortalTooltip({ text, targetRect, visible }) {
+  if (!visible || !targetRect) return null;
+
+  const style = {
+    position: 'fixed',
+    left: targetRect.left + targetRect.width / 2,
+    top: targetRect.top - 4,
+    transform: 'translate(-50%, -100%)',
+    zIndex: 10000,
+  };
+
+  return createPortal(
+    <div
+      style={style}
+      className="px-2 py-1 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded shadow-lg whitespace-nowrap pointer-events-none"
+    >
+      {text}
+      <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900 dark:border-t-gray-700" />
+    </div>,
+    document.body
+  );
+}
+
+/**
+ * TooltipButton - Button with portal-based tooltip
+ */
+function TooltipButton({ icon, tooltip, onClick, className, iconSize = 'text-base' }) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [tooltipRect, setTooltipRect] = useState(null);
+  const buttonRef = useRef(null);
+  const tooltipTimeoutRef = useRef(null);
+
+  const handleMouseEnter = useCallback(() => {
+    tooltipTimeoutRef.current = setTimeout(() => {
+      if (buttonRef.current) {
+        setTooltipRect(buttonRef.current.getBoundingClientRect());
+        setShowTooltip(true);
+      }
+    }, 400);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (tooltipTimeoutRef.current) {
+      clearTimeout(tooltipTimeoutRef.current);
+      tooltipTimeoutRef.current = null;
+    }
+    setShowTooltip(false);
+  }, []);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        onClick={onClick}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        className={className}
+      >
+        <span className={`material-icons ${iconSize}`}>{icon}</span>
+      </button>
+      <PortalTooltip text={tooltip} targetRect={tooltipRect} visible={showTooltip} />
+    </>
+  );
+}
 
 export function QueueList({
   queue = [],
@@ -55,7 +124,13 @@ export function QueueList({
 
     if (draggedIndex !== dropIndex) {
       const item = queue[draggedIndex];
-      onReorderQueue(item.id, dropIndex);
+      // When moving down, account for the shift caused by removing the dragged item
+      // Without this adjustment, items dropped below their origin end up one position too far down
+      let targetIndex = dropIndex;
+      if (draggedIndex < dropIndex) {
+        targetIndex = dropIndex - 1;
+      }
+      onReorderQueue(item.id, targetIndex);
     }
 
     setDraggedIndex(null);
@@ -94,22 +169,22 @@ export function QueueList({
           <h4 className="m-0 text-base font-semibold text-gray-900 dark:text-white">Queue</h4>
           <div className="flex gap-1">
             {handleClear && (
-              <button
+              <TooltipButton
+                icon="delete"
+                tooltip="Clear Queue"
                 onClick={handleClear}
+                iconSize="text-lg"
                 className="p-1.5 px-2 bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded cursor-pointer flex items-center justify-center transition-all text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
-                title="Clear Queue"
-              >
-                <span className="material-icons text-lg">delete</span>
-              </button>
+              />
             )}
             {onShuffleQueue && (
-              <button
+              <TooltipButton
+                icon="shuffle"
+                tooltip="Shuffle"
                 onClick={onShuffleQueue}
+                iconSize="text-lg"
                 className="p-1.5 px-2 bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded cursor-pointer flex items-center justify-center transition-all text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
-                title="Shuffle"
-              >
-                <span className="material-icons text-lg">shuffle</span>
-              </button>
+              />
             )}
           </div>
         </div>
@@ -150,22 +225,22 @@ export function QueueList({
         <h4 className="m-0 text-base font-semibold text-gray-900 dark:text-white">Queue</h4>
         <div className="flex gap-1">
           {handleClear && (
-            <button
+            <TooltipButton
+              icon="delete"
+              tooltip="Clear Queue"
               onClick={handleClear}
+              iconSize="text-lg"
               className="p-1.5 px-2 bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded cursor-pointer flex items-center justify-center transition-all text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
-              title="Clear Queue"
-            >
-              <span className="material-icons text-lg">delete</span>
-            </button>
+            />
           )}
           {onShuffleQueue && (
-            <button
+            <TooltipButton
+              icon="shuffle"
+              tooltip="Shuffle"
               onClick={onShuffleQueue}
+              iconSize="text-lg"
               className="p-1.5 px-2 bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded cursor-pointer flex items-center justify-center transition-all text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
-              title="Shuffle"
-            >
-              <span className="material-icons text-lg">shuffle</span>
-            </button>
+            />
           )}
         </div>
       </div>
@@ -243,23 +318,42 @@ export function QueueList({
                 </div>
               </div>
               <div className="flex gap-1 flex-shrink-0">
+                {/* Up/Down reorder buttons - only show if more than one item */}
+                {onReorderQueue && queue.length > 1 && (
+                  <>
+                    {index > 0 && (
+                      <TooltipButton
+                        icon="arrow_upward"
+                        tooltip="Move Up"
+                        onClick={() => onReorderQueue(item.id, index - 1)}
+                        className="p-1 bg-transparent border border-gray-300 dark:border-gray-600 rounded cursor-pointer flex items-center justify-center transition-all text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
+                      />
+                    )}
+                    {index < queue.length - 1 && (
+                      <TooltipButton
+                        icon="arrow_downward"
+                        tooltip="Move Down"
+                        onClick={() => onReorderQueue(item.id, index + 1)}
+                        className="p-1 bg-transparent border border-gray-300 dark:border-gray-600 rounded cursor-pointer flex items-center justify-center transition-all text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
+                      />
+                    )}
+                  </>
+                )}
                 {handlePlay && (
-                  <button
+                  <TooltipButton
+                    icon="queue_play_next"
+                    tooltip="Load Song"
                     onClick={() => handlePlay(item.id || item.path)}
                     className="p-1 px-2 bg-transparent border border-gray-300 dark:border-gray-600 rounded cursor-pointer flex items-center justify-center transition-all text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
-                    title="Load Song"
-                  >
-                    <span className="material-icons text-base">queue_play_next</span>
-                  </button>
+                  />
                 )}
                 {handleRemove && (
-                  <button
+                  <TooltipButton
+                    icon="close"
+                    tooltip="Remove"
                     onClick={() => handleRemove(item.id)}
                     className="p-1 px-2 bg-transparent border border-gray-300 dark:border-gray-600 rounded cursor-pointer flex items-center justify-center transition-all text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
-                    title="Remove"
-                  >
-                    <span className="material-icons text-base">close</span>
-                  </button>
+                  />
                 )}
               </div>
             </div>

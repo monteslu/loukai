@@ -5,6 +5,7 @@
  * Usage:
  *   node scripts/repair-stems.js <file.stem.m4a>
  *   node scripts/repair-stems.js <file1.stem.m4a> <file2.stem.m4a> ...
+ *   node scripts/repair-stems.js --force <file.stem.m4a>  # Force rewrite even if valid
  *
  * For glob patterns, use shell expansion:
  *   node scripts/repair-stems.js /path/to/folder/*.stem.m4a
@@ -17,15 +18,26 @@ import { resolve } from 'path';
 async function main() {
   const args = process.argv.slice(2);
 
+  // Check for --force flag
+  const forceIndex = args.indexOf('--force');
+  const force = forceIndex !== -1;
+  if (force) {
+    args.splice(forceIndex, 1);
+  }
+
   if (args.length === 0) {
-    console.log('Usage: node scripts/repair-stems.js <file.stem.m4a> [file2.stem.m4a ...]');
+    console.log('Usage: node scripts/repair-stems.js [--force] <file.stem.m4a> [file2.stem.m4a ...]');
     console.log('');
     console.log('This script repairs existing stem files to fix NI Stems metadata');
     console.log('so they are properly recognized by Mixxx, Traktor, and other DJ software.');
     console.log('');
+    console.log('Options:');
+    console.log('  --force    Force rewrite metadata even if already valid');
+    console.log('');
     console.log('Examples:');
     console.log('  node scripts/repair-stems.js "Artist - Song.stem.m4a"');
     console.log('  node scripts/repair-stems.js /path/to/music/*.stem.m4a');
+    console.log('  node scripts/repair-stems.js --force "Artist - Song.stem.m4a"');
     process.exit(1);
   }
 
@@ -49,13 +61,13 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`\n🔧 Repairing ${files.length} stem file(s)...\n`);
+  console.log(`\n🔧 Checking ${files.length} stem file(s)...${force ? ' (force mode)' : ''}\n`);
 
   if (files.length === 1) {
-    const result = await repairStemFile(files[0]);
+    const result = await repairStemFile(files[0], { force });
     process.exit(result.success ? 0 : 1);
   } else {
-    const results = await repairStemFiles(files);
+    const results = await repairStemFiles(files, { force });
     process.exit(results.failed === 0 ? 0 : 1);
   }
 }
