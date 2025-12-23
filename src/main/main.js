@@ -18,8 +18,6 @@ import * as queueService from '../shared/services/queueService.js';
 import * as libraryService from '../shared/services/libraryService.js';
 import * as playerService from '../shared/services/playerService.js';
 import * as serverSettingsService from '../shared/services/serverSettingsService.js';
-import { checkFFmpeg } from './creator/systemChecker.js';
-import { downloadFFmpeg } from './creator/downloadManager.js';
 import {
   initSettingsService,
   loadAndSync,
@@ -1378,39 +1376,6 @@ class KaiPlayerApp {
 
   async scanLibraryInBackground(songsFolder) {
     try {
-      // Check if FFmpeg is available (required for M4A files)
-      const ffmpegStatus = checkFFmpeg();
-      if (!ffmpegStatus.installed) {
-        console.log('⚠️ FFmpeg not found, downloading...');
-        this.sendToRenderer('library:scanProgress', {
-          current: 0,
-          total: 0,
-          message: 'Downloading FFmpeg (required for M4A files)...',
-        });
-
-        const result = await downloadFFmpeg((percent, msg) => {
-          this.sendToRenderer('library:scanProgress', {
-            current: 0,
-            total: 0,
-            message: msg || `Downloading FFmpeg... ${percent}%`,
-          });
-        });
-
-        if (!result.success) {
-          console.error('❌ FFmpeg download failed:', result.error);
-          this.sendToRenderer('library:scanProgress', {
-            current: 0,
-            total: 0,
-            message: `FFmpeg download failed: ${result.error}`,
-          });
-          // Continue anyway - will fail on M4A files but other formats may work
-        } else {
-          console.log('✅ FFmpeg downloaded successfully');
-        }
-      } else {
-        console.log(`✅ FFmpeg available (${ffmpegStatus.source || 'system'})`);
-      }
-
       // Try to load from cache first
       const cacheFile = path.join(app.getPath('userData'), 'library-cache.json');
       let useCache = false;

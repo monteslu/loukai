@@ -1,6 +1,6 @@
 # Loukai M4A Stems Format
 
-Loukai uses an open karaoke format built on top of [Native Instruments' Stems](https://www.native-instruments.com/en/specials/stems/) `.stem.m4a` specification with karaoke-specific extensions.
+Loukai uses an open karaoke format built on top of [Native Instruments' Stems](https://www.native-instruments.com/en/specials/stems/) specification (`.stem.mp4` / `.stem.m4a`) with karaoke-specific extensions.
 
 ## Design Philosophy
 
@@ -343,9 +343,15 @@ This removes the redundant `audio` section from the kara atom. The audio track i
 
 ## File Extension
 
-- `.stem.m4a` - Preferred, indicates stem content
-- `.stem.mp4` - Also valid per NI spec
-- `.m4a` - Supported, Loukai auto-detects via `stem` or `kara` atoms
+Both `.stem.mp4` and `.stem.m4a` are valid - they're the same MP4 container format:
+
+| Extension | Notes |
+|-----------|-------|
+| `.stem.mp4` | **Official NI Stems spec** - use for maximum DJ software compatibility (Traktor, Mixxx) |
+| `.stem.m4a` | Equally valid - `.m4a` is the common convention for audio-only MP4 files |
+| `.m4a` / `.mp4` | Supported - Loukai auto-detects stem files via `stem` or `kara` atoms |
+
+Loukai reads and writes both extensions interchangeably.
 
 ## References
 

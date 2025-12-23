@@ -1,104 +1,21 @@
 import fs from 'fs';
 import path from 'path';
-import { promisify } from 'util';
-import { exec, execSync } from 'child_process';
-import os from 'os';
-import { Atoms as M4AAtoms } from 'm4a-stems';
-
-const execAsync = promisify(exec);
-
-/**
- * Get FFmpeg executable path
- * Checks system PATH first, then Creator cache directory
- */
-function getFFmpegPath() {
-  // Check system PATH first
-  try {
-    const checkCmd = process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg';
-    const result = execSync(checkCmd, { encoding: 'utf8', timeout: 5000 });
-    const foundPath = result.trim().split('\n')[0];
-    if (foundPath && fs.existsSync(foundPath)) {
-      return foundPath;
-    }
-  } catch {
-    // Not in PATH, check cache
-  }
-
-  // Check Creator cache directory
-  const cacheDir =
-    process.platform === 'darwin'
-      ? path.join(os.homedir(), 'Library', 'Application Support', 'loukai', 'creator')
-      : process.platform === 'win32'
-        ? path.join(process.env.LOCALAPPDATA || os.homedir(), 'loukai', 'creator')
-        : path.join(os.homedir(), '.config', 'loukai', 'creator');
-
-  const filename = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
-  const cachedPath = path.join(cacheDir, 'bin', filename);
-
-  if (fs.existsSync(cachedPath)) {
-    return cachedPath;
-  }
-
-  // Default to assuming it's in PATH (will fail with helpful message if not)
-  return 'ffmpeg';
-}
+import { Atoms as M4AAtoms, Extractor } from 'm4a-stems';
 
 class M4ALoader {
   /**
-   * Extract a single audio track from M4A file using FFmpeg
+   * Extract a single audio track from M4A file (FFmpeg-free)
    * @param {string} m4aPath - Path to M4A file
    * @param {number} trackIndex - Track index (0-based)
    * @returns {Promise<Buffer>} Audio data as buffer
    */
   static async extractTrack(m4aPath, trackIndex) {
     try {
-      // Create temporary file for extracted track
-      const tempDir = os.tmpdir();
-      const tempFile = path.join(tempDir, `track_${trackIndex}_${Date.now()}.m4a`);
-
-      // Use FFmpeg to extract the specific track
-      // -map 0:a:{trackIndex} selects the audio track at the given index
-      // -loglevel error suppresses verbose output
-      const ffmpegPath = getFFmpegPath();
-      const ffmpegCmd = `"${ffmpegPath}" -loglevel error -i "${m4aPath}" -map 0:a:${trackIndex} -c copy "${tempFile}" -y`;
-
       console.log(`📦 Extracting track ${trackIndex} from M4A...`);
-      const { stderr } = await execAsync(ffmpegCmd);
-
-      if (stderr) {
-        console.warn(`⚠️  FFmpeg warning for track ${trackIndex}:`, stderr);
-      }
-
-      // Read the extracted audio file
-      const audioBuffer = await fs.promises.readFile(tempFile);
-
-      // Clean up temporary file
-      try {
-        await fs.promises.unlink(tempFile);
-      } catch (unlinkErr) {
-        console.warn(`Could not delete temp file ${tempFile}:`, unlinkErr.message);
-      }
-
+      const audioBuffer = await Extractor.extractTrack(m4aPath, trackIndex);
       console.log(`✅ Extracted track ${trackIndex} (${audioBuffer.length} bytes)`);
       return audioBuffer;
     } catch (error) {
-      // Check if FFmpeg is not installed
-      if (
-        error.message.includes('ffmpeg') &&
-        (error.message.includes('not found') ||
-          error.message.includes('ENOENT') ||
-          error.message.includes('not recognized'))
-      ) {
-        const installCmd =
-          process.platform === 'darwin'
-            ? 'brew install ffmpeg'
-            : process.platform === 'win32'
-              ? 'winget install ffmpeg'
-              : 'sudo apt install ffmpeg';
-        throw new Error(
-          `FFmpeg is required to play M4A stem files but was not found.\n\nInstall with: ${installCmd}\n\nOr use the Creator tab to auto-install FFmpeg.`
-        );
-      }
       console.error(`Failed to extract track ${trackIndex}:`, error.message);
       throw new Error(`Failed to extract track ${trackIndex}: ${error.message}`);
     }

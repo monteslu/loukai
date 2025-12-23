@@ -101,6 +101,9 @@ export function registerCreatorHandlers(mainApp) {
 
   // Start conversion
   ipcMain.handle(CREATOR_CHANNELS.START_CONVERSION, async (_event, options) => {
+    // Track if we're saving to songs folder (outputDir is set)
+    const savedToSongsFolder = Boolean(options.outputDir);
+
     const result = await creatorService.startConversion(
       options,
       (progress) => {
@@ -120,6 +123,7 @@ export function registerCreatorHandlers(mainApp) {
         hasLyrics: result.hasLyrics,
         hasPitch: result.hasPitch,
         llmStats: result.llmStats,
+        savedToSongsFolder,
       });
     } else if (!result.cancelled) {
       mainApp.sendToRenderer(CREATOR_CHANNELS.CONVERSION_ERROR, {

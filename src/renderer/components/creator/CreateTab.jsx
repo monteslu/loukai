@@ -257,7 +257,7 @@ export function CreateTab({ bridge: _bridge }) {
       }, 100);
     };
 
-    const onConversionComplete = (_event, result) => {
+    const onConversionComplete = async (_event, result) => {
       const endTime = Date.now();
       const elapsed = conversionStartTimeRef.current
         ? (endTime - conversionStartTimeRef.current) / 1000
@@ -269,6 +269,15 @@ export function CreateTab({ bridge: _bridge }) {
       setProcessingTime(elapsed);
       setStatus('complete');
       setConversionProgress(null);
+
+      // If saved to songs folder, trigger a library sync to pick up the new file
+      if (result.savedToSongsFolder) {
+        try {
+          await window.kaiAPI?.library?.syncLibrary?.();
+        } catch (err) {
+          console.error('Failed to sync library after creation:', err);
+        }
+      }
     };
 
     const onConversionError = (_event, err) => {
@@ -446,6 +455,29 @@ export function CreateTab({ bridge: _bridge }) {
       referenceLyrics: '',
     });
     setStatus('ready');
+  };
+
+  const handleOpenInEditor = async () => {
+    if (!completedFile) return;
+
+    try {
+      // Load the song into the editor
+      await window.kaiAPI?.editor?.loadKai?.(completedFile);
+
+      // Switch to the editor tab by manipulating DOM (same pattern as TabNavigation)
+      document.querySelectorAll('[id$="-tab"]').forEach((pane) => {
+        pane.classList.add('hidden');
+        pane.classList.remove('block', 'flex');
+      });
+      const editorPane = document.getElementById('editor-tab');
+      if (editorPane) {
+        editorPane.classList.remove('hidden');
+        editorPane.classList.add('block');
+      }
+    } catch (err) {
+      console.error('Failed to open in editor:', err);
+      setError(`Failed to open in editor: ${err.message}`);
+    }
   };
 
   const handleSaveLLMSettings = async () => {
@@ -730,8 +762,11 @@ export function CreateTab({ bridge: _bridge }) {
             </p>
           </div>
 
-          <div className="space-x-4">
-            <button className={STYLES.btnPrimary} onClick={handleCreateAnother}>
+          <div className="flex gap-4 justify-center">
+            <button className={STYLES.btnPrimary} onClick={handleOpenInEditor}>
+              Open in Editor
+            </button>
+            <button className={STYLES.btnSecondary} onClick={handleCreateAnother}>
               Create Another
             </button>
           </div>
