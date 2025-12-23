@@ -5,8 +5,6 @@
 
 export function getFormatIcon(format) {
   switch (format) {
-    case 'kai':
-      return '📦'; // KAI archive format
     case 'm4a-stems':
       return '⚡'; // M4A stems format
     case 'cdg-archive':

@@ -1,13 +1,19 @@
-# Loukai
+# Loukai Karaoke
 
-**A modern, real-time karaoke player with stem control, visual effects, and coaching features**
+**Free and open source karaoke software for playing and creating stem-based karaoke files from your own music**
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![React 19](https://img.shields.io/badge/React-19-blue)](https://react.dev/)
 [![Electron 38](https://img.shields.io/badge/Electron-38-blue)](https://www.electronjs.org/)
-[![Test Coverage](https://img.shields.io/badge/coverage-52%25-green)](./docs/PHASE2-SUMMARY.md)
+[![Tests](https://img.shields.io/badge/tests-283-green)](./docs/PHASE2-SUMMARY.md)
 
-Loukai is a cross-platform karaoke application built with Electron that plays industry-standard M4A Stems files (MPEG-4 multi-track audio) with real-time stem mixing, dual audio outputs, visual effects, and a web-based admin interface for remote control and song requests. Also supports legacy formats (KAI, CDG, MP3+CDG).
+Loukai is a free, open source karaoke software that runs locally on your computer to **play** and **create** karaoke files from your own music. Built on M4A Stems (MPEG-4 multi-track audio), it uses industry-standard formats compatible with DJ software, giving you full control over your personal karaoke library.
+
+**Key highlights:**
+- **Open Format**: Built on NI Stems — no vendor lock-in, works with Traktor, Mixxx, and other DJ software
+- **Create Your Own**: Built-in Creator processes your audio files into stem-separated karaoke with AI-transcribed lyrics
+- **Play Anywhere**: Cross-platform desktop app (Linux, Windows, macOS) with web remote control
+- **Fully Open Source**: AGPL-3.0 licensed — inspect, modify, and contribute
 
 ![Loukai Application](./Loukai_app.png)
 
@@ -16,12 +22,12 @@ Loukai is a cross-platform karaoke application built with Electron that plays in
 ## Features
 
 ### Audio & Playback
-- **M4A Stems Format (Primary)**: Industry-standard MPEG-4 multi-track audio with embedded WebVTT lyrics
-  - Compatible with DJ software (Traktor, Serato, etc.)
+- **M4A Stems Format (Primary)**: Built on [NI Stems](https://www.native-instruments.com/en/specials/stems/) with karaoke extensions
+  - Compatible with DJ software (Traktor, Mixxx) via standard NI Stems metadata
   - Smaller file sizes than legacy formats
-  - Superior metadata and lyrics embedding
+  - Embedded lyrics with word-level timing in custom atoms
 - **Real-Time Stem Control**: Individual volume, mute, and solo controls for vocals, drums, bass, and other stems
-- **Legacy Format Support**: KAI files, CDG/MP3 pairs, and CDG archives (.kar, .zip)
+- **Legacy Format Support**: CDG/MP3 pairs
 - **Dual Output Routing**: Independent PA and IEM (in-ear monitor) outputs with per-stem routing
 - **High-Quality Audio**: Web Audio API with real-time processing and pitch correction
 - **Auto-Tune System**: Real-time pitch correction for microphone input
@@ -44,7 +50,7 @@ Loukai is a cross-platform karaoke application built with Electron that plays in
 ### Library & Search
 - **Fast Library Scanning**: Automatic metadata extraction from thousands of songs
 - **M4A Stems Native**: Optimized for MPEG-4 multi-track audio with full metadata support
-- **Multi-Format Support**: Also reads KAI, CDG/MP3 pairs, and CDG archives
+- **Legacy Format Support**: Also reads CDG/MP3 pairs
 - **Smart Search**: Fuzzy search across titles, artists, and albums
 - **Alphabet Navigation**: Quick filtering by first letter
 - **Pagination**: Efficient handling of large libraries (tested with 23K+ songs)
@@ -84,8 +90,8 @@ Loukai is a cross-platform karaoke application built with Electron that plays in
 
 ```bash
 # Clone the repository
-git clone https://github.com/monteslu/kai-player.git
-cd kai-player
+git clone https://github.com/monteslu/loukai.git
+cd loukai
 
 # Install dependencies
 npm install
@@ -186,7 +192,7 @@ Loukai is built with a multi-process architecture:
 - **Library Scanner**: Metadata extraction and caching
 - **Web Server**: Express 5 REST API + Socket.IO
 - **State Management**: Centralized app state with event emitters
-- **File System**: KAI/CDG file parsing and manipulation
+- **File System**: M4A/CDG file parsing and manipulation
 - **IPC Handlers**: Communication bridge to renderer
 
 ### Renderer Process (React)
@@ -248,53 +254,39 @@ Loukai is built with a multi-process architecture:
 **Industry-standard MPEG-4 multi-track audio** - the modern karaoke format:
 
 #### Why M4A Stems?
-- ✅ **DJ Software Compatible**: Works with Traktor, Serato, djay, and other professional DJ software
+- ✅ **DJ Software Compatible**: Works with Traktor, Mixxx, and other NI Stems-compatible software
 - ✅ **Smaller Files**: 30-50% smaller than ZIP-based formats due to MPEG-4 compression
 - ✅ **Better Metadata**: Native MP4 atoms for rich metadata (title, artist, album art, BPM, key)
-- ✅ **WebVTT Lyrics**: Industry-standard subtitle format with word-level timing
+- ✅ **Karaoke Extensions**: Custom atoms for lyrics with word-level timing
 - ✅ **Single File**: No unpacking required - instant playback
-- ✅ **Widely Supported**: Standard MPEG-4 container readable by many audio tools
+- ✅ **Dual Purpose**: Same file works for both DJing and karaoke
 
 #### Structure
-- **Multi-track audio**: Separate tracks for mixdown, vocals, drums, bass, other
-- **Embedded lyrics**: WebVTT format with word-level timing in MP4 subtitle track
-- **Custom atoms**: `kaid` atom contains karaoke-specific metadata (original artist, etc.)
+- **Multi-track audio**: Master + 4 stems (drums, bass, other, vocals)
+- **NI Stems atom**: `stem` - standard metadata for DJ software compatibility
+- **Karaoke atom**: `kara` (lyrics with word-level timing)
 - **File extension**: `.stem.m4a` or `.m4a`
 
+**Full specification:** [docs/m4a_format.md](./docs/m4a_format.md)
+
 #### Creating M4A Files
-Use [kai-converter](https://github.com/monteslu/kai-converter) - M4A is the default output format:
+Use the built-in **Creator** tab in Loukai:
 
-```bash
-# Convert YouTube video to M4A stems
-python -m kai_pack.convert_youtube "https://youtube.com/watch?v=..."
+1. Open Loukai and go to the **Creator** tab
+2. Drop your audio file (MP3, FLAC, WAV, etc.)
+3. The Creator will:
+   - Separate audio into stems using Demucs (AI stem separation)
+   - Transcribe lyrics using Whisper (AI speech recognition)
+   - Detect musical key using CREPE
+   - Package everything into a `.stem.m4a` file
 
-# Convert audio file to M4A stems
-python -m kai_pack.cli --format m4a my-song.mp3
-
-# Batch convert directory
-for file in *.mp3; do python -m kai_pack.cli --format m4a "$file"; done
-```
-
-**Output:** `Song Title - Artist.stem.m4a`
-
-### KAI Format (Legacy - Deprecated)
-
-ZIP containers with audio stems and synchronized lyrics. **This format is deprecated in favor of M4A.**
-
-- `song.json` - Metadata, timing, lyrics
-- Audio stems: `vocals.mp3`, `drums.mp3`, `bass.mp3`, `other.mp3`
-- Optional: `features/` directory with analysis data
-
-**Spec:** [docs/KAI-Play-Spec-v1.0.md](./docs/KAI-Play-Spec-v1.0.md)
-
-To create KAI files (not recommended), use `--format kai` in kai-converter.
+**Output:** `Artist - Title.stem.m4a` saved to your songs folder
 
 ### CDG Format (Legacy)
 
 Classic karaoke format with graphics - widely available but limited features:
 
 - **MP3 + CDG pairs**: `song.mp3` + `song.cdg`
-- **Archives**: `.kar` or `.zip` files containing MP3+CDG
 - **Limitations**: No stem separation, basic graphics, no metadata
 
 ---
@@ -333,7 +325,7 @@ All settings are automatically saved to:
 2. **Scan Library**: Click "Scan Library" to index all songs
 3. **Search & Play**: Use the Library tab to find and play songs
 
-**Tip:** For best results, use `.stem.m4a` files created with [kai-converter](https://github.com/monteslu/kai-converter). M4A files load faster and take less disk space than ZIP-based formats.
+**Tip:** For best results, use `.stem.m4a` files created with the built-in Creator. M4A files load faster and take less disk space than legacy formats.
 
 ### Playing Karaoke
 
@@ -396,7 +388,7 @@ npm run test:coverage
 npm run test:ui
 ```
 
-**Current Coverage:** 52% (84 tests)
+**Current Coverage:** 283 tests
 
 See [PHASE2-SUMMARY.md](./docs/PHASE2-SUMMARY.md) for detailed testing information.
 
@@ -407,7 +399,7 @@ See [PHASE2-SUMMARY.md](./docs/PHASE2-SUMMARY.md) for detailed testing informati
 ### Project Structure
 
 ```
-kai-player/
+loukai/
 ├── src/
 │   ├── main/              # Electron main process
 │   │   ├── main.js        # Entry point
@@ -421,7 +413,6 @@ kai-player/
 │   │   ├── hooks/         # Custom React hooks
 │   │   ├── js/            # Audio engine (vanilla JS)
 │   │   │   ├── autoTuneWorklet.js  # Auto-tune processor
-│   │   │   ├── kaiPlayer.js        # KAI format player
 │   │   │   └── playerController.js # Unified control
 │   │   └── vite.config.js # Renderer build config
 │   ├── web/               # Web admin interface
@@ -489,7 +480,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 
 | Document | Description |
 |----------|-------------|
-| [KAI-Play-Spec-v1.0.md](./docs/KAI-Play-Spec-v1.0.md) | Player specification |
+| [m4a_format.md](./docs/m4a_format.md) | M4A Stems karaoke format specification |
 | [architecture.md](./docs/architecture.md) | System architecture and design |
 | [PHASE2-SUMMARY.md](./docs/PHASE2-SUMMARY.md) | Testing infrastructure guide |
 | [MODERNIZATION-PLAN.md](./docs/MODERNIZATION-PLAN.md) | Development roadmap |
@@ -510,7 +501,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 ### Library Not Scanning
 - Ensure songs folder path is correct
 - Check file permissions (read access required)
-- Supported formats: `.m4a` (recommended), `.stem.m4a`, `.kai`, `.cdg`, `.mp3`, `.kar`, `.zip`
+- Supported formats: `.m4a` (recommended), `.stem.m4a`, `.cdg` + `.mp3` pairs
 - For best performance, use M4A Stems format
 
 ### Web Server Not Accessible
@@ -556,8 +547,8 @@ See [LICENSE](./LICENSE) for full text.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/monteslu/kai-player/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/monteslu/kai-player/discussions)
+- **Issues**: [GitHub Issues](https://github.com/monteslu/loukai/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/monteslu/loukai/discussions)
 - **Documentation**: [docs/](./docs/)
 
 ---

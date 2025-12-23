@@ -9,6 +9,7 @@
 
 import { BridgeInterface } from '../../shared/adapters/BridgeInterface.js';
 import { io } from 'socket.io-client';
+import { WAVEFORM_DEFAULTS, AUTOTUNE_DEFAULTS } from '../../shared/defaults.js';
 
 export class WebBridge extends BridgeInterface {
   constructor(baseUrl = '/admin') {
@@ -258,24 +259,10 @@ export class WebBridge extends BridgeInterface {
   async getWaveformPreferences() {
     try {
       const response = await this._fetch('/settings/waveform');
-      return (
-        response.settings || {
-          enableWaveforms: true,
-          enableEffects: true,
-          randomEffectOnSong: false,
-          showUpcomingLyrics: true,
-          overlayOpacity: 0.7,
-        }
-      );
+      return response.settings || { ...WAVEFORM_DEFAULTS };
     } catch (error) {
       console.error('Failed to fetch waveform preferences:', error);
-      return {
-        enableWaveforms: true,
-        enableEffects: true,
-        randomEffectOnSong: false,
-        showUpcomingLyrics: true,
-        overlayOpacity: 0.7,
-      };
+      return { ...WAVEFORM_DEFAULTS };
     }
   }
 
@@ -289,20 +276,10 @@ export class WebBridge extends BridgeInterface {
   async getAutotunePreferences() {
     try {
       const response = await this._fetch('/settings/autotune');
-      return (
-        response.settings || {
-          enabled: false,
-          strength: 50,
-          speed: 20,
-        }
-      );
+      return response.settings || { ...AUTOTUNE_DEFAULTS };
     } catch (error) {
       console.error('Failed to fetch autotune preferences:', error);
-      return {
-        enabled: false,
-        strength: 50,
-        speed: 20,
-      };
+      return { ...AUTOTUNE_DEFAULTS };
     }
   }
 

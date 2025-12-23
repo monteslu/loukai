@@ -4,9 +4,12 @@
  * Used by both renderer and web admin for controlling:
  * - Waveform visualization options
  * - Auto-tune settings
+ *
+ * Uses unified defaults from shared/defaults.js
  */
 
 import React, { useState, useEffect } from 'react';
+import { WAVEFORM_DEFAULTS, AUTOTUNE_DEFAULTS } from '../defaults.js';
 
 export function VisualizationSettings({
   bridge,
@@ -15,18 +18,10 @@ export function VisualizationSettings({
   onWaveformChange = null,
   onAutotuneChange = null,
 }) {
-  const [waveformSettings, setWaveformSettings] = useState({
-    enableWaveforms: true,
-    enableEffects: true,
-    randomEffectOnSong: false,
-    showUpcomingLyrics: true,
-    overlayOpacity: 0.7,
-  });
+  const [waveformSettings, setWaveformSettings] = useState({ ...WAVEFORM_DEFAULTS });
 
   const [autotuneSettings, setAutotuneSettings] = useState({
-    enabled: false,
-    strength: 50,
-    speed: 20,
+    ...AUTOTUNE_DEFAULTS,
     preferVocals: true,
   });
 

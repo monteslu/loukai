@@ -276,6 +276,9 @@ export function SongEditor({ bridge }) {
         return;
       }
 
+      // Increment size: 0.1s normal, 0.5s with shift
+      const increment = e.shiftKey ? 0.5 : 0.1;
+
       switch (e.key.toLowerCase()) {
         case 'q': // Previous enabled line
           e.preventDefault();
@@ -289,21 +292,21 @@ export function SongEditor({ bridge }) {
           e.preventDefault();
           playCurrentLine();
           break;
-        case 'a': // Decrease start time by 0.1s
+        case 'd': // Decrease start time
           e.preventDefault();
-          adjustStartTime(-0.1);
+          adjustStartTime(-increment);
           break;
-        case 's': // Increase start time by 0.1s
+        case 'f': // Increase start time
           e.preventDefault();
-          adjustStartTime(0.1);
+          adjustStartTime(increment);
           break;
-        case 'k': // Decrease end time by 0.1s
+        case 'j': // Decrease end time
           e.preventDefault();
-          adjustEndTime(-0.1);
+          adjustEndTime(-increment);
           break;
-        case 'l': // Increase end time by 0.1s
+        case 'k': // Increase end time
           e.preventDefault();
-          adjustEndTime(0.1);
+          adjustEndTime(increment);
           break;
       }
     };
@@ -379,7 +382,9 @@ export function SongEditor({ bridge }) {
           );
 
           // Load AI corrections if available
-          const kaiRejections = result.data.songJson?.meta?.corrections?.rejected || [];
+          // Check both 'rejected' (user-rejected) and 'applied' (LLM-applied) for compatibility
+          const corrections = result.data.songJson?.meta?.corrections || {};
+          const kaiRejections = corrections.rejected || corrections.applied || [];
           setRejections(
             kaiRejections.map((rejection) => ({
               line_num: rejection.line,
@@ -393,8 +398,7 @@ export function SongEditor({ bridge }) {
             }))
           );
 
-          const kaiSuggestions =
-            result.data.songJson?.meta?.corrections?.missing_lines_suggested || [];
+          const kaiSuggestions = corrections.missing_lines_suggested || [];
           setSuggestions(
             kaiSuggestions.map((suggestion) => ({
               suggested_text: suggestion.suggested_text,
@@ -1285,6 +1289,26 @@ export function SongEditor({ bridge }) {
                           onAddAfter={handleAddLineAfter}
                           onSplit={handleLineSplit}
                           onPlaySection={handlePlayLineSection}
+                          onAdjustStartTime={(delta) => {
+                            setSelectedLineIndex(index);
+                            const currentStart = line.start || line.startTimeSec || 0;
+                            const newStart = Math.max(0, currentStart + delta);
+                            handleLineUpdate(index, {
+                              ...line,
+                              start: newStart,
+                              startTimeSec: newStart,
+                            });
+                          }}
+                          onAdjustEndTime={(delta) => {
+                            setSelectedLineIndex(index);
+                            const currentEnd = line.end || line.endTimeSec || 0;
+                            const newEnd = Math.max(0, currentEnd + delta);
+                            handleLineUpdate(index, {
+                              ...line,
+                              end: newEnd,
+                              endTimeSec: newEnd,
+                            });
+                          }}
                           canAddAfter={canAddLineAfter(index)}
                           canSplit={canSplit(index)}
                           hasOverlap={checkOverlap(index)}

@@ -1,18 +1,11 @@
 import { useState, useEffect } from 'react';
+import { WAVEFORM_DEFAULTS, AUTOTUNE_DEFAULTS } from '../../shared/defaults.js';
 
 export function PlayerSettingsPanel({ socket }) {
-  const [waveformSettings, setWaveformSettings] = useState({
-    enableWaveforms: true,
-    enableEffects: true,
-    randomEffectOnSong: false,
-    overlayOpacity: 0.7,
-    showUpcomingLyrics: true,
-  });
+  const [waveformSettings, setWaveformSettings] = useState({ ...WAVEFORM_DEFAULTS });
 
   const [autoTuneSettings, setAutoTuneSettings] = useState({
-    enabled: false,
-    strength: 50,
-    speed: 20,
+    ...AUTOTUNE_DEFAULTS,
     preferVocals: true,
   });
 

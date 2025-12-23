@@ -118,7 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.9.0] - 2025-10-XX (Historical)
 
 ### Added
-- Multi-format support (KAI, CDG, MP3+CDG pairs, archives)
+- Multi-format support (M4A Stems, CDG, MP3+CDG pairs)
 - Real-time stem control with individual mute/solo
 - Dual output routing (PA + IEM)
 - Butterchurn visual effects integration (200+ presets)
@@ -169,8 +169,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Links
 
-- [Unreleased Changes](https://github.com/yourusername/kai-player/compare/v1.0.0...HEAD)
-- [1.0.0 Release](https://github.com/yourusername/kai-player/releases/tag/v1.0.0)
+- [Unreleased Changes](https://github.com/monteslu/loukai/compare/v1.0.0...HEAD)
+- [1.0.0 Release](https://github.com/monteslu/loukai/releases/tag/v1.0.0)
 
 ---
 

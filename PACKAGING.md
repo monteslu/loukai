@@ -378,7 +378,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-**Result:** GitHub release at `https://github.com/yourusername/kai-player/releases/tag/v1.0.0` with all packages attached.
+**Result:** GitHub release at `https://github.com/monteslu/loukai/releases/tag/v1.0.0` with all packages attached.
 
 ---
 
@@ -612,7 +612,7 @@ git push origin main --tags
 
 Users can download packages directly from GitHub Releases:
 ```
-https://github.com/yourusername/kai-player/releases/latest
+https://github.com/monteslu/loukai/releases/latest
 ```
 
 ### Flatpak (Flathub)

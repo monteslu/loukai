@@ -32,8 +32,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build web UI
-        run: npm run build:web
+      - name: Build renderer and web UI
+        run: npm run build:all
 
       - name: Setup Flatpak remotes and Electron base
         run: |
@@ -73,8 +73,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build web UI
-        run: npm run build:web
+      - name: Build renderer and web UI
+        run: npm run build:all
 
       - name: Setup Flatpak remotes and Electron base
         run: |
@@ -110,8 +110,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build web UI
-        run: npm run build:web
+      - name: Build renderer and web UI
+        run: npm run build:all
 
       - name: Build and publish Windows
         run: npm run build:win -- --publish always
@@ -135,8 +135,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build web UI
-        run: npm run build:web
+      - name: Build renderer and web UI
+        run: npm run build:all
 
       - name: Build and publish macOS
         run: npm run build:mac -- --publish always

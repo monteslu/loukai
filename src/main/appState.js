@@ -1,4 +1,11 @@
 import StateManager from '../shared/state/StateManager.js';
+import {
+  MIXER_DEFAULTS,
+  EFFECTS_DEFAULTS,
+  AUTOTUNE_DEFAULTS,
+  MICROPHONE_DEFAULTS,
+  AUDIO_DEVICE_DEFAULTS,
+} from '../shared/defaults.js';
 
 /**
  * AppState - Canonical application state model
@@ -12,6 +19,7 @@ import StateManager from '../shared/state/StateManager.js';
 class AppState extends StateManager {
   constructor() {
     // Initialize StateManager with app-specific initial state
+    // Uses imported defaults from shared/defaults.js
     super({
       // Playback state (updated frequently from renderer)
       playback: {
@@ -28,54 +36,22 @@ class AppState extends StateManager {
       // Queue
       queue: [],
 
-      // Mixer state (synced from renderer)
+      // Mixer state (synced from renderer) - uses MIXER_DEFAULTS
       mixer: {
-        PA: {
-          gain: 0, // dB
-          muted: false,
-        },
-        IEM: {
-          gain: 0, // dB
-          muted: false,
-          mono: true, // Always mono for single-ear monitoring
-        },
-        mic: {
-          gain: 0, // dB
-          muted: false,
-        },
+        ...MIXER_DEFAULTS,
         stems: [], // For reference only: [{ id, name, gain, index }]
       },
 
-      // Effects state (synced from renderer)
-      effects: {
-        current: null,
-        disabled: [],
-        enableWaveforms: true,
-        enableEffects: true,
-        randomEffectOnSong: false,
-        overlayOpacity: 0.7,
-        showUpcomingLyrics: true,
-      },
+      // Effects state (synced from renderer) - uses EFFECTS_DEFAULTS
+      effects: { ...EFFECTS_DEFAULTS },
 
       // User preferences (broadcasted to all clients)
       preferences: {
-        autoTune: {
-          enabled: false,
-          strength: 50,
-          speed: 20,
-        },
-        microphone: {
-          enabled: false,
-          gain: 1.0,
-          toSpeakers: true,
-        },
+        autoTune: { ...AUTOTUNE_DEFAULTS },
+        microphone: { ...MICROPHONE_DEFAULTS },
         iemMonoVocals: true,
         audio: {
-          devices: {
-            PA: { id: 'default', name: 'Default Output' },
-            IEM: { id: 'default', name: 'Default Output' },
-            input: { id: 'default', name: 'Default Input' },
-          },
+          devices: { ...AUDIO_DEVICE_DEFAULTS },
         },
       },
     });

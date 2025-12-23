@@ -165,13 +165,8 @@ export async function loadKAISong(app, songData, metadata) {
     app.player.onSongLoaded(fullMetadata);
 
     // Load and apply waveform preferences from settings for KAI
-    const waveformPrefs = await window.kaiAPI.settings.get('waveformPreferences', {
-      enableWaveforms: true,
-      enableEffects: true,
-      randomEffectOnSong: false,
-      showUpcomingLyrics: true,
-      overlayOpacity: 0.7,
-    });
+    // Defaults are now provided by settingsManager from shared/defaults.js
+    const waveformPrefs = await window.kaiAPI.settings.get('waveformPreferences');
 
     // Apply preferences to karaokeRenderer
     if (app.player.karaokeRenderer) {
@@ -281,13 +276,8 @@ export async function loadM4ASong(app, songData, metadata) {
     app.player.onSongLoaded(fullMetadata);
 
     // Load and apply waveform preferences from settings
-    const waveformPrefs = await window.kaiAPI.settings.get('waveformPreferences', {
-      enableWaveforms: true,
-      enableEffects: true,
-      randomEffectOnSong: false,
-      showUpcomingLyrics: true,
-      overlayOpacity: 0.7,
-    });
+    // Defaults are now provided by settingsManager from shared/defaults.js
+    const waveformPrefs = await window.kaiAPI.settings.get('waveformPreferences');
 
     // Apply preferences to karaokeRenderer
     if (app.player.karaokeRenderer) {

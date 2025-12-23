@@ -5,10 +5,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { SongInfoBar } from '../../shared/components/SongInfoBar.jsx';
+import { UI_DEFAULTS } from '../../shared/defaults.js';
 
 export function SongInfoBarWrapper({ bridge }) {
   const [currentSong, setCurrentSong] = useState(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(UI_DEFAULTS.sidebarCollapsed);
 
   useEffect(() => {
     if (!bridge) return;
@@ -30,7 +31,7 @@ export function SongInfoBarWrapper({ bridge }) {
 
     // Load sidebar state
     bridge.api?.settings
-      .get('sidebarCollapsed', false)
+      .get('sidebarCollapsed', UI_DEFAULTS.sidebarCollapsed)
       .then((collapsed) => {
         setSidebarCollapsed(collapsed);
         // Apply initial state to sidebar

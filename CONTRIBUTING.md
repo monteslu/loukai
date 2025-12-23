@@ -56,14 +56,14 @@ Before you begin, ensure you have:
 2. **Clone Your Fork**
 
    ```bash
-   git clone https://github.com/YOUR_USERNAME/kai-player.git
-   cd kai-player
+   git clone https://github.com/YOUR_USERNAME/loukai.git
+   cd loukai
    ```
 
 3. **Add Upstream Remote**
 
    ```bash
-   git remote add upstream https://github.com/ORIGINAL_OWNER/kai-player.git
+   git remote add upstream https://github.com/monteslu/loukai.git
    ```
 
 4. **Install Dependencies**
@@ -545,43 +545,42 @@ Describe tests you ran
 ## Project Structure
 
 ```
-kai-player/
+loukai/
 ├── src/
 │   ├── main/              # Electron main process
-│   │   ├── main.js        # Application entry point
-│   │   ├── appState.js    # Centralized state management
-│   │   ├── audioEngine.js # Audio processing engine
-│   │   ├── webServer.js   # Express server + Socket.IO
-│   │   └── handlers/      # IPC request handlers
-│   │
-│   ├── renderer/          # Electron renderer (desktop UI)
+│   │   ├── main.js        # Entry point
+│   │   ├── appState.js    # Centralized state
+│   │   ├── audioEngine.js # Audio processing
+│   │   ├── webServer.js   # Express + Socket.IO
+│   │   ├── creator/       # Karaoke file creation
+│   │   │   └── stemBuilder.js
+│   │   └── handlers/      # IPC handlers
+│   │       └── autotuneHandlers.js
+│   ├── renderer/          # Electron renderer (React)
 │   │   ├── components/    # React components
 │   │   ├── hooks/         # Custom React hooks
-│   │   ├── adapters/      # ElectronBridge
+│   │   ├── js/            # Audio engine (vanilla JS)
+│   │   │   ├── autoTuneWorklet.js
+│   │   │   └── playerController.js
 │   │   └── vite.config.js
-│   │
 │   ├── web/               # Web admin interface
-│   │   ├── App.jsx        # Web app entry
+│   │   ├── App.jsx        # Web admin root
 │   │   ├── components/    # Web-specific components
-│   │   ├── adapters/      # WebBridge (REST + Socket.IO)
 │   │   └── vite.config.js
-│   │
 │   ├── shared/            # Shared code (renderer + web)
 │   │   ├── components/    # Reusable React components
-│   │   ├── services/      # Business logic (pure functions)
-│   │   ├── utils/         # Utility functions
-│   │   └── constants.js   # Shared constants
-│   │
+│   │   ├── services/      # Business logic
+│   │   └── utils/         # Utility functions
+│   ├── utils/             # Node.js utilities
+│   │   └── m4aLoader.js   # M4A file parsing
 │   ├── native/            # Native modules
-│   │   └── autotune.js    # Pitch correction
-│   │
-│   └── test/              # Test configuration
-│       └── setup.js       # Vitest global setup
-│
-├── static/                # Static assets (images, icons)
+│   │   └── autotune.js    # Auto-tune utilities
+│   └── test/              # Test setup
+│       └── setup.js       # Vitest config
+├── static/                # Static assets
 ├── docs/                  # Documentation
-├── coverage/              # Test coverage reports (generated)
-└── dist/                  # Build output (generated)
+├── coverage/              # Test coverage reports
+└── dist/                  # Build output
 ```
 
 ### Key Directories
@@ -589,8 +588,9 @@ kai-player/
 - **`src/shared/services/`** - Pure business logic functions
 - **`src/shared/components/`** - Reusable React components
 - **`src/main/handlers/`** - IPC handlers (one per domain)
-- **`src/renderer/components/`** - Desktop-specific components
-- **`src/web/components/`** - Web admin-specific components
+- **`src/main/creator/`** - Karaoke file creation (stem separation, lyrics)
+- **`src/renderer/js/`** - Audio engine, auto-tune, pitch detection
+- **`src/utils/`** - M4A file parsing and utilities
 
 ---
 
@@ -599,9 +599,9 @@ kai-player/
 ### Documentation
 
 - [README.md](./README.md) - Project overview
-- [PHASE2-SUMMARY.md](./PHASE2-SUMMARY.md) - Testing guide
-- [MODERNIZATION-PLAN.md](./MODERNIZATION-PLAN.md) - Development roadmap
-- [KAI-Play-Spec-v1.0.md](./docs/KAI-Play-Spec-v1.0.md) - Player specification
+- [docs/m4a_format.md](./docs/m4a_format.md) - M4A Stems karaoke format specification
+- [docs/architecture.md](./docs/architecture.md) - System architecture and design
+- [docs/PHASE2-SUMMARY.md](./docs/PHASE2-SUMMARY.md) - Testing infrastructure guide
 
 ### External Resources
 
@@ -613,8 +613,8 @@ kai-player/
 
 ### Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/kai-player/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/kai-player/discussions)
+- **Issues**: [GitHub Issues](https://github.com/monteslu/loukai/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/monteslu/loukai/discussions)
 
 ---
 

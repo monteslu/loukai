@@ -8,6 +8,7 @@
  */
 
 import { BridgeInterface } from '../../shared/adapters/BridgeInterface.js';
+import { WAVEFORM_DEFAULTS, AUTOTUNE_DEFAULTS } from '../../shared/defaults.js';
 
 let _instance = null;
 
@@ -419,13 +420,7 @@ export class ElectronBridge extends BridgeInterface {
   }
 
   async getWaveformPreferences() {
-    return await this.api.settings.get('waveformPreferences', {
-      enableWaveforms: true,
-      enableEffects: true,
-      randomEffectOnSong: false,
-      showUpcomingLyrics: true,
-      overlayOpacity: 0.7,
-    });
+    return await this.api.settings.get('waveformPreferences', WAVEFORM_DEFAULTS);
   }
 
   async saveWaveformPreferences(prefs) {
@@ -447,11 +442,7 @@ export class ElectronBridge extends BridgeInterface {
   }
 
   async getAutotunePreferences() {
-    return await this.api.settings.get('autoTunePreferences', {
-      enabled: false,
-      strength: 50,
-      speed: 20,
-    });
+    return await this.api.settings.get('autoTunePreferences', AUTOTUNE_DEFAULTS);
   }
 
   async saveAutotunePreferences(prefs) {

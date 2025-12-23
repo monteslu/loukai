@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import path from 'path';
 import fs from 'fs/promises';
+import { ALL_DEFAULTS, mergeWithDefaults } from '../shared/defaults.js';
 
 class SettingsManager {
   constructor() {
@@ -25,14 +26,20 @@ class SettingsManager {
         await this.save();
       } catch {
         // Backup also failed or doesn't exist, use defaults
-        this.settings = {
-          songsFolder: null,
-          lastOpenedFile: null,
-          windowBounds: null,
-        };
+        this.settings = { ...ALL_DEFAULTS };
       }
     }
     return this.settings;
+  }
+
+  /**
+   * Get all settings merged with defaults
+   */
+  getAll() {
+    if (!this.settings) {
+      return { ...ALL_DEFAULTS };
+    }
+    return mergeWithDefaults(this.settings);
   }
 
   async save() {
@@ -68,12 +75,27 @@ class SettingsManager {
     }
   }
 
-  get(key, defaultValue = null) {
+  get(key, defaultValue = undefined) {
     if (!this.settings) {
       throw new Error('Settings not loaded. Call load() first.');
     }
-    const value = this.settings[key] !== undefined ? this.settings[key] : defaultValue;
-    return value;
+
+    // Check if key exists in saved settings
+    if (this.settings[key] !== undefined) {
+      return this.settings[key];
+    }
+
+    // Fall back to provided default, then ALL_DEFAULTS
+    if (defaultValue !== undefined) {
+      return defaultValue;
+    }
+
+    // Check ALL_DEFAULTS for this key
+    if (key in ALL_DEFAULTS) {
+      return ALL_DEFAULTS[key];
+    }
+
+    return null;
   }
 
   set(key, value) {

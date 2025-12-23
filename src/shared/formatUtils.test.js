@@ -7,10 +7,6 @@ import { getFormatIcon, formatDuration, formatTime, formatFileSize } from './for
 
 describe('formatUtils', () => {
   describe('getFormatIcon', () => {
-    it('should return package icon for kai format', () => {
-      expect(getFormatIcon('kai')).toBe('📦');
-    });
-
     it('should return lightning icon for m4a-stems format', () => {
       expect(getFormatIcon('m4a-stems')).toBe('⚡');
     });
@@ -182,7 +178,7 @@ describe('formatUtils', () => {
 
     it('should format typical audio file sizes', () => {
       expect(formatFileSize(3145728)).toBe('3 MB'); // ~3 MB MP3
-      expect(formatFileSize(10485760)).toBe('10 MB'); // ~10 MB KAI file
+      expect(formatFileSize(10485760)).toBe('10 MB'); // ~10 MB M4A file
       expect(formatFileSize(52428800)).toBe('50 MB'); // ~50 MB high quality
     });
   });
@@ -192,12 +188,12 @@ describe('formatUtils', () => {
       const duration = formatDuration(225); // 3:45
       const position = formatTime(125.5); // 2:05.5
       const size = formatFileSize(5242880); // 5 MB
-      const icon = getFormatIcon('kai');
+      const icon = getFormatIcon('m4a-stems');
 
       expect(duration).toBe('3:45');
       expect(position).toBe('2:05.5');
       expect(size).toBe('5 MB');
-      expect(icon).toBe('📦');
+      expect(icon).toBe('⚡');
     });
 
     it('should handle edge cases consistently', () => {

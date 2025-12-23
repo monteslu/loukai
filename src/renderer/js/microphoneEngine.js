@@ -578,15 +578,16 @@ export class MicrophoneEngine {
   }
 
   /**
-   * Load vocals F0 data for pitch reference
-   * @param {Object} features - Song features containing vocals_f0
+   * Legacy method - stored pitch data is no longer used
+   * Pitch detection is now done in real-time from the vocal stem
+   * @deprecated
    */
-  loadVocalsF0(features) {
-    this.referencePitchTracker.loadVocalsF0(features);
+  loadVocalsF0() {
+    // No-op - pitch detection is now done at runtime
   }
 
   /**
-   * Clear pitch reference data
+   * Clear pitch reference data (resets real-time tracking state)
    */
   clearPitchReference() {
     this.referencePitchTracker.clear();

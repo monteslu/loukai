@@ -29,6 +29,7 @@ export class KAIPlayer extends PlayerInterface {
         gainNodes: new Map(),
         masterGain: null,
         analyser: null, // For butterchurn visualization
+        vocalsPAGain: null, // For backup:PA feature - vocals to PA routing
       },
       IEM: {
         sourceNodes: new Map(),
@@ -36,6 +37,9 @@ export class KAIPlayer extends PlayerInterface {
         masterGain: null,
       },
     };
+
+    // Track whether vocals should play through PA (for backup:PA lines)
+    this.vocalsPAEnabled = false;
 
     this.startTime = 0;
     this.pauseTime = 0;
@@ -53,12 +57,12 @@ export class KAIPlayer extends PlayerInterface {
       },
       IEM: {
         gain: 0, // dB
-        muted: false,
+        muted: true, // Default muted - user must explicitly enable IEM monitoring
         mono: true, // Always mono for single-ear monitoring
       },
       mic: {
         gain: 0, // dB
-        muted: false,
+        muted: true, // Default muted - user must explicitly enable mic
       },
       // Per-song data (for internal use)
       stems: [],
@@ -72,23 +76,16 @@ export class KAIPlayer extends PlayerInterface {
 
   async initialize() {
     try {
-      // Load saved device preferences first
-      await this.loadDevicePreferences();
+      // Get available devices first for label-based matching
+      const availableDevices = await this.getAvailableOutputDevices();
 
-      // console.log('🎧 KAIPlayer initializing with devices:', {
-      //   PA: this.outputDevices.PA,
-      //   IEM: this.outputDevices.IEM,
-      //   input: this.inputDevice,
-      //   sinkIdSupported: 'sinkId' in AudioContext.prototype,
-      // });
+      // Load and resolve device preferences (matches by label, falls back to ID)
+      await this.loadDevicePreferences(availableDevices);
 
-      // Initialize PA audio context with saved device
+      // Initialize PA audio context with resolved device
       const paContextOptions = {};
       if (this.outputDevices.PA !== 'default' && 'sinkId' in AudioContext.prototype) {
         paContextOptions.sinkId = this.outputDevices.PA;
-        // console.log('🎧 PA AudioContext using sinkId:', this.outputDevices.PA);
-      } else {
-        // console.log('🎧 PA AudioContext using default device');
       }
       this.audioContexts.PA = new (window.AudioContext || window.webkitAudioContext)(
         paContextOptions
@@ -104,13 +101,15 @@ export class KAIPlayer extends PlayerInterface {
       this.outputNodes.PA.analyser.fftSize = 2048;
       this.outputNodes.PA.analyser.smoothingTimeConstant = 0.8;
 
-      // Initialize IEM audio context with saved device
+      // Create vocalsPAGain node for backup:PA feature (vocals to PA routing, muted by default)
+      this.outputNodes.PA.vocalsPAGain = this.audioContexts.PA.createGain();
+      this.outputNodes.PA.vocalsPAGain.gain.value = 0; // Muted by default
+      this.outputNodes.PA.vocalsPAGain.connect(this.outputNodes.PA.masterGain);
+
+      // Initialize IEM audio context with validated device
       const iemContextOptions = {};
       if (this.outputDevices.IEM !== 'default' && 'sinkId' in AudioContext.prototype) {
         iemContextOptions.sinkId = this.outputDevices.IEM;
-        // console.log('🎧 IEM AudioContext using sinkId:', this.outputDevices.IEM);
-      } else {
-        // console.log('🎧 IEM AudioContext using default device');
       }
       this.audioContexts.IEM = new (window.AudioContext || window.webkitAudioContext)(
         iemContextOptions
@@ -145,25 +144,78 @@ export class KAIPlayer extends PlayerInterface {
 
       return true;
     } catch (error) {
-      console.error('Failed to initialize dual audio contexts:', error);
+      console.warn('⚠️ Audio initialization issue:', error.message);
       return false;
     }
   }
 
-  async loadDevicePreferences() {
+  /**
+   * Find a device by matching label first, then ID as fallback
+   * @param {MediaDeviceInfo[]} availableDevices - List of available devices
+   * @param {Object} savedPref - Saved preference with id and name properties
+   * @param {string} busType - Bus type for logging (PA, IEM, input)
+   * @returns {string} Resolved device ID or 'default'
+   */
+  resolveDeviceByLabel(availableDevices, savedPref, busType) {
+    if (!savedPref || (!savedPref.id && !savedPref.name)) {
+      return 'default';
+    }
+
+    // Skip if explicitly set to default
+    if (savedPref.deviceKind === 'default' || savedPref.id === '') {
+      return 'default';
+    }
+
+    // Try to match by label/name first (most reliable across reconnections)
+    if (savedPref.name) {
+      const byLabel = availableDevices.find((d) => d.label === savedPref.name);
+      if (byLabel) {
+        if (byLabel.deviceId !== savedPref.id) {
+          console.log(`🎧 ${busType}: Matched "${savedPref.name}" by label (ID changed)`);
+        }
+        return byLabel.deviceId;
+      }
+    }
+
+    // Fall back to ID match
+    if (savedPref.id) {
+      const byId = availableDevices.find((d) => d.deviceId === savedPref.id);
+      if (byId) {
+        return byId.deviceId;
+      }
+    }
+
+    // Device not found - use default
+    console.warn(
+      `🎧 ${busType}: Saved device "${savedPref.name || savedPref.id}" not found, using default`
+    );
+    return 'default';
+  }
+
+  async loadDevicePreferences(availableOutputDevices = []) {
     try {
       // Load device preferences from settingsAPI
       if (window.kaiAPI.settings) {
         const devicePrefs = await window.kaiAPI.settings.get('devicePreferences', null);
 
-        if (devicePrefs?.PA?.id) {
-          this.outputDevices.PA = devicePrefs.PA.id;
+        if (devicePrefs?.PA) {
+          this.outputDevices.PA = this.resolveDeviceByLabel(
+            availableOutputDevices,
+            devicePrefs.PA,
+            'PA'
+          );
         }
-        if (devicePrefs?.IEM?.id) {
-          this.outputDevices.IEM = devicePrefs.IEM.id;
+        if (devicePrefs?.IEM) {
+          this.outputDevices.IEM = this.resolveDeviceByLabel(
+            availableOutputDevices,
+            devicePrefs.IEM,
+            'IEM'
+          );
         }
-        if (devicePrefs?.input?.id) {
-          this.inputDevice = devicePrefs.input.id;
+        if (devicePrefs?.input) {
+          // For input devices, get input device list
+          const inputDevices = await this.getAvailableInputDevices();
+          this.inputDevice = this.resolveDeviceByLabel(inputDevices, devicePrefs.input, 'input');
         }
       }
 
@@ -194,7 +246,35 @@ export class KAIPlayer extends PlayerInterface {
         }
       }
     } catch (error) {
-      console.error('Failed to load device preferences:', error);
+      console.warn('Failed to load device preferences:', error.message);
+    }
+  }
+
+  /**
+   * Get list of available audio output devices
+   * @returns {Promise<MediaDeviceInfo[]>}
+   */
+  async getAvailableOutputDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return devices.filter((d) => d.kind === 'audiooutput');
+    } catch (error) {
+      console.warn('Failed to enumerate output devices:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Get list of available audio input devices
+   * @returns {Promise<MediaDeviceInfo[]>}
+   */
+  async getAvailableInputDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return devices.filter((d) => d.kind === 'audioinput');
+    } catch (error) {
+      console.warn('Failed to enumerate input devices:', error.message);
+      return [];
     }
   }
 
@@ -206,12 +286,14 @@ export class KAIPlayer extends PlayerInterface {
       }
 
       const wasPlaying = this.isPlaying;
-      const currentPos = this.currentPosition;
 
-      // Stop current playback if running
+      // Stop current playback if running (pause() will update currentPosition to actual position)
       if (wasPlaying) {
         this.pause();
       }
+
+      // Capture position AFTER pause, which has the accurate current position
+      const currentPos = this.currentPosition;
 
       // Store the device preference
       this.outputDevices[busType] = deviceId;
@@ -235,11 +317,24 @@ export class KAIPlayer extends PlayerInterface {
       this.outputNodes[busType].masterGain = this.audioContexts[busType].createGain();
       this.outputNodes[busType].masterGain.connect(this.audioContexts[busType].destination);
 
+      // Reapply saved gain (considering mute state)
+      const savedGain = this.mixerState[busType].muted
+        ? 0
+        : this.dbToLinear(this.mixerState[busType].gain);
+      this.outputNodes[busType].masterGain.gain.value = savedGain;
+
       // Create analyser for PA (for butterchurn visualization)
       if (busType === 'PA') {
         this.outputNodes.PA.analyser = this.audioContexts.PA.createAnalyser();
         this.outputNodes.PA.analyser.fftSize = 2048;
         this.outputNodes.PA.analyser.smoothingTimeConstant = 0.8;
+
+        // Recreate vocalsPAGain node for backup:PA feature
+        this.outputNodes.PA.vocalsPAGain = this.audioContexts.PA.createGain();
+        this.outputNodes.PA.vocalsPAGain.gain.value = this.vocalsPAEnabled
+          ? this.dbToLinear(this.mixerState.IEM.gain)
+          : 0;
+        this.outputNodes.PA.vocalsPAGain.connect(this.outputNodes.PA.masterGain);
       }
 
       // Clear old audio nodes
@@ -308,13 +403,10 @@ export class KAIPlayer extends PlayerInterface {
 
     await this.loadAudioBuffers(songData);
 
-    // Load vocals_f0 data for auto-tune (if available)
+    // Clear any previous pitch reference data
+    // Note: Pitch detection is now done in real-time from the vocal stem
     if (this.micEngine) {
-      if (songData.features) {
-        this.micEngine.loadVocalsF0(songData.features);
-      } else {
-        this.micEngine.clearPitchReference();
-      }
+      this.micEngine.clearPitchReference();
     }
 
     // Report song loaded to main process
@@ -603,13 +695,30 @@ export class KAIPlayer extends PlayerInterface {
           const isVocals = this.isVocalStem(stem.name);
 
           // Proper karaoke routing: vocals to IEM only, music/backing tracks to PA only
+          // Exception: backup:PA feature routes vocals to PA when enabled
           if (isVocals) {
-            // Vocals go to IEM only (singer's ears)
+            // Vocals go to IEM (singer's ears)
             const iemSource = this.audioContexts.IEM.createBufferSource();
             iemSource.buffer = audioBuffer;
             iemSource.connect(iemGainNode);
             iemSource.start(scheduleTime, offset);
             this.outputNodes.IEM.sourceNodes.set(stem.name, iemSource);
+
+            // Also create PA source for backup:PA feature (muted by default via vocalsPAGain)
+            if (this.outputNodes.PA.vocalsPAGain) {
+              const paSource = this.audioContexts.PA.createBufferSource();
+              paSource.buffer = audioBuffer; // Reuse the same decoded buffer
+              paSource.connect(this.outputNodes.PA.vocalsPAGain);
+
+              // Connect vocals to pitch detection for auto-tune reference
+              // This enables real-time pitch tracking from the vocal stem
+              if (this.micEngine) {
+                this.micEngine.connectMusicSource(paSource);
+              }
+
+              paSource.start(scheduleTime, offset);
+              this.outputNodes.PA.sourceNodes.set(stem.name + '_vocalsPA', paSource);
+            }
           } else {
             // Backing tracks go to PA only (audience)
             const paSource = this.audioContexts.PA.createBufferSource();
@@ -786,6 +895,31 @@ export class KAIPlayer extends PlayerInterface {
 
     // Don't report back to main - this was initiated by main/admin
     return true;
+  }
+
+  /**
+   * Enable/disable vocals routing to PA (for backup:PA feature)
+   * When a lyric line has singer="backup:PA", the original vocals should play through PA
+   * @param {boolean} enabled - Whether to route vocals to PA
+   * @param {number} fadeTime - Fade duration in seconds (default 50ms to avoid clicks)
+   */
+  setVocalsPAEnabled(enabled, fadeTime = 0.05) {
+    if (!this.outputNodes.PA.vocalsPAGain || !this.audioContexts.PA) return;
+
+    // Avoid redundant changes
+    if (this.vocalsPAEnabled === enabled) return;
+    this.vocalsPAEnabled = enabled;
+
+    // Use IEM gain as reference for vocals volume (since that's where vocals normally go)
+    const targetGain = enabled ? this.dbToLinear(this.mixerState.IEM.gain) : 0;
+
+    // Smooth fade to avoid clicks/pops
+    const currentTime = this.audioContexts.PA.currentTime;
+    this.outputNodes.PA.vocalsPAGain.gain.cancelScheduledValues(currentTime);
+    this.outputNodes.PA.vocalsPAGain.gain.linearRampToValueAtTime(
+      targetGain,
+      currentTime + fadeTime
+    );
   }
 
   // Preset system removed - routing is now automatic with master faders

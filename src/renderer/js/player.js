@@ -9,6 +9,15 @@ export class PlayerController {
     // Initialize karaoke renderer for KAI format lyrics
     this.karaokeRenderer = new KaraokeRenderer('karaokeCanvas');
 
+    // Set up singer change callback for backup:PA feature
+    // When a line with singer="backup:PA" becomes active, route vocals to PA
+    this.karaokeRenderer.onSingerChange = (singer) => {
+      if (this.kaiPlayer) {
+        const shouldEnableVocalsPA = singer === 'backup:PA';
+        this.kaiPlayer.setVocalsPAEnabled(shouldEnableVocalsPA);
+      }
+    };
+
     // Initialize CDG player for CDG format (audio + graphics)
     this.cdgPlayer = new CDGPlayer('karaokeCanvas');
 

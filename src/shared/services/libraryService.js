@@ -322,18 +322,15 @@ export async function getSongInfo(mainApp, filePath) {
     // Not in cache, extract metadata directly
     const lowerPath = filePath.toLowerCase();
     const format =
-      lowerPath.endsWith('.stem.m4a') || lowerPath.endsWith('.m4a')
-        ? 'm4a'
-        : lowerPath.endsWith('.kai')
-          ? 'kai'
-          : lowerPath.endsWith('.kar') || lowerPath.endsWith('.zip')
-            ? 'cdg-archive'
-            : 'cdg-pair';
+      lowerPath.endsWith('.stem.m4a') || lowerPath.endsWith('.m4a') || lowerPath.endsWith('.mp4')
+        ? 'm4a-stems'
+        : lowerPath.endsWith('.kar') || lowerPath.endsWith('.zip')
+          ? 'cdg-archive'
+          : 'cdg-pair';
 
     let metadata;
-    if (format === 'm4a' || format === 'kai') {
-      // Both M4A and KAI use the same metadata extraction
-      metadata = await mainApp.extractKaiMetadata?.(filePath);
+    if (format === 'm4a-stems') {
+      metadata = await mainApp.extractM4AMetadata?.(filePath);
     } else if (format === 'cdg-archive') {
       metadata = await mainApp.extractCDGArchiveMetadata?.(filePath);
     } else {

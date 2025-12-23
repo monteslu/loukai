@@ -1,8 +1,8 @@
 {
   "name": "loukai",
-  "version": "0.1.35",
+  "version": "0.2.1",
   "type": "module",
-  "description": "Loukai - Real-time karaoke player with stem control and coaching",
+  "description": "Loukai Karaoke - Free and open source karaoke system for playing and creating stem-based karaoke files",
   "main": "src/main/main.js",
   "homepage": "./",
   "scripts": {
@@ -66,6 +66,8 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.1",
+    "@google/generative-ai": "^0.24.1",
     "@soundtouchjs/audio-worklet": "^0.2.1",
     "aubiojs": "^0.2.1",
     "bcryptjs": "^3.0.2",
@@ -77,21 +79,23 @@
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
     "fuse.js": "^7.1.0",
-    "m4a-stems": "^0.1.0",
+    "m4a-stems": "^0.2.0",
     "music-metadata": "^11.9.0",
     "node-id3": "^0.2.9",
+    "openai": "^6.10.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
+    "tar": "^7.5.2",
     "ws": "^8.13.0",
     "yauzl": "^3.0.0",
     "yazl": "^3.3.1"
   },
   "build": {
     "appId": "com.loukai.app",
-    "productName": "Loukai",
+    "productName": "Loukai Karaoke",
     "publish": {
       "provider": "github",
       "releaseType": "release"
@@ -130,8 +134,8 @@
       "category": "AudioVideo",
       "desktop": {
         "entry": {
-          "Name": "Loukai",
-          "Comment": "Real-time karaoke player with stem control and coaching",
+          "Name": "Loukai Karaoke",
+          "Comment": "Free and open source karaoke system for playing and creating stem-based karaoke files",
           "Categories": "AudioVideo;Audio;Player;"
         }
       },

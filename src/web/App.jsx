@@ -26,9 +26,10 @@ function LoginScreen({ onLogin, error }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-8 w-full max-w-md">
-        <h1 className="text-center mb-6 text-3xl font-semibold text-gray-900 dark:text-white">
-          Kai Player Admin
-        </h1>
+        <div className="flex items-center justify-center gap-3 mb-6">
+          <img src="/static/loukai-logo.png" alt="Loukai" className="w-12 h-12 rounded-lg" />
+          <h1 className="text-3xl font-semibold text-gray-900 dark:text-white">Loukai Admin</h1>
+        </div>
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label
@@ -380,7 +381,10 @@ export function App() {
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
       <header className="flex justify-between items-center px-6 py-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Kai Player Admin</h1>
+        <div className="flex items-center gap-3">
+          <img src="/static/loukai-logo.png" alt="Loukai" className="w-8 h-8 rounded-lg" />
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Loukai Admin</h1>
+        </div>
         <button className="btn btn-sm" onClick={handleLogout}>
           Logout
         </button>
@@ -452,7 +456,7 @@ export function App() {
           }`}
           onClick={() => setCurrentTab('editor')}
         >
-          ✏️ Editor
+          ✏️ Edit
         </button>
       </div>
 

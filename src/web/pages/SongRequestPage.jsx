@@ -253,7 +253,9 @@ export function SongRequestPage() {
     return (
       <div className="fixed top-0 left-0 w-full h-full bg-black/90 flex items-center justify-center z-[1000]">
         <div className="bg-white dark:bg-gray-800 rounded-xl p-8 max-w-md w-[90%] text-center border border-gray-300 dark:border-gray-600">
-          <div className="text-2xl mb-4 text-gray-900 dark:text-white">Welcome to Karaoke!</div>
+          <div className="text-3xl font-bold mb-6 text-gray-900 dark:text-white">
+            Loukai Karaoke
+          </div>
           <div className="text-gray-600 dark:text-gray-300 mb-8 leading-relaxed">
             Please enter your name to request songs
           </div>
@@ -544,6 +546,19 @@ export function SongRequestPage() {
             )}
           </ul>
         </div>
+
+        {/* Footer */}
+        <footer className="mt-8 py-6 text-center">
+          <a
+            href="https://loukai.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors text-sm"
+          >
+            <img src="/static/loukai-logo.png" alt="Loukai" className="w-6 h-6 rounded" />
+            <span>Powered by Loukai</span>
+          </a>
+        </footer>
       </div>
 
       {/* Request Modal */}

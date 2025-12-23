@@ -29,12 +29,7 @@ export function registerLibraryHandlers(mainApp) {
     }
 
     const folder = result.filePaths[0];
-    mainApp.settings.setSongsFolder(folder);
-
-    // Notify renderer that folder was set
-    if (mainApp.mainWindow) {
-      mainApp.mainWindow.webContents.send(LIBRARY_CHANNELS.FOLDER_SET, folder);
-    }
+    await mainApp.setSongsFolderAndScan(folder);
 
     return { success: true, folder };
   });

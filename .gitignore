@@ -5,6 +5,8 @@ node_modules/
 *.mp4
 *.DS_Store
 
+tasks.md
+
 # Build outputs
 dist/
 src/renderer/dist/

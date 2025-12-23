@@ -2,34 +2,28 @@
  * SettingsContext - Application settings/preferences
  *
  * Manages device preferences, waveform settings, autotune settings
+ * Uses unified defaults from shared/defaults.js
  */
 
 import { createContext, useContext, useState } from 'react';
+import { AUDIO_DEVICE_DEFAULTS, WAVEFORM_DEFAULTS, AUTOTUNE_DEFAULTS } from '../defaults.js';
 
 const SettingsContext = createContext(null);
 
 export function SettingsProvider({ children }) {
   const [devicePreferences, setDevicePreferences] = useState({
-    PA: null,
-    IEM: null,
-    input: null,
+    ...AUDIO_DEVICE_DEFAULTS,
   });
 
   const [waveformPreferences, setWaveformPreferences] = useState({
-    enableWaveforms: true,
+    ...WAVEFORM_DEFAULTS,
     micToSpeakers: true,
     enableMic: true,
-    enableEffects: true,
-    randomEffectOnSong: false,
     disabledEffects: [],
-    overlayOpacity: 0.7,
-    showUpcomingLyrics: true,
   });
 
   const [autoTunePreferences, setAutoTunePreferences] = useState({
-    enabled: false,
-    strength: 50,
-    speed: 20,
+    ...AUTOTUNE_DEFAULTS,
   });
 
   const value = {
