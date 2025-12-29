@@ -763,10 +763,15 @@ export function CreateTab({ bridge: _bridge }) {
           </div>
 
           <div className="flex gap-4 justify-center">
-            <button className={STYLES.btnPrimary} onClick={handleOpenInEditor}>
-              Open in Editor
-            </button>
-            <button className={STYLES.btnSecondary} onClick={handleCreateAnother}>
+            {outputToSongsFolder && (
+              <button className={STYLES.btnPrimary} onClick={handleOpenInEditor}>
+                Open in Editor
+              </button>
+            )}
+            <button
+              className={outputToSongsFolder ? STYLES.btnSecondary : STYLES.btnPrimary}
+              onClick={handleCreateAnother}
+            >
               Create Another
             </button>
           </div>

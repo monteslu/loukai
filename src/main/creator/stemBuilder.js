@@ -166,6 +166,11 @@ export async function buildStemM4a(options) {
   );
   await M4AAtoms.addNiStemsMetadata(outputPath, stemPartsOnly);
 
+  // Verify stem atom was written (debug)
+  const { stat } = await import('fs/promises');
+  const afterStemSize = (await stat(outputPath)).size;
+  console.log(`📊 File size after stem atom: ${afterStemSize} bytes`);
+
   // Now inject kara atom for karaoke data using m4a-stems library
   await injectKaraokeAtoms(outputPath, {
     lyrics,
@@ -268,6 +273,11 @@ async function injectKaraokeAtoms(filePath, data) {
   // Write kara atom using m4a-stems library
   console.log(`💾 Writing kara atom: ${lines.length} lines`);
   await M4AAtoms.writeKaraAtom(filePath, karaData);
+
+  // Verify final file size (debug)
+  const { stat } = await import('fs/promises');
+  const finalSize = (await stat(filePath)).size;
+  console.log(`📊 Final file size after kara atom: ${finalSize} bytes`);
 
   // Note: Vocal pitch tracking is done at runtime, not stored in file.
   // CREPE output is used only for key detection (stored in standard metadata).
