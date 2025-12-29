@@ -1,6 +1,6 @@
 {
   "name": "loukai",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "description": "Loukai Karaoke - Free and open source karaoke system for playing and creating stem-based karaoke files",
   "main": "src/main/main.js",
@@ -111,6 +111,9 @@
       "com.loukai.app.metainfo.xml",
       "!src/web/node_modules",
       "!src/web/src"
+    ],
+    "asarUnpack": [
+      "src/main/creator/python/**/*"
     ],
     "icon": "static/images/logo.png",
     "linux": {

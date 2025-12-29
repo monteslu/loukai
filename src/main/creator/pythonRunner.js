@@ -18,8 +18,13 @@ import { getPythonPath, getPythonEnv } from './systemChecker.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Path to Python scripts
-const PYTHON_SCRIPTS_DIR = join(__dirname, 'python');
+// Path to Python scripts - handle unpacked asar for packaged apps
+let PYTHON_SCRIPTS_DIR = join(__dirname, 'python');
+
+// When running from asar, scripts are in app.asar.unpacked instead
+if (PYTHON_SCRIPTS_DIR.includes('app.asar')) {
+  PYTHON_SCRIPTS_DIR = PYTHON_SCRIPTS_DIR.replace('app.asar', 'app.asar.unpacked');
+}
 
 /**
  * Run a Python script with JSON arguments
