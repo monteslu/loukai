@@ -222,8 +222,7 @@ class KaiPlayerApp {
     const rendererPath = path.join(__dirname, '../renderer/index.html');
     this.mainWindow.loadFile(rendererPath);
 
-    // Open DevTools to debug renderer issues
-    this.mainWindow.webContents.openDevTools();
+    // DevTools: Use Ctrl+Shift+I (or Cmd+Option+I on Mac) to open manually
 
     // Log all console messages from renderer
     this.mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
@@ -1886,7 +1885,7 @@ class KaiPlayerApp {
    * Set songs folder and trigger auto-scan
    * Called by promptForSongsFolder and libraryHandlers
    */
-  async setSongsFolderAndScan(folder) {
+  setSongsFolderAndScan(folder) {
     this.settings.setSongsFolder(folder);
     console.log('📁 Songs folder set to:', folder);
 

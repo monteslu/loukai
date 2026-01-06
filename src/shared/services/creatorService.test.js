@@ -34,8 +34,8 @@ vi.mock('../../main/creator/conversionService.js', () => ({
 describe('creatorService', () => {
   let creatorService;
   let checkAllComponents;
-  let getCacheDir;
-  let getPythonPath;
+  let _getCacheDir;
+  let _getPythonPath;
   let installAllComponents;
   let searchLyrics;
   let prepareWhisperContext;
@@ -52,8 +52,8 @@ describe('creatorService', () => {
     // Re-import mocks and service fresh
     const systemChecker = await import('../../main/creator/systemChecker.js');
     checkAllComponents = systemChecker.checkAllComponents;
-    getCacheDir = systemChecker.getCacheDir;
-    getPythonPath = systemChecker.getPythonPath;
+    _getCacheDir = systemChecker.getCacheDir;
+    _getPythonPath = systemChecker.getPythonPath;
 
     const downloadManager = await import('../../main/creator/downloadManager.js');
     installAllComponents = downloadManager.installAllComponents;
@@ -128,7 +128,7 @@ describe('creatorService', () => {
 
   describe('installComponents', () => {
     it('should install components successfully', async () => {
-      installAllComponents.mockImplementation(async (progressCallback) => {
+      installAllComponents.mockImplementation((progressCallback) => {
         progressCallback(50, 'Installing...');
         progressCallback(100, 'Done');
         return { success: true };
@@ -323,7 +323,7 @@ describe('creatorService', () => {
 
   describe('startConversion', () => {
     it('should start conversion successfully', async () => {
-      runConversion.mockImplementation(async (options, progressCb) => {
+      runConversion.mockImplementation((options, progressCb) => {
         progressCb('processing', 'Processing...', 50);
         return { success: true, outputPath: '/output/file.m4a' };
       });

@@ -1922,17 +1922,6 @@ export class KaraokeRenderer {
     // Use interpolated time for precise 60fps lyric timing
     const now = this.getInterpolatedTime();
 
-    // First pass: Check if there are any active main singers (BEFORE filtering transitions)
-    // This prevents upcoming lyrics from showing when a main singer just became active
-    let hasActiveMainSinger = false;
-    for (let i = 0; i < this.lyrics.length; i++) {
-      const line = this.lyrics[i];
-      if (!line.isDisabled && !line.isBackup && now >= line.startTime && now <= line.endTime) {
-        hasActiveMainSinger = true;
-        break;
-      }
-    }
-
     for (let i = 0; i < this.lyrics.length; i++) {
       const line = this.lyrics[i];
 

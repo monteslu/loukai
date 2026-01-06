@@ -15,7 +15,6 @@
  * Vocal pitch tracking for auto-tune/scoring is done at runtime.
  */
 
-import { readFileSync, writeFileSync } from 'fs';
 import { spawn } from 'child_process';
 import { getFFmpegPath } from './systemChecker.js';
 import { Atoms as M4AAtoms } from 'm4a-stems';
@@ -189,7 +188,7 @@ export async function buildStemM4a(options) {
  * @param {Object} data - Karaoke data to embed
  */
 async function injectKaraokeAtoms(filePath, data) {
-  const { lyrics, pitch, metadata, stems, llmCorrections, tags } = data;
+  const { lyrics, llmCorrections, tags } = data;
 
   // Convert lyrics segments to lines format expected by kara atom
   // Include word-level timing if available from Whisper

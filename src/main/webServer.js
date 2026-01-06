@@ -1407,7 +1407,7 @@ class WebServer {
     });
 
     // ===== NEW: Preferences Control Endpoints =====
-    this.app.get('/admin/preferences', async (req, res) => {
+    this.app.get('/admin/preferences', (req, res) => {
       try {
         const result = preferencesService.getPreferences(this.mainApp.appState);
         if (result.success) {

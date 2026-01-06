@@ -107,7 +107,7 @@ export function checkPython() {
 /**
  * Check if a Python package is installed by trying to import it
  */
-async function checkPythonPackage(packageName, versionAttr = '__version__') {
+function checkPythonPackage(packageName, versionAttr = '__version__') {
   const pythonPath = getPythonPath();
 
   if (!existsSync(pythonPath)) {
@@ -159,7 +159,7 @@ except ImportError as e:
 /**
  * Check PyTorch and detect GPU availability
  */
-export async function checkPyTorch() {
+export function checkPyTorch() {
   const pythonPath = getPythonPath();
 
   if (!existsSync(pythonPath)) {
@@ -217,28 +217,28 @@ except ImportError as e:
 /**
  * Check Demucs
  */
-export async function checkDemucs() {
+export function checkDemucs() {
   return checkPythonPackage('demucs', '__version__');
 }
 
 /**
  * Check Whisper
  */
-export async function checkWhisper() {
+export function checkWhisper() {
   return checkPythonPackage('whisper', '__version__');
 }
 
 /**
  * Check CREPE (torchcrepe)
  */
-export async function checkCrepe() {
+export function checkCrepe() {
   return checkPythonPackage('torchcrepe', '__version__');
 }
 
 /**
  * Check SoundFile (audio backend for torchaudio)
  */
-export async function checkSoundFile() {
+export function checkSoundFile() {
   return checkPythonPackage('soundfile', '__version__');
 }
 

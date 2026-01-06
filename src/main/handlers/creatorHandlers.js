@@ -16,7 +16,7 @@ import * as llmService from '../creator/llmService.js';
  */
 export function registerCreatorHandlers(mainApp) {
   // Check all components
-  ipcMain.handle(CREATOR_CHANNELS.CHECK_COMPONENTS, async () => {
+  ipcMain.handle(CREATOR_CHANNELS.CHECK_COMPONENTS, () => {
     return creatorService.checkComponents();
   });
 
@@ -46,14 +46,14 @@ export function registerCreatorHandlers(mainApp) {
   });
 
   // Search lyrics from LRCLIB
-  ipcMain.handle(CREATOR_CHANNELS.SEARCH_LYRICS, async (_event, title, artist) => {
+  ipcMain.handle(CREATOR_CHANNELS.SEARCH_LYRICS, (_event, title, artist) => {
     return creatorService.findLyrics(title, artist);
   });
 
   // Prepare Whisper context with vocabulary hints
   ipcMain.handle(
     CREATOR_CHANNELS.PREPARE_WHISPER_CONTEXT,
-    async (_event, title, artist, existingLyrics) => {
+    (_event, title, artist, existingLyrics) => {
       return creatorService.getWhisperContext(title, artist, existingLyrics);
     }
   );
@@ -145,13 +145,13 @@ export function registerCreatorHandlers(mainApp) {
   });
 
   // Save LLM settings
-  ipcMain.handle(CREATOR_CHANNELS.SAVE_LLM_SETTINGS, async (_event, settings) => {
+  ipcMain.handle(CREATOR_CHANNELS.SAVE_LLM_SETTINGS, (_event, settings) => {
     llmService.saveLLMSettings(mainApp.settings, settings);
     return { success: true };
   });
 
   // Test LLM connection
-  ipcMain.handle(CREATOR_CHANNELS.TEST_LLM_CONNECTION, async (_event, settings) => {
+  ipcMain.handle(CREATOR_CHANNELS.TEST_LLM_CONNECTION, (_event, settings) => {
     return llmService.testLLMConnection(settings);
   });
 

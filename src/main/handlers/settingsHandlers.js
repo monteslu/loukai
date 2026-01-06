@@ -26,7 +26,7 @@ export function registerSettingsHandlers(_mainApp) {
   });
 
   // Set setting - uses settingsService for persistence, AppState sync, and broadcast
-  ipcMain.handle(SETTINGS_CHANNELS.SET, async (event, key, value) => {
+  ipcMain.handle(SETTINGS_CHANNELS.SET, (event, key, value) => {
     return setSetting(key, value);
   });
 
@@ -36,7 +36,7 @@ export function registerSettingsHandlers(_mainApp) {
   });
 
   // Update batch - uses settingsService
-  ipcMain.handle(SETTINGS_CHANNELS.UPDATE_BATCH, async (event, updates) => {
+  ipcMain.handle(SETTINGS_CHANNELS.UPDATE_BATCH, (event, updates) => {
     return setSettings(updates);
   });
 }

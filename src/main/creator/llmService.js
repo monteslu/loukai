@@ -126,9 +126,6 @@ export async function correctLyrics(whisperOutput, referenceLyrics, settings) {
 async function callLLM(provider, settings, whisperOutput, referenceLyrics) {
   const { provider: providerType, model } = settings;
 
-  // Extract just the text from Whisper output
-  const whisperText = whisperOutput.words.map((w) => w.w).join(' ');
-
   // Build structured line data for LLM (work with lines, not words)
   const lineData = whisperOutput.lines.map((line, i) => ({
     line_num: i + 1,
@@ -232,7 +229,7 @@ function parseCorrection(llmResponse, originalOutput) {
   try {
     // Try to parse as-is
     responseData = JSON.parse(llmResponse);
-  } catch (e) {
+  } catch {
     // Try to extract JSON from markdown blocks
     let cleaned = llmResponse.trim();
     if (cleaned.includes('```json')) {

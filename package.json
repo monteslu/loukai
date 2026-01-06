@@ -1,6 +1,6 @@
 {
   "name": "loukai",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "type": "module",
   "description": "Loukai Karaoke - Free and open source karaoke system for playing and creating stem-based karaoke files",
   "main": "src/main/main.js",

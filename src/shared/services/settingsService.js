@@ -98,7 +98,7 @@ export function getAllSettings() {
  * @param {boolean} options.skipAppState - Don't sync to AppState
  * @returns {Object} Result with success status
  */
-export async function setSetting(key, value, options = {}) {
+export function setSetting(key, value, options = {}) {
   const { skipBroadcast = false, skipPersist = false, skipAppState = false } = options;
 
   if (!_settingsManager && !skipPersist) {
@@ -205,7 +205,7 @@ function syncToAppState(key, value) {
  * Load settings on startup and sync to AppState
  * @returns {Object} Loaded settings
  */
-export async function loadAndSync() {
+export function loadAndSync() {
   const settings = getAllSettings();
 
   // Sync each category to AppState
