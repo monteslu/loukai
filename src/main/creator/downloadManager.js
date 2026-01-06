@@ -17,6 +17,51 @@ import { createWriteStream, existsSync, mkdirSync, rmSync, chmodSync } from 'fs'
 import { join, dirname } from 'path';
 import { execSync, spawn } from 'child_process';
 import { getCacheDir, getPythonPath, getPythonEnv } from './systemChecker.js';
+import yauzl from 'yauzl';
+
+/**
+ * Extract a zip file using yauzl (cross-platform)
+ */
+function extractZip(zipPath, destDir) {
+  return new Promise((resolve, reject) => {
+    yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+
+      zipfile.readEntry();
+
+      zipfile.on('entry', (entry) => {
+        const fullPath = join(destDir, entry.fileName);
+
+        if (/\/$/.test(entry.fileName)) {
+          // Directory entry
+          mkdirSync(fullPath, { recursive: true });
+          zipfile.readEntry();
+        } else {
+          // File entry
+          mkdirSync(dirname(fullPath), { recursive: true });
+          zipfile.openReadStream(entry, (err, readStream) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+            const writeStream = createWriteStream(fullPath);
+            readStream.pipe(writeStream);
+            writeStream.on('close', () => {
+              zipfile.readEntry();
+            });
+            writeStream.on('error', reject);
+          });
+        }
+      });
+
+      zipfile.on('end', resolve);
+      zipfile.on('error', reject);
+    });
+  });
+}
 
 // Python standalone builds from indygreg/python-build-standalone
 const PYTHON_BUILDS = {
@@ -838,8 +883,8 @@ export async function downloadFFmpeg(onProgress = null) {
         console.log('   Using tar to extract...');
         execSync(`tar -xf "${archivePath}" -C "${tempDir}"`);
       } else {
-        console.log('   Using unzip to extract...');
-        execSync(`unzip -q "${archivePath}" -d "${tempDir}"`);
+        console.log('   Using yauzl to extract...');
+        await extractZip(archivePath, tempDir);
       }
       console.log('   Extraction complete, searching for binary...');
 
@@ -897,7 +942,7 @@ export async function downloadFFmpeg(onProgress = null) {
         console.log('📦 Extracting FFprobe from separate archive...');
         const ffprobeTempDir = mkdtempSync(join(tmpdir(), 'ffprobe-'));
         try {
-          execSync(`unzip -q "${ffprobeArchivePath}" -d "${ffprobeTempDir}"`);
+          await extractZip(ffprobeArchivePath, ffprobeTempDir);
           const ffprobeExtracted = findBinary(ffprobeTempDir, ffprobeName);
           if (ffprobeExtracted) {
             console.log(`   Found ffprobe: ${ffprobeExtracted}`);
