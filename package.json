@@ -1,6 +1,6 @@
 {
   "name": "loukai",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "type": "module",
   "description": "Loukai Karaoke - Free and open source karaoke system for playing and creating stem-based karaoke files",
   "main": "src/main/main.js",
@@ -79,7 +79,7 @@
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
     "fuse.js": "^7.1.0",
-    "m4a-stems": "^0.2.1",
+    "m4a-stems": "^0.3.0",
     "music-metadata": "^11.9.0",
     "node-id3": "^0.2.9",
     "openai": "^6.10.0",
