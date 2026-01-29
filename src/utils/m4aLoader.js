@@ -4,15 +4,15 @@ import { Atoms as M4AAtoms, Extractor } from 'm4a-stems';
 
 class M4ALoader {
   /**
-   * Extract a single audio track from M4A file (FFmpeg-free)
-   * @param {string} m4aPath - Path to M4A file
+   * Extract a single audio track from M4A buffer (FFmpeg-free)
+   * @param {Buffer|Uint8Array} m4aBuffer - M4A file data
    * @param {number} trackIndex - Track index (0-based)
-   * @returns {Promise<Buffer>} Audio data as buffer
+   * @returns {Uint8Array} Audio data as buffer
    */
-  static async extractTrack(m4aPath, trackIndex) {
+  static extractTrackFromBuffer(m4aBuffer, trackIndex) {
     try {
       console.log(`📦 Extracting track ${trackIndex} from M4A...`);
-      const audioBuffer = await Extractor.extractTrack(m4aPath, trackIndex);
+      const audioBuffer = Extractor.extractTrack(m4aBuffer, trackIndex);
       console.log(`✅ Extracted track ${trackIndex} (${audioBuffer.length} bytes)`);
       return audioBuffer;
     } catch (error) {
@@ -22,19 +22,19 @@ class M4ALoader {
   }
 
   /**
-   * Extract all audio tracks from M4A file
-   * @param {string} m4aPath - Path to M4A file
+   * Extract all audio tracks from M4A buffer
+   * @param {Buffer|Uint8Array} m4aBuffer - M4A file data
    * @param {Array} sources - Array of source definitions with trackIndex
-   * @returns {Promise<Map>} Map of track name to audio buffer
+   * @returns {Map} Map of track name to audio buffer
    */
-  static async extractAllTracks(m4aPath, sources) {
+  static extractAllTracksFromBuffer(m4aBuffer, sources) {
     const audioFiles = new Map();
 
     console.log(`📦 Extracting ${sources.length} tracks from M4A...`);
 
     for (const source of sources) {
       try {
-        const audioBuffer = await this.extractTrack(m4aPath, source.track);
+        const audioBuffer = this.extractTrackFromBuffer(m4aBuffer, source.track);
         audioFiles.set(source.role || source.id, audioBuffer);
       } catch (error) {
         console.warn(
@@ -148,7 +148,7 @@ class M4ALoader {
 
       // Extract audio tracks from M4A container
       console.log('🎵 Extracting audio tracks from M4A container...');
-      const audioFiles = await this.extractAllTracks(m4aPath, audioSources);
+      const audioFiles = this.extractAllTracksFromBuffer(m4aBuffer, audioSources);
 
       // Build audio sources with extracted audio buffers
       const sources = [];
