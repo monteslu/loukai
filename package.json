@@ -1,6 +1,6 @@
 {
   "name": "loukai",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "type": "module",
   "description": "Loukai Karaoke - Free and open source karaoke system for playing and creating stem-based karaoke files",
   "main": "src/main/main.js",
@@ -35,7 +35,7 @@
     "coaching",
     "autotune"
   ],
-  "author": "Loukai Team",
+  "author": "Luis Montes",
   "license": "AGPL-3.0",
   "devDependencies": {
     "@eslint/js": "^9.37.0",
