@@ -203,8 +203,8 @@ class KaiPlayerApp {
       minHeight: 600,
       autoHideMenuBar: true, // Hide menu bar for cleaner, modern UI
       webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false,
+        nodeIntegration: false,
+        contextIsolation: true,
         preload: path.join(__dirname, 'preload.js'),
       },
       title: 'Loukai',
@@ -327,8 +327,9 @@ class KaiPlayerApp {
       minWidth: 640,
       minHeight: 360,
       webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false,
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.js'),
       },
       title: 'Canvas Window',
       show: false,
