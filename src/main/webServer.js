@@ -113,6 +113,22 @@ class WebServer {
       // Only apply to /api/request (song requests), not all API endpoints
       skip: (req) => !req.path.startsWith('/api/request'),
     });
+
+    // Rate limiter for admin API endpoints (fixes #27)
+    this.adminApiLimiter = rateLimit({
+      windowMs: 1 * 60 * 1000, // 1 minute
+      max: 60, // Limit each IP to 60 admin API requests per minute
+      message: 'Too many admin API requests, please slow down',
+      standardHeaders: true,
+      legacyHeaders: false,
+      // Skip static file requests and login (has its own limiter)
+      skip: (req) =>
+        req.path === '/login' ||
+        (req.method === 'GET' && /\.(js|css|html|png|jpg|svg|ico|woff2?)$/i.test(req.path)),
+    });
+
+    // Apply admin rate limiter to all /admin/* routes
+    this.app.use('/admin', this.adminApiLimiter);
   }
 
   setupRoutes() {
