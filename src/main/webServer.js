@@ -22,6 +22,7 @@ import { SERVER_DEFAULTS, WAVEFORM_DEFAULTS, AUTOTUNE_DEFAULTS } from '../shared
 import { getSetting } from '../shared/services/settingsService.js';
 import * as serverSettingsService from '../shared/services/serverSettingsService.js';
 import * as creatorService from '../shared/services/creatorService.js';
+import { validateSongPath, validateBase64Path } from './utils/pathValidator.js';
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -653,13 +654,21 @@ class WebServer {
 
     this.app.post('/admin/player/load', async (req, res) => {
       try {
-        const { path } = req.body;
+        const { path: songPath } = req.body;
 
-        if (!path) {
+        if (!songPath) {
           return res.status(400).json({ error: 'Song path required' });
         }
 
-        const result = await playerService.loadSong(this.mainApp, path);
+        // Validate path is within songs directory (prevent path traversal)
+        const songsFolder = this.mainApp.settings?.getSongsFolder?.();
+        const validation = validateSongPath(songPath, songsFolder);
+        if (!validation.valid) {
+          console.error('🚫 Path validation failed:', validation.error, songPath);
+          return res.status(403).json({ error: validation.error });
+        }
+
+        const result = await playerService.loadSong(this.mainApp, validation.resolvedPath);
         res.json(result);
       } catch (error) {
         console.error('Error loading song:', error);
@@ -900,16 +909,25 @@ class WebServer {
     // Load song for editing
     this.app.post('/admin/editor/load', async (req, res) => {
       try {
-        const { path } = req.body;
+        const { path: songPath } = req.body;
 
+        // Validate path is within songs directory (prevent path traversal)
+        const songsFolder = this.mainApp.settings?.getSongsFolder?.();
+        const validation = validateSongPath(songPath, songsFolder);
+        if (!validation.valid) {
+          console.error('🚫 Path validation failed:', validation.error, songPath);
+          return res.status(403).json({ success: false, error: validation.error });
+        }
+
+        const validatedPath = validation.resolvedPath;
         const editorService = await import('../shared/services/editorService.js');
-        const result = await editorService.loadSong(path);
+        const result = await editorService.loadSong(validatedPath);
 
         // For KAI files, add download URLs for audio playback
         if (result.format === 'kai') {
           const audioFiles = result.kaiData.audio.sources.map((source) => {
             const filename = source.filename || source.name;
-            const fileId = Buffer.from(`${path}:${filename}`).toString('base64url');
+            const fileId = Buffer.from(`${validatedPath}:${filename}`).toString('base64url');
 
             return {
               name: source.name,
@@ -932,7 +950,7 @@ class WebServer {
           // For M4A files, add download URLs for extracted audio tracks
           const audioFiles = result.kaiData.audio.sources.map((source) => {
             const trackName = source.name;
-            const fileId = Buffer.from(`${path}:${trackName}:${source.trackIndex}`).toString(
+            const fileId = Buffer.from(`${validatedPath}:${trackName}:${source.trackIndex}`).toString(
               'base64url'
             );
 
@@ -1032,10 +1050,19 @@ class WebServer {
       try {
         const { fileId } = req.params;
 
-        // Decode the fileId to get path, trackName, and trackIndex
-        const decoded = Buffer.from(fileId, 'base64url').toString('utf8');
-        const [m4aPath, trackName, trackIndexStr] = decoded.split(':');
+        // Validate and decode the fileId (prevent path traversal)
+        const songsFolder = this.mainApp.settings?.getSongsFolder?.();
+        const validation = validateBase64Path(fileId, songsFolder);
+        if (!validation.valid) {
+          console.error('🚫 Path validation failed:', validation.error);
+          return res.status(403).json({ success: false, error: validation.error });
+        }
+
+        // Parse the decoded path: "path:trackName:trackIndex"
+        const parts = validation.decodedPath.split(':');
+        const [, trackName, trackIndexStr] = parts;
         const trackIndex = parseInt(trackIndexStr, 10);
+        const m4aPath = validation.resolvedPath;
 
         console.log('📥 M4A audio request:', { m4aPath, trackName, trackIndex });
 
@@ -1086,22 +1113,31 @@ class WebServer {
     // Save song edits
     this.app.post('/admin/editor/save', async (req, res) => {
       try {
-        const { path, format, metadata, lyrics } = req.body;
-        if (!path) {
+        const { path: songPath, format, metadata, lyrics } = req.body;
+        if (!songPath) {
           return res.status(400).json({
             success: false,
             error: 'Path is required',
           });
         }
 
+        // Validate path is within songs directory (prevent path traversal)
+        const songsFolder = this.mainApp.settings?.getSongsFolder?.();
+        const validation = validateSongPath(songPath, songsFolder);
+        if (!validation.valid) {
+          console.error('🚫 Path validation failed:', validation.error, songPath);
+          return res.status(403).json({ success: false, error: validation.error });
+        }
+        const validatedPath = validation.resolvedPath;
+
         // For KAI files, save metadata and lyrics
         if (format === 'kai') {
           const editorService = await import('../shared/services/editorService.js');
-          await editorService.saveSong(path, { format, metadata, lyrics });
+          await editorService.saveSong(validatedPath, { format, metadata, lyrics });
 
           // Update cached library entry if it exists
           if (this.mainApp.cachedLibrary) {
-            const songIndex = this.mainApp.cachedLibrary.findIndex((s) => s.path === path);
+            const songIndex = this.mainApp.cachedLibrary.findIndex((s) => s.path === validatedPath);
             if (songIndex !== -1) {
               // Update the cached song metadata
               this.mainApp.cachedLibrary[songIndex] = {
@@ -1134,13 +1170,13 @@ class WebServer {
 
               // Notify renderer about the update
               this.mainApp.sendToRenderer('library:songUpdated', {
-                path: path,
+                path: validatedPath,
                 metadata: this.mainApp.cachedLibrary[songIndex],
               });
 
               // Notify web clients about the update
               this.io.emit('library:songUpdated', {
-                path: path,
+                path: validatedPath,
                 metadata: this.mainApp.cachedLibrary[songIndex],
               });
             }
@@ -1156,10 +1192,10 @@ class WebServer {
 
           // Find the MP3 file - the path might be .cdg or .mp3
           let mp3Path;
-          if (path.toLowerCase().endsWith('.cdg')) {
-            mp3Path = path.replace(/\.cdg$/i, '.mp3');
-          } else if (path.toLowerCase().endsWith('.mp3')) {
-            mp3Path = path;
+          if (validatedPath.toLowerCase().endsWith('.cdg')) {
+            mp3Path = validatedPath.replace(/\.cdg$/i, '.mp3');
+          } else if (validatedPath.toLowerCase().endsWith('.mp3')) {
+            mp3Path = validatedPath;
           } else {
             return res.json({
               success: false,
@@ -1664,7 +1700,15 @@ class WebServer {
           return res.status(400).json({ error: 'File path is required' });
         }
 
-        const result = await creatorService.getFileInfo(filePath);
+        // Validate path is within songs directory (prevent path traversal)
+        const songsFolder = this.mainApp.settings?.getSongsFolder?.();
+        const validation = validateSongPath(filePath, songsFolder);
+        if (!validation.valid) {
+          console.error('🚫 Path validation failed:', validation.error, filePath);
+          return res.status(403).json({ error: validation.error });
+        }
+
+        const result = await creatorService.getFileInfo(validation.resolvedPath);
         res.json(result);
       } catch (error) {
         console.error('Error getting file info:', error);
@@ -1680,6 +1724,16 @@ class WebServer {
         if (!options.inputPath) {
           return res.status(400).json({ error: 'Input path is required' });
         }
+
+        // Validate input path is within songs directory (prevent path traversal)
+        const songsFolder = this.mainApp.settings?.getSongsFolder?.();
+        const validation = validateSongPath(options.inputPath, songsFolder);
+        if (!validation.valid) {
+          console.error('🚫 Path validation failed:', validation.error, options.inputPath);
+          return res.status(403).json({ error: validation.error });
+        }
+        // Use validated path
+        options.inputPath = validation.resolvedPath;
 
         // Send immediate response that conversion started
         res.json({ success: true, message: 'Conversion started' });
