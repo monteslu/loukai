@@ -53,7 +53,25 @@ class WebServer {
   }
 
   setupMiddleware() {
-    this.app.use(cors());
+    // CORS configuration - restrict to localhost and LAN origins
+    // Prevents malicious websites from making cross-origin requests
+    this.app.use(cors({
+      origin: (origin, callback) => {
+        // Allow requests with no origin (same-origin, non-browser clients, curl, etc.)
+        if (!origin) {
+          return callback(null, true);
+        }
+        
+        if (this.isAllowedOrigin(origin)) {
+          return callback(null, true);
+        }
+        
+        // Reject other origins
+        callback(new Error('CORS not allowed for this origin'));
+      },
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    }));
     this.app.use(express.json());
     this.app.use(express.urlencoded({ extended: true }));
 
@@ -1964,11 +1982,23 @@ class WebServer {
         // Create HTTP server for Socket.IO
         this.httpServer = http.createServer(this.app);
 
-        // Initialize Socket.IO
+        // Initialize Socket.IO with restricted CORS (same as Express)
         this.io = new Server(this.httpServer, {
           cors: {
-            origin: '*',
+            origin: (origin, callback) => {
+              // Allow requests with no origin (same-origin, non-browser clients)
+              if (!origin) {
+                return callback(null, true);
+              }
+              
+              if (this.isAllowedOrigin(origin)) {
+                return callback(null, true);
+              }
+              
+              callback(new Error('CORS not allowed for this origin'));
+            },
             methods: ['GET', 'POST'],
+            credentials: true,
           },
         });
 
@@ -2068,6 +2098,87 @@ class WebServer {
       console.error('Failed to get LAN IP:', error);
     }
     return 'localhost';
+  }
+
+  /**
+   * Get all local network addresses (for CORS validation)
+   * @returns {string[]} Array of local IP addresses
+   */
+  getAllLocalAddresses() {
+    const addresses = ['localhost', '127.0.0.1', '::1'];
+    try {
+      const interfaces = os.networkInterfaces();
+      for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+          if (iface.family === 'IPv4' || iface.family === 4) {
+            addresses.push(iface.address);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to get network interfaces:', error);
+    }
+    return addresses;
+  }
+
+  /**
+   * Check if an origin is allowed for CORS
+   * Allows: localhost, LAN IPs (private ranges), and this server's addresses
+   * @param {string} origin - The origin to check
+   * @returns {boolean} True if origin is allowed
+   */
+  isAllowedOrigin(origin) {
+    if (!origin) return true;
+
+    try {
+      const url = new URL(origin);
+      const hostname = url.hostname;
+
+      // Allow localhost variants
+      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+        return true;
+      }
+
+      // Allow this server's own addresses
+      const localAddresses = this.getAllLocalAddresses();
+      if (localAddresses.includes(hostname)) {
+        return true;
+      }
+
+      // Allow private/LAN IP ranges (RFC 1918 + link-local)
+      // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16
+      if (this.isPrivateIP(hostname)) {
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      // Invalid URL - reject
+      return false;
+    }
+  }
+
+  /**
+   * Check if an IP address is in a private/LAN range
+   * @param {string} ip - The IP address to check
+   * @returns {boolean} True if IP is private
+   */
+  isPrivateIP(ip) {
+    // IPv4 private ranges
+    const parts = ip.split('.').map(Number);
+    if (parts.length === 4 && parts.every(p => p >= 0 && p <= 255)) {
+      // 10.0.0.0/8
+      if (parts[0] === 10) return true;
+      // 172.16.0.0/12 (172.16.x.x - 172.31.x.x)
+      if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+      // 192.168.0.0/16
+      if (parts[0] === 192 && parts[1] === 168) return true;
+      // 169.254.0.0/16 (link-local)
+      if (parts[0] === 169 && parts[1] === 254) return true;
+      // 127.0.0.0/8 (loopback)
+      if (parts[0] === 127) return true;
+    }
+    return false;
   }
 
   getServerUrl() {
