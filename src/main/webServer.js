@@ -1832,6 +1832,13 @@ class WebServer {
         } else if (data.type === 'web-ui') {
           socket.join('web-clients');
         } else if (data.type === 'admin') {
+          // SECURITY FIX (#22): Validate admin session before allowing admin room access
+          const session = this.validateSocketSession(socket);
+          if (!session || !session.isAdmin) {
+            console.warn('⚠️ Unauthorized admin connection attempt:', socket.id);
+            socket.emit('auth-error', { message: 'Admin authentication required' });
+            return;
+          }
           socket.join('admin-clients');
           console.log('Admin client connected and authenticated');
 
@@ -2198,6 +2205,50 @@ class WebServer {
     }
 
     return secretKey;
+  }
+
+  /**
+   * Validate cookie-session from Socket.IO handshake
+   * SECURITY FIX for #22: Validates admin session before allowing admin room access
+   * @param {Object} socket - Socket.IO socket
+   * @returns {Object|null} - Parsed session or null if invalid
+   */
+  validateSocketSession(socket) {
+    try {
+      const cookieHeader = socket.handshake.headers.cookie || '';
+      if (!cookieHeader) return null;
+
+      // Parse cookies manually
+      const cookies = {};
+      cookieHeader.split(';').forEach((cookie) => {
+        const [name, ...rest] = cookie.trim().split('=');
+        cookies[name] = rest.join('=');
+      });
+
+      const sessionCookie = cookies['kai-admin-session'];
+      const sigCookie = cookies['kai-admin-session.sig'];
+
+      if (!sessionCookie || !sigCookie) {
+        return null;
+      }
+
+      // Verify signature using Keygrip (same mechanism as cookie-session)
+      const Keygrip = require('keygrip');
+      const keys = new Keygrip([this.getOrCreateSecretKey()]);
+
+      if (!keys.verify('kai-admin-session=' + sessionCookie, sigCookie)) {
+        console.warn('Socket.IO: Invalid session signature');
+        return null;
+      }
+
+      // Decode base64 JSON session
+      const sessionData = JSON.parse(Buffer.from(sessionCookie, 'base64').toString('utf8'));
+
+      return sessionData;
+    } catch (err) {
+      console.warn('Socket.IO session validation error:', err.message);
+      return null;
+    }
   }
 }
 
