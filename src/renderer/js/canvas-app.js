@@ -3,8 +3,8 @@
  * Handles receiving and displaying the karaoke canvas stream
  */
 
-// Note: Using CommonJS require since nodeIntegration is enabled in canvas window
-const { ipcRenderer } = require('electron');
+// Access the preloaded API (exposed via contextBridge with contextIsolation enabled)
+const { webrtc } = window.kaiAPI;
 
 // Dynamically import ES module
 let WebRTCManager;
@@ -19,36 +19,36 @@ function setupIPCHandlers() {
     return;
   }
   // Setup receiver
-  ipcRenderer.on('webrtc:setupReceiver', async () => {
+  webrtc.onSetupReceiver(async () => {
     const result = await webrtcManager.setupReceiver();
-    ipcRenderer.send('webrtc:setupReceiver-response', result);
+    webrtc.sendSetupReceiverResponse(result);
   });
 
   // Check receiver ready
-  ipcRenderer.on('webrtc:checkReceiverReady', () => {
+  webrtc.onCheckReceiverReady(() => {
     const result = webrtcManager.checkReceiverReady();
-    ipcRenderer.send('webrtc:checkReceiverReady-response', result);
+    webrtc.sendCheckReceiverReadyResponse(result);
   });
 
   // Set offer and create answer
-  ipcRenderer.on('webrtc:setOfferAndCreateAnswer', async (event, offer) => {
+  webrtc.onSetOfferAndCreateAnswer(async (event, offer) => {
     const result = await webrtcManager.setOfferAndCreateAnswer(offer);
-    ipcRenderer.send('webrtc:setOfferAndCreateAnswer-response', result);
+    webrtc.sendSetOfferAndCreateAnswerResponse(result);
   });
 
   // Get receiver status
-  ipcRenderer.on('webrtc:getReceiverStatus', () => {
+  webrtc.onGetReceiverStatus(() => {
     const result = webrtcManager.getReceiverStatus();
-    ipcRenderer.send('webrtc:getReceiverStatus-response', result);
+    webrtc.sendGetReceiverStatusResponse(result);
   });
 
   // Add ICE candidate
-  ipcRenderer.on('webrtc:addReceiverICECandidate', async (event, candidate) => {
+  webrtc.onAddReceiverICECandidate(async (event, candidate) => {
     await webrtcManager.addReceiverICECandidate(candidate);
   });
 
   // Cleanup receiver
-  ipcRenderer.on('webrtc:cleanupReceiver', async () => {
+  webrtc.onCleanupReceiver(async () => {
     await webrtcManager.cleanupReceiver();
   });
 
@@ -102,7 +102,7 @@ async function init() {
   }
 
   // Signal to main process that canvas window is ready
-  ipcRenderer.send('canvas:childReady');
+  webrtc.sendChildReady();
   console.log('📢 Sent canvas:childReady signal to main process');
 }
 
