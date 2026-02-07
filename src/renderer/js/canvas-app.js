@@ -31,7 +31,8 @@ function setupIPCHandlers() {
   });
 
   // Set offer and create answer
-  webrtc.onSetOfferAndCreateAnswer(async (event, offer) => {
+  // Note: event object is stripped by safeOn() in preload.js, so offer is first arg
+  webrtc.onSetOfferAndCreateAnswer(async (offer) => {
     const result = await webrtcManager.setOfferAndCreateAnswer(offer);
     webrtc.sendSetOfferAndCreateAnswerResponse(result);
   });
@@ -43,7 +44,8 @@ function setupIPCHandlers() {
   });
 
   // Add ICE candidate
-  webrtc.onAddReceiverICECandidate(async (event, candidate) => {
+  // Note: event object is stripped by safeOn() in preload.js, so candidate is first arg
+  webrtc.onAddReceiverICECandidate(async (candidate) => {
     await webrtcManager.addReceiverICECandidate(candidate);
   });
 
