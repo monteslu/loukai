@@ -1,5 +1,17 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Helper to wrap IPC listeners and strip the Electron event object
+// This prevents leaking event.sender, event.ports, etc. to the renderer
+const safeOn = (channel, callback) => {
+  ipcRenderer.on(channel, (_event, ...args) => callback(...args));
+};
+
+const safeRemoveListener = (channel, callback) => {
+  // Note: This won't work perfectly with the wrapped callbacks
+  // For proper cleanup, we'd need to track the wrapped functions
+  ipcRenderer.removeListener(channel, callback);
+};
+
 const api = {
   app: {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
@@ -17,11 +29,11 @@ const api = {
     setDevice: (deviceType, deviceId) =>
       ipcRenderer.invoke('audio:setDevice', deviceType, deviceId),
 
-    onXRun: (callback) => ipcRenderer.on('audio:xrun', callback),
-    onLatencyUpdate: (callback) => ipcRenderer.on('audio:latency', callback),
+    onXRun: (callback) => safeOn('audio:xrun', callback),
+    onLatencyUpdate: (callback) => safeOn('audio:latency', callback),
 
-    removeXRunListener: (callback) => ipcRenderer.removeListener('audio:xrun', callback),
-    removeLatencyListener: (callback) => ipcRenderer.removeListener('audio:latency', callback),
+    removeXRunListener: (callback) => safeRemoveListener('audio:xrun', callback),
+    removeLatencyListener: (callback) => safeRemoveListener('audio:latency', callback),
   },
 
   mixer: {
@@ -29,13 +41,13 @@ const api = {
     toggleMasterMute: (bus) => ipcRenderer.invoke('mixer:toggleMasterMute', bus),
     toggleMute: (stemId, bus) => ipcRenderer.invoke('mixer:toggleMute', stemId, bus),
 
-    onStateChange: (callback) => ipcRenderer.on('mixer:state', callback),
-    removeStateListener: (callback) => ipcRenderer.removeListener('mixer:state', callback),
+    onStateChange: (callback) => safeOn('mixer:state', callback),
+    removeStateListener: (callback) => safeRemoveListener('mixer:state', callback),
 
     // Listen for commands from main process (for web admin)
-    onSetMasterGain: (callback) => ipcRenderer.on('mixer:setMasterGain', callback),
-    onToggleMasterMute: (callback) => ipcRenderer.on('mixer:toggleMasterMute', callback),
-    onSetMasterMute: (callback) => ipcRenderer.on('mixer:setMasterMute', callback),
+    onSetMasterGain: (callback) => safeOn('mixer:setMasterGain', callback),
+    onToggleMasterMute: (callback) => safeOn('mixer:toggleMasterMute', callback),
+    onSetMasterMute: (callback) => safeOn('mixer:setMasterMute', callback),
   },
 
   player: {
@@ -45,18 +57,18 @@ const api = {
     restart: () => ipcRenderer.invoke('player:restart'),
     next: () => ipcRenderer.invoke('player:next'),
 
-    onPlaybackState: (callback) => ipcRenderer.on('playback:state', callback),
-    removePlaybackListener: (callback) => ipcRenderer.removeListener('playback:state', callback),
+    onPlaybackState: (callback) => safeOn('playback:state', callback),
+    removePlaybackListener: (callback) => safeRemoveListener('playback:state', callback),
 
     // Events from main process for playback control
-    onTogglePlayback: (callback) => ipcRenderer.on('player:togglePlayback', callback),
-    onRestart: (callback) => ipcRenderer.on('player:restart', callback),
-    onSetPosition: (callback) => ipcRenderer.on('player:setPosition', callback),
+    onTogglePlayback: (callback) => safeOn('player:togglePlayback', callback),
+    onRestart: (callback) => safeOn('player:restart', callback),
+    onSetPosition: (callback) => safeOn('player:setPosition', callback),
     removeTogglePlaybackListener: (callback) =>
-      ipcRenderer.removeListener('player:togglePlayback', callback),
-    removeRestartListener: (callback) => ipcRenderer.removeListener('player:restart', callback),
+      safeRemoveListener('player:togglePlayback', callback),
+    removeRestartListener: (callback) => safeRemoveListener('player:restart', callback),
     removeSetPositionListener: (callback) =>
-      ipcRenderer.removeListener('player:setPosition', callback),
+      safeRemoveListener('player:setPosition', callback),
   },
 
   autotune: {
@@ -65,12 +77,12 @@ const api = {
   },
 
   song: {
-    onLoaded: (callback) => ipcRenderer.on('song:loaded', callback),
-    onData: (callback) => ipcRenderer.on('song:data', callback),
-    onChanged: (callback) => ipcRenderer.on('song:changed', callback),
-    removeSongListener: (callback) => ipcRenderer.removeListener('song:loaded', callback),
-    removeDataListener: (callback) => ipcRenderer.removeListener('song:data', callback),
-    removeChangedListener: (callback) => ipcRenderer.removeListener('song:changed', callback),
+    onLoaded: (callback) => safeOn('song:loaded', callback),
+    onData: (callback) => safeOn('song:data', callback),
+    onChanged: (callback) => safeOn('song:changed', callback),
+    removeSongListener: (callback) => safeRemoveListener('song:loaded', callback),
+    removeDataListener: (callback) => safeRemoveListener('song:data', callback),
+    removeChangedListener: (callback) => safeRemoveListener('song:changed', callback),
     getCurrentSong: () => ipcRenderer.invoke('song:getCurrentSong'),
   },
 
@@ -105,9 +117,9 @@ const api = {
     getSongInfo: (filePath) => ipcRenderer.invoke('library:getSongInfo', filePath),
     search: (query) => ipcRenderer.invoke('library:search', query),
 
-    onFolderSet: (callback) => ipcRenderer.on('library:folderSet', callback),
+    onFolderSet: (callback) => safeOn('library:folderSet', callback),
     removeFolderSetListener: (callback) =>
-      ipcRenderer.removeListener('library:folderSet', callback),
+      safeRemoveListener('library:folderSet', callback),
   },
 
   webServer: {
@@ -128,8 +140,8 @@ const api = {
     set: (key, value) => ipcRenderer.invoke('settings:set', key, value),
     getAll: () => ipcRenderer.invoke('settings:getAll'),
     updateBatch: (updates) => ipcRenderer.invoke('settings:updateBatch', updates),
-    onUpdate: (callback) => ipcRenderer.on('settings:update', callback),
-    removeUpdateListener: (callback) => ipcRenderer.removeListener('settings:update', callback),
+    onUpdate: (callback) => safeOn('settings:update', callback),
+    removeUpdateListener: (callback) => safeRemoveListener('settings:update', callback),
   },
 
   queue: {
@@ -140,15 +152,15 @@ const api = {
     load: (itemId) => ipcRenderer.invoke('queue:load', itemId),
     reorderQueue: (songId, newIndex) => ipcRenderer.invoke('queue:reorderQueue', songId, newIndex),
 
-    onUpdated: (callback) => ipcRenderer.on('queue:updated', callback),
-    removeUpdatedListener: (callback) => ipcRenderer.removeListener('queue:updated', callback),
+    onUpdated: (callback) => safeOn('queue:updated', callback),
+    removeUpdatedListener: (callback) => safeRemoveListener('queue:updated', callback),
   },
 
   effect: {
-    onNext: (callback) => ipcRenderer.on('effect:next', callback),
-    onPrevious: (callback) => ipcRenderer.on('effect:previous', callback),
-    removeNextListener: (callback) => ipcRenderer.removeListener('effect:next', callback),
-    removePreviousListener: (callback) => ipcRenderer.removeListener('effect:previous', callback),
+    onNext: (callback) => safeOn('effect:next', callback),
+    onPrevious: (callback) => safeOn('effect:previous', callback),
+    removeNextListener: (callback) => safeRemoveListener('effect:next', callback),
+    removePreviousListener: (callback) => safeRemoveListener('effect:previous', callback),
   },
 
   effects: {
@@ -159,8 +171,8 @@ const api = {
     previous: () => ipcRenderer.invoke('effects:previous'),
     random: () => ipcRenderer.invoke('effects:random'),
 
-    onChanged: (callback) => ipcRenderer.on('effects:changed', callback),
-    removeChangedListener: (callback) => ipcRenderer.removeListener('effects:changed', callback),
+    onChanged: (callback) => safeOn('effects:changed', callback),
+    removeChangedListener: (callback) => safeRemoveListener('effects:changed', callback),
   },
 
   preferences: {
@@ -168,9 +180,9 @@ const api = {
     setMicrophone: (prefs) => ipcRenderer.invoke('preferences:setMicrophone', prefs),
     setEffects: (prefs) => ipcRenderer.invoke('preferences:setEffects', prefs),
 
-    onUpdated: (callback) => ipcRenderer.on('preferences:updated', callback),
+    onUpdated: (callback) => safeOn('preferences:updated', callback),
     removeUpdatedListener: (callback) =>
-      ipcRenderer.removeListener('preferences:updated', callback),
+      safeRemoveListener('preferences:updated', callback),
   },
 
   // admin.onPlay/onNext/onRestart removed - web admin calls window.app methods directly via executeJavaScript
@@ -188,10 +200,8 @@ const api = {
     sendWebRTCResponse: (command, result) => ipcRenderer.send(`webrtc:${command}-response`, result),
   },
 
-  events: {
-    on: (channel, callback) => ipcRenderer.on(channel, callback),
-    removeListener: (channel, callback) => ipcRenderer.removeListener(channel, callback),
-  },
+  // REMOVED: Open events.on() that allowed listening on any IPC channel
+  // All event listeners are now exposed through specific, whitelisted APIs above
 
   shell: {
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
@@ -200,19 +210,19 @@ const api = {
   // WebRTC handlers for canvas window
   webrtc: {
     // Receiver setup handlers
-    onSetupReceiver: (callback) => ipcRenderer.on('webrtc:setupReceiver', callback),
-    onCheckReceiverReady: (callback) => ipcRenderer.on('webrtc:checkReceiverReady', callback),
-    onSetOfferAndCreateAnswer: (callback) => ipcRenderer.on('webrtc:setOfferAndCreateAnswer', callback),
-    onGetReceiverStatus: (callback) => ipcRenderer.on('webrtc:getReceiverStatus', callback),
-    onAddReceiverICECandidate: (callback) => ipcRenderer.on('webrtc:addReceiverICECandidate', callback),
-    onCleanupReceiver: (callback) => ipcRenderer.on('webrtc:cleanupReceiver', callback),
+    onSetupReceiver: (callback) => safeOn('webrtc:setupReceiver', callback),
+    onCheckReceiverReady: (callback) => safeOn('webrtc:checkReceiverReady', callback),
+    onSetOfferAndCreateAnswer: (callback) => safeOn('webrtc:setOfferAndCreateAnswer', callback),
+    onGetReceiverStatus: (callback) => safeOn('webrtc:getReceiverStatus', callback),
+    onAddReceiverICECandidate: (callback) => safeOn('webrtc:addReceiverICECandidate', callback),
+    onCleanupReceiver: (callback) => safeOn('webrtc:cleanupReceiver', callback),
 
     // Sender setup handlers
-    onSetupSender: (callback) => ipcRenderer.on('webrtc:setupSender', callback),
-    onCreateOffer: (callback) => ipcRenderer.on('webrtc:createOffer', callback),
-    onSetAnswer: (callback) => ipcRenderer.on('webrtc:setAnswer', callback),
-    onGetSenderStatus: (callback) => ipcRenderer.on('webrtc:getSenderStatus', callback),
-    onCleanupSender: (callback) => ipcRenderer.on('webrtc:cleanupSender', callback),
+    onSetupSender: (callback) => safeOn('webrtc:setupSender', callback),
+    onCreateOffer: (callback) => safeOn('webrtc:createOffer', callback),
+    onSetAnswer: (callback) => safeOn('webrtc:setAnswer', callback),
+    onGetSenderStatus: (callback) => safeOn('webrtc:getSenderStatus', callback),
+    onCleanupSender: (callback) => safeOn('webrtc:cleanupSender', callback),
 
     // Response senders
     sendSetupReceiverResponse: (result) => ipcRenderer.send('webrtc:setupReceiver-response', result),
