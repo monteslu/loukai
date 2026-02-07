@@ -301,12 +301,17 @@ function parseCorrection(llmResponse, originalOutput) {
  */
 export function getLLMSettings(settingsManager) {
   const llmConfig = settingsManager.get('creator.llm', {});
+  const apiKey = llmConfig.apiKey || LLM_DEFAULTS.apiKey;
+
+  // SECURITY FIX (#25): Mask API key - only show last 4 chars to renderer
+  const maskedApiKey = apiKey && apiKey.length > 8 ? `${'•'.repeat(apiKey.length - 4)}${apiKey.slice(-4)}` : apiKey ? '••••••••' : '';
 
   return {
     enabled: llmConfig.enabled ?? LLM_DEFAULTS.enabled,
     provider: llmConfig.provider || LLM_DEFAULTS.provider,
     model: llmConfig.model || getDefaultModel(llmConfig.provider),
-    apiKey: llmConfig.apiKey || LLM_DEFAULTS.apiKey,
+    apiKey: maskedApiKey,
+    hasApiKey: Boolean(apiKey), // Let renderer know if key is set
     baseUrl: llmConfig.baseUrl || LLM_DEFAULTS.baseUrl,
   };
 }
