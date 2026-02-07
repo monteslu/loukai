@@ -113,6 +113,22 @@ class WebServer {
       // Only apply to /api/request (song requests), not all API endpoints
       skip: (req) => !req.path.startsWith('/api/request'),
     });
+
+    // Rate limiter for admin API endpoints (fixes #27)
+    this.adminApiLimiter = rateLimit({
+      windowMs: 1 * 60 * 1000, // 1 minute
+      max: 60, // Limit each IP to 60 admin API requests per minute
+      message: 'Too many admin API requests, please slow down',
+      standardHeaders: true,
+      legacyHeaders: false,
+      // Skip static file requests and login (has its own limiter)
+      skip: (req) =>
+        req.path === '/login' ||
+        (req.method === 'GET' && /\.(js|css|html|png|jpg|svg|ico|woff2?)$/i.test(req.path)),
+    });
+
+    // Apply admin rate limiter to all /admin/* routes
+    this.app.use('/admin', this.adminApiLimiter);
   }
 
   setupRoutes() {
@@ -448,7 +464,8 @@ class WebServer {
           message: message ? message.trim().substring(0, 200) : '',
           timestamp: new Date(),
           status: this.settings.requireKJApproval ? 'pending' : 'approved',
-          clientIP: req.clientIP,
+          // SECURITY FIX (#26): Hash IP for privacy - still unique for rate limiting but anonymized
+          clientIP: this.anonymizeIP(req.clientIP),
         };
 
         console.log('📝 Created request object:', request);
@@ -2179,6 +2196,19 @@ class WebServer {
     this.cachedSongs = null;
     this.songsCacheTime = null;
     this.fuse = null;
+  }
+
+  /**
+   * Anonymize IP address for privacy (SECURITY FIX #26)
+   * Uses one-way hash so IPs can still be compared for rate limiting
+   * but actual IP is not stored or exposed to admins
+   */
+  anonymizeIP(ip) {
+    if (!ip) return 'unknown';
+    // Hash the IP with a daily salt so it changes over time
+    const daySalt = new Date().toISOString().split('T')[0];
+    const hash = crypto.createHash('sha256').update(ip + daySalt).digest('hex');
+    return `anon-${hash.substring(0, 8)}`;
   }
 
   // Get or create a persistent secret key for cookie encryption
