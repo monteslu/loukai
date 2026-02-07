@@ -1,4 +1,4 @@
-const { ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 const api = {
   app: {
@@ -197,6 +197,37 @@ const api = {
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   },
 
+  // WebRTC handlers for canvas window
+  webrtc: {
+    // Receiver setup handlers
+    onSetupReceiver: (callback) => ipcRenderer.on('webrtc:setupReceiver', callback),
+    onCheckReceiverReady: (callback) => ipcRenderer.on('webrtc:checkReceiverReady', callback),
+    onSetOfferAndCreateAnswer: (callback) => ipcRenderer.on('webrtc:setOfferAndCreateAnswer', callback),
+    onGetReceiverStatus: (callback) => ipcRenderer.on('webrtc:getReceiverStatus', callback),
+    onAddReceiverICECandidate: (callback) => ipcRenderer.on('webrtc:addReceiverICECandidate', callback),
+    onCleanupReceiver: (callback) => ipcRenderer.on('webrtc:cleanupReceiver', callback),
+
+    // Sender setup handlers
+    onSetupSender: (callback) => ipcRenderer.on('webrtc:setupSender', callback),
+    onCreateOffer: (callback) => ipcRenderer.on('webrtc:createOffer', callback),
+    onSetAnswer: (callback) => ipcRenderer.on('webrtc:setAnswer', callback),
+    onGetSenderStatus: (callback) => ipcRenderer.on('webrtc:getSenderStatus', callback),
+    onCleanupSender: (callback) => ipcRenderer.on('webrtc:cleanupSender', callback),
+
+    // Response senders
+    sendSetupReceiverResponse: (result) => ipcRenderer.send('webrtc:setupReceiver-response', result),
+    sendCheckReceiverReadyResponse: (result) => ipcRenderer.send('webrtc:checkReceiverReady-response', result),
+    sendSetOfferAndCreateAnswerResponse: (result) => ipcRenderer.send('webrtc:setOfferAndCreateAnswer-response', result),
+    sendGetReceiverStatusResponse: (result) => ipcRenderer.send('webrtc:getReceiverStatus-response', result),
+    sendSetupSenderResponse: (result) => ipcRenderer.send('webrtc:setupSender-response', result),
+    sendCreateOfferResponse: (result) => ipcRenderer.send('webrtc:createOffer-response', result),
+    sendSetAnswerResponse: (result) => ipcRenderer.send('webrtc:setAnswer-response', result),
+    sendGetSenderStatusResponse: (result) => ipcRenderer.send('webrtc:getSenderStatus-response', result),
+
+    // Canvas ready signal
+    sendChildReady: () => ipcRenderer.send('canvas:childReady'),
+  },
+
   creator: {
     checkComponents: () => ipcRenderer.invoke('creator:checkComponents'),
     installComponents: () => ipcRenderer.invoke('creator:installComponents'),
@@ -235,5 +266,5 @@ const api = {
   },
 };
 
-// Since contextIsolation is disabled, directly assign to window
-window.kaiAPI = api;
+// Use contextBridge to safely expose API to renderer with contextIsolation enabled
+contextBridge.exposeInMainWorld('kaiAPI', api);
