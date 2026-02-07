@@ -356,8 +356,8 @@ export class WebRTCManager {
       pc.onicecandidate = (event) => {
         if (event.candidate) {
           console.log('🧊 Receiver ICE candidate');
-          const { ipcRenderer } = require('electron');
-          ipcRenderer.invoke('canvas:sendICECandidate', 'receiver', {
+          // Use preloaded API (contextBridge) instead of require('electron')
+          window.kaiAPI.canvas.sendICECandidate('receiver', {
             candidate: event.candidate.candidate,
             sdpMid: event.candidate.sdpMid,
             sdpMLineIndex: event.candidate.sdpMLineIndex,
