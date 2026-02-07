@@ -48,8 +48,80 @@ class WebServer {
     this.cachedSongs = null;
     this.songsCacheTime = null;
 
+    // Maps for opaque song IDs (security: don't expose file paths)
+    this.songPathToId = new Map();
+    this.songIdToPath = new Map();
+
     this.setupMiddleware();
     this.setupRoutes();
+  }
+
+  /**
+   * Generate an opaque ID for a song path (security: don't expose file paths)
+   * Uses a deterministic hash so the same path always gets the same ID
+   */
+  generateSongId(songPath) {
+    if (!songPath) return null;
+    
+    // Check cache first
+    if (this.songPathToId.has(songPath)) {
+      return this.songPathToId.get(songPath);
+    }
+    
+    // Create a short, URL-safe hash
+    const hash = crypto.createHash('sha256').update(songPath).digest('base64url').slice(0, 16);
+    const id = `song_${hash}`;
+    
+    // Cache both directions
+    this.songPathToId.set(songPath, id);
+    this.songIdToPath.set(id, songPath);
+    
+    return id;
+  }
+
+  /**
+   * Look up a song path from an opaque ID
+   */
+  getSongPathFromId(songId) {
+    return this.songIdToPath.get(songId) || null;
+  }
+
+  /**
+   * Sanitize a song object for public API responses
+   * Removes file system paths and other sensitive information
+   */
+  sanitizeSongForPublic(song) {
+    if (!song) return null;
+    
+    const id = this.generateSongId(song.path);
+    
+    return {
+      id,
+      title: song.title || 'Unknown Title',
+      artist: song.artist || 'Unknown Artist',
+      duration: song.duration || null,
+      format: song.format || 'kai',
+      album: song.album || null,
+      year: song.year || null,
+      genre: song.genre || null,
+      // Explicitly exclude: path, originalFilePath, any file system info
+    };
+  }
+
+  /**
+   * Sanitize the queue for public API responses
+   */
+  sanitizeQueueForPublic(queue) {
+    if (!Array.isArray(queue)) return [];
+    
+    return queue.map(item => ({
+      position: item.position,
+      singerName: item.singerName,
+      song: item.song ? this.sanitizeSongForPublic(item.song) : null,
+      status: item.status,
+      requestedAt: item.requestedAt,
+      // Exclude: path, any file system info
+    }));
   }
 
   setupMiddleware() {
@@ -277,16 +349,7 @@ class WebServer {
         const pageSongs = letterSongs.slice(startIndex, endIndex);
 
         const response = {
-          songs: pageSongs.map((song) => ({
-            path: song.path,
-            title: song.title,
-            artist: song.artist,
-            duration: song.duration,
-            format: song.format || 'kai',
-            album: song.album || null,
-            year: song.year || null,
-            genre: song.genre || null,
-          })),
+          songs: pageSongs.map((song) => this.sanitizeSongForPublic(song)),
           pagination: {
             currentPage: page,
             totalPages,
@@ -339,14 +402,7 @@ class WebServer {
           songs = allSongs.sort((a, b) => a.title.localeCompare(b.title));
         }
 
-        const limitedSongs = songs.slice(0, limit).map((song) => ({
-          id: song.path,
-          path: song.path,
-          title: song.title,
-          artist: song.artist,
-          duration: song.duration,
-          format: song.format || 'kai',
-        }));
+        const limitedSongs = songs.slice(0, limit).map((song) => this.sanitizeSongForPublic(song));
 
         res.json({
           songs: limitedSongs,
@@ -385,16 +441,7 @@ class WebServer {
 
         // Use fuzzy search
         const fuseResults = this.fuse.search(query);
-        const results = fuseResults.slice(0, limit).map((result) => ({
-          path: result.item.path,
-          title: result.item.title,
-          artist: result.item.artist,
-          duration: result.item.duration,
-          format: result.item.format || 'kai',
-          album: result.item.album || null,
-          year: result.item.year || null,
-          genre: result.item.genre || null,
-        }));
+        const results = fuseResults.slice(0, limit).map((result) => this.sanitizeSongForPublic(result.item));
 
         res.json({ results });
       } catch (error) {
@@ -424,10 +471,16 @@ class WebServer {
         }
 
         // Find the song in the library
+        // Support both opaque IDs (new) and paths (legacy/admin)
         console.log('🔍 Looking for song with ID:', songId);
         const allSongs = await this.getCachedSongs();
         console.log('📚 Found library with', allSongs.length, 'songs');
-        const song = allSongs.find((s) => s.path === songId);
+        
+        // Try to find by opaque ID first, then fall back to path (for backwards compatibility)
+        const songPath = this.getSongPathFromId(songId);
+        const song = songPath 
+          ? allSongs.find((s) => s.path === songPath)
+          : allSongs.find((s) => s.path === songId);
 
         if (!song) {
           console.log('❌ SONG NOT FOUND in library:', songId);
@@ -436,13 +489,16 @@ class WebServer {
 
         console.log('✅ Song found:', song.title, 'by', song.artist);
 
+        // Generate opaque ID for the song if not already cached
+        const opaqueSongId = this.generateSongId(song.path);
+        
         const request = {
           id: Date.now() + Math.random(),
-          songId,
+          songId: opaqueSongId, // Store opaque ID, not path
           song: {
             title: song.title,
             artist: song.artist,
-            path: song.path,
+            path: song.path, // Keep path internally for playback
           },
           requesterName: requesterName.trim().substring(0, 50),
           message: message ? message.trim().substring(0, 200) : '',
@@ -613,12 +669,55 @@ class WebServer {
     });
 
     // Unified state endpoint - canonical source of truth for web clients
+    // Public state endpoint - returns sanitized state only (no file paths, no sensitive config)
     this.app.get('/api/state', (req, res) => {
+      try {
+        const state = this.mainApp.appState.getSnapshot();
+        
+        // Sanitize for public consumption - only include safe info
+        const sanitizedState = {
+          // Current playback status (no paths)
+          currentSong: state.currentSong ? {
+            title: state.currentSong.title,
+            artist: state.currentSong.artist,
+            duration: state.currentSong.duration,
+            requester: state.currentSong.requester,
+          } : null,
+          playback: {
+            isPlaying: state.playback?.isPlaying || false,
+            position: state.playback?.position || 0,
+            duration: state.playback?.duration || 0,
+          },
+          // Queue info (sanitized - no paths)
+          queue: (state.queue || []).map(item => ({
+            id: item.id,
+            title: item.title,
+            artist: item.artist,
+            duration: item.duration,
+            requester: item.requester,
+          })),
+          // Server info (safe subset)
+          serverInfo: {
+            serverName: this.settings.serverName,
+            allowRequests: this.settings.allowSongRequests,
+          },
+          // Exclude: mixer, effects, preferences, webServer config, paths, etc.
+        };
+        
+        res.json(sanitizedState);
+      } catch (error) {
+        console.error('Error fetching app state:', error);
+        res.status(500).json({ error: 'Failed to fetch state' });
+      }
+    });
+    
+    // Full state endpoint for admin - includes everything (behind auth via /admin/ prefix)
+    this.app.get('/admin/state-full', (req, res) => {
       try {
         const state = this.mainApp.appState.getSnapshot();
         res.json(state);
       } catch (error) {
-        console.error('Error fetching app state:', error);
+        console.error('Error fetching full app state:', error);
         res.status(500).json({ error: 'Failed to fetch state' });
       }
     });
