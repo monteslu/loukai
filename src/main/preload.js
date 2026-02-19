@@ -185,7 +185,20 @@ const api = {
     sendEffectsList: (effects) => ipcRenderer.send('effects:getList-response', effects),
     sendCurrentEffect: (effectName) => ipcRenderer.send('effects:getCurrent-response', effectName),
     sendDisabledEffects: (disabled) => ipcRenderer.send('effects:getDisabled-response', disabled),
-    sendWebRTCResponse: (command, result) => ipcRenderer.send(`webrtc:${command}-response`, result),
+    sendWebRTCResponse: (command, result) => {
+      // SECURITY FIX (#24): Whitelist allowed WebRTC commands to prevent IPC channel injection
+      const ALLOWED_COMMANDS = [
+        'setupReceiver',
+        'checkReceiverReady',
+        'setOfferAndCreateAnswer',
+        'getReceiverStatus',
+      ];
+      if (!ALLOWED_COMMANDS.includes(command)) {
+        console.warn('Blocked invalid WebRTC command:', command);
+        return;
+      }
+      ipcRenderer.send(`webrtc:${command}-response`, result);
+    },
   },
 
   events: {
