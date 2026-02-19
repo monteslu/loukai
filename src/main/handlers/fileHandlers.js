@@ -4,6 +4,7 @@
  */
 
 import { ipcMain, dialog } from 'electron';
+import { validateSongPath } from '../utils/pathValidator.js';
 
 /**
  * Register all file-related IPC handlers
@@ -27,8 +28,18 @@ export function registerFileHandlers(mainApp) {
     return null;
   });
 
-  // Load KAI file from path
+  // Load KAI file from path (with path traversal protection)
   ipcMain.handle('file:loadKaiFromPath', async (event, filePath) => {
-    return await mainApp.loadKaiFile(filePath);
+    // Get the songs folder from settings
+    const songsFolder = mainApp.settings?.getSongsFolder?.();
+    
+    // Validate the path is within the songs directory
+    const validation = validateSongPath(filePath, songsFolder);
+    if (!validation.valid) {
+      console.error('🚫 Path validation failed:', validation.error, filePath);
+      return { error: validation.error };
+    }
+
+    return await mainApp.loadKaiFile(validation.resolvedPath);
   });
 }
