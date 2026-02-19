@@ -103,7 +103,8 @@ function getPythonBuildUrl() {
 /**
  * Download a file with progress tracking
  */
-function downloadFile(url, destPath, onProgress = null) {
+// SECURITY FIX (#29): Add max redirects parameter to prevent infinite loops
+function downloadFile(url, destPath, onProgress = null, maxRedirects = 5) {
   return new Promise((resolve, reject) => {
     console.log(`📥 Downloading: ${url}`);
     console.log(`   Destination: ${destPath}`);
@@ -143,11 +144,17 @@ function downloadFile(url, destPath, onProgress = null) {
         const location = response.headers.location;
         console.log(`🔀 Redirect to: ${location}`);
 
+        // SECURITY FIX (#29): Check redirect limit to prevent infinite loops/SSRF
+        if (maxRedirects <= 0) {
+          reject(new Error(`Too many redirects (max 5) when downloading ${url}`));
+          return;
+        }
+
         try {
           // Handle relative redirects by resolving against original URL
           const redirectUrl = location.startsWith('http') ? location : new URL(location, url).href;
-          console.log(`🔀 Resolved redirect URL: ${redirectUrl}`);
-          downloadFile(redirectUrl, destPath, onProgress).then(resolve).catch(reject);
+          console.log(`🔀 Resolved redirect URL: ${redirectUrl} (${maxRedirects - 1} redirects remaining)`);
+          downloadFile(redirectUrl, destPath, onProgress, maxRedirects - 1).then(resolve).catch(reject);
         } catch (error) {
           console.error(`❌ Failed to resolve redirect URL`);
           console.error('Original URL:', url);
