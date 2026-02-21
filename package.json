@@ -76,6 +76,7 @@
     "cdgraphics": "^7.0.0",
     "cookie-session": "^2.1.1",
     "cors": "^2.8.5",
+    "electron": "^40.6.0",
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
     "fuse.js": "^7.1.0",
@@ -88,11 +89,10 @@
     "react-dom": "^19.2.0",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
-    "tar": "^7.5.2",
+    "tar": "^7.5.9",
     "ws": "^8.13.0",
     "yauzl": "^3.0.0",
-    "yazl": "^3.3.1",
-    "electron": "^38.2.0"
+    "yazl": "^3.3.1"
   },
   "build": {
     "appId": "com.loukai.app",
