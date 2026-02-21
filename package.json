@@ -25,7 +25,8 @@
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write \"src/**/*.{js,jsx,json,css,md}\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,json,css,md}\"",
-    "prepare": "husky"
+    "prepare": "husky",
+    "prepublishOnly": "npm run build:web"
   },
   "keywords": [
     "karaoke",
@@ -229,5 +230,14 @@
     "src/**/*.{json,css,md}": [
       "prettier --write"
     ]
-  }
+  },
+  "bin": {
+    "loukai": "bin/loukai.js"
+  },
+  "files": [
+    "src/",
+    "public/",
+    "bin/",
+    "static/"
+  ]
 }
