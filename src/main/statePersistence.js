@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { app } from 'electron';
+import { log } from './logger.js';
 
 /**
  * StatePersistence - Saves and loads AppState to/from disk
@@ -38,13 +39,13 @@ class StatePersistence {
       // Restore mixer state if available
       if (savedState.mixer) {
         this.appState.state.mixer = savedState.mixer;
-        console.log('📂 Loaded mixer state');
+        log('📂 Loaded mixer state');
       }
 
       // Restore effects state if available
       if (savedState.effects) {
         this.appState.state.effects = savedState.effects;
-        console.log('📂 Loaded effects state');
+        log('📂 Loaded effects state');
       }
 
       // Restore preferences if available
@@ -53,14 +54,14 @@ class StatePersistence {
           ...this.appState.state.preferences,
           ...savedState.preferences,
         };
-        console.log('📂 Loaded preferences');
+        log('📂 Loaded preferences');
       }
 
-      console.log('✅ State loaded from disk');
+      log('✅ State loaded from disk');
       return true;
     } catch (error) {
       if (error.code === 'ENOENT') {
-        console.log('ℹ️ No saved state found (first run)');
+        log('ℹ️ No saved state found (first run)');
         return false;
       }
 
@@ -74,12 +75,12 @@ class StatePersistence {
         // Restore from backup
         if (savedState.mixer) {
           this.appState.state.mixer = savedState.mixer;
-          console.log('📂 Loaded mixer state from backup');
+          log('📂 Loaded mixer state from backup');
         }
 
         if (savedState.effects) {
           this.appState.state.effects = savedState.effects;
-          console.log('📂 Loaded effects state from backup');
+          log('📂 Loaded effects state from backup');
         }
 
         if (savedState.preferences) {
@@ -87,10 +88,10 @@ class StatePersistence {
             ...this.appState.state.preferences,
             ...savedState.preferences,
           };
-          console.log('📂 Loaded preferences from backup');
+          log('📂 Loaded preferences from backup');
         }
 
-        console.log('✅ State restored from backup');
+        log('✅ State restored from backup');
 
         // Mark as dirty to save the restored state
         this.isDirty = true;
@@ -146,7 +147,7 @@ class StatePersistence {
       await fs.rename(tempPath, this.stateFile);
 
       this.isDirty = false;
-      console.log('💾 State saved to disk');
+      log('💾 State saved to disk');
     } catch (error) {
       console.error('❌ Failed to save state:', error);
       throw error; // Propagate error so caller knows save failed
@@ -167,7 +168,7 @@ class StatePersistence {
       }
     }, 30000); // 30 seconds
 
-    console.log('⏰ Started periodic state persistence (30s interval)');
+    log('⏰ Started periodic state persistence (30s interval)');
   }
 
   /**
@@ -177,7 +178,7 @@ class StatePersistence {
     if (this.saveInterval) {
       clearInterval(this.saveInterval);
       this.saveInterval = null;
-      console.log('⏸️ Stopped periodic state persistence');
+      log('⏸️ Stopped periodic state persistence');
     }
   }
 

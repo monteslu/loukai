@@ -3,47 +3,49 @@
  * Central registration point for all IPC handlers
  */
 
-console.log('📦 Loading handler modules...');
+import { log } from '../logger.js';
+
+log('📦 Loading handler modules...');
 
 import { registerAudioHandlers } from './audioHandlers.js';
-console.log('✓ audioHandlers');
+log('✓ audioHandlers');
 import { registerMixerHandlers } from './mixerHandlers.js';
-console.log('✓ mixerHandlers');
+log('✓ mixerHandlers');
 import { registerPlayerHandlers } from './playerHandlers.js';
-console.log('✓ playerHandlers');
+log('✓ playerHandlers');
 import { registerLibraryHandlers } from './libraryHandlers.js';
-console.log('✓ libraryHandlers');
+log('✓ libraryHandlers');
 import { registerSettingsHandlers } from './settingsHandlers.js';
-console.log('✓ settingsHandlers');
+log('✓ settingsHandlers');
 import { registerQueueHandlers } from './queueHandlers.js';
-console.log('✓ queueHandlers');
+log('✓ queueHandlers');
 import { registerWebServerHandlers } from './webServerHandlers.js';
-console.log('✓ webServerHandlers');
+log('✓ webServerHandlers');
 import { registerCanvasHandlers } from './canvasHandlers.js';
-console.log('✓ canvasHandlers');
+log('✓ canvasHandlers');
 import { registerEffectsHandlers } from './effectsHandlers.js';
-console.log('✓ effectsHandlers');
+log('✓ effectsHandlers');
 import { registerEditorHandlers } from './editorHandlers.js';
-console.log('✓ editorHandlers');
+log('✓ editorHandlers');
 import { registerPreferencesHandlers } from './preferencesHandlers.js';
-console.log('✓ preferencesHandlers');
+log('✓ preferencesHandlers');
 import { registerFileHandlers } from './fileHandlers.js';
-console.log('✓ fileHandlers');
+log('✓ fileHandlers');
 import { registerRendererHandlers } from './rendererHandlers.js';
-console.log('✓ rendererHandlers');
+log('✓ rendererHandlers');
 import { registerAppHandlers } from './appHandlers.js';
-console.log('✓ appHandlers');
+log('✓ appHandlers');
 import { registerAutotuneHandlers } from './autotuneHandlers.js';
-console.log('✓ autotuneHandlers');
+log('✓ autotuneHandlers');
 import { registerCreatorHandlers } from './creatorHandlers.js';
-console.log('✓ creatorHandlers');
+log('✓ creatorHandlers');
 
 /**
  * Register all IPC handlers
  * @param {Object} mainApp - Main application instance
  */
 export function registerAllHandlers(mainApp) {
-  console.log('📡 Registering IPC handlers...');
+  log('📡 Registering IPC handlers...');
 
   try {
     // Core handlers
@@ -70,7 +72,7 @@ export function registerAllHandlers(mainApp) {
     // Creator handlers
     registerCreatorHandlers(mainApp);
 
-    console.log('✅ All IPC handlers registered');
+    log('✅ All IPC handlers registered');
   } catch (error) {
     console.error('❌ Failed to register IPC handlers:', error);
     throw error;

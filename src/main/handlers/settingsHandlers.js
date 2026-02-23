@@ -1,3 +1,4 @@
+import { log } from '../logger.js';
 /**
  * Settings IPC Handlers
  * Handles application settings persistence
@@ -18,7 +19,7 @@ import {
  * @param {Object} _mainApp - Main application instance (unused, kept for signature consistency)
  */
 export function registerSettingsHandlers(_mainApp) {
-  console.log('📡 Registering settings handlers...');
+  log('📡 Registering settings handlers...');
 
   // Get setting - uses settingsService which applies defaults
   ipcMain.handle(SETTINGS_CHANNELS.GET, (event, key, defaultValue) => {

@@ -1,3 +1,4 @@
+import { log } from '../logger.js';
 /**
  * Audio IPC Handlers
  * Handles all audio device enumeration and routing
@@ -24,7 +25,7 @@ export function registerAudioHandlers(mainApp) {
 
   // Set audio device
   ipcMain.handle(AUDIO_CHANNELS.SET_DEVICE, (event, deviceType, deviceId) => {
-    console.log(`🎧 IPC: Setting ${deviceType} device to ${deviceId}`);
+    log(`🎧 IPC: Setting ${deviceType} device to ${deviceId}`);
     if (mainApp.audioEngine) {
       return mainApp.audioEngine.setDevice(deviceType, deviceId);
     }

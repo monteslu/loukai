@@ -1,3 +1,4 @@
+import { log } from '../logger.js';
 /**
  * Queue IPC Handlers
  * Handles song queue management operations
@@ -21,11 +22,11 @@ export function registerQueueHandlers(mainApp) {
 
     // If queue was empty, automatically load and start playing the first song
     if (result.success && result.wasEmpty) {
-      console.log(`🎵 Queue was empty, auto-loading "${result.queueItem.title}"`);
+      log(`🎵 Queue was empty, auto-loading "${result.queueItem.title}"`);
       try {
         // Use the returned queueItem which has the generated ID
         await mainApp.loadKaiFile(result.queueItem.path, result.queueItem.id);
-        console.log('✅ Successfully auto-loaded song from queue');
+        log('✅ Successfully auto-loaded song from queue');
       } catch (error) {
         console.error('❌ Failed to auto-load song from queue:', error);
       }

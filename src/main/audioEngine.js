@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { log } from './logger.js';
 
 class AudioEngine extends EventEmitter {
   constructor() {
@@ -42,7 +43,7 @@ class AudioEngine extends EventEmitter {
     try {
       this.initialized = true;
       this.scanDevices();
-      console.log('Audio engine initialized');
+      log('Audio engine initialized');
     } catch (error) {
       console.error('Failed to initialize audio engine:', error);
       throw error;
@@ -77,7 +78,7 @@ class AudioEngine extends EventEmitter {
       this.devices.IEM = 'default-output';
       this.devices.input = 'default-input';
 
-      console.log(`Audio engine initialized with ${this.availableDevices.length} fallback devices`);
+      log(`Audio engine initialized with ${this.availableDevices.length} fallback devices`);
     } catch (error) {
       console.error('Failed to scan audio devices:', error);
       this.availableDevices = [];
@@ -130,7 +131,7 @@ class AudioEngine extends EventEmitter {
         },
       };
 
-      console.log(`${busType} output stream created`);
+      log(`${busType} output stream created`);
     } catch (error) {
       console.error(`Failed to create ${busType} output stream:`, error);
     }
@@ -154,7 +155,7 @@ class AudioEngine extends EventEmitter {
         },
       };
 
-      // console.log('Input stream created');
+      // log('Input stream created');
     } catch (error) {
       console.error('Failed to create input stream:', error);
     }
@@ -260,7 +261,7 @@ class AudioEngine extends EventEmitter {
       }
 
       this.emit('mixChanged', this.getMixerState());
-      console.log(`Loaded song with ${this.stems.size} stems`);
+      log(`Loaded song with ${this.stems.size} stems`);
     } catch (error) {
       console.error('Failed to load song:', error);
       throw error;
@@ -268,7 +269,7 @@ class AudioEngine extends EventEmitter {
   }
 
   play() {
-    console.log('🎵 MAIN AudioEngine.play() called');
+    log('🎵 MAIN AudioEngine.play() called');
     if (!this.initialized || !this.songData) return false;
 
     try {
@@ -279,7 +280,7 @@ class AudioEngine extends EventEmitter {
       this.playStartPosition = this.currentPosition;
       this.startPositionTimer();
 
-      console.log('🎵 MAIN AudioEngine.play() - started timer, isPlaying =', this.isPlaying);
+      log('🎵 MAIN AudioEngine.play() - started timer, isPlaying =', this.isPlaying);
 
       if (this.audioStreams.PA) this.audioStreams.PA.start();
       if (this.audioStreams.IEM) this.audioStreams.IEM.start();
@@ -437,13 +438,13 @@ class AudioEngine extends EventEmitter {
   }
 
   setAutotuneEnabled(enabled) {
-    console.log('Auto-tune enabled set to:', enabled);
+    log('Auto-tune enabled set to:', enabled);
     // TODO: Implement actual auto-tune processing
     return true;
   }
 
   setAutotuneSettings(settings) {
-    console.log('Auto-tune settings updated:', settings);
+    log('Auto-tune settings updated:', settings);
     // TODO: Implement actual settings application
     return true;
   }
@@ -468,7 +469,7 @@ class AudioEngine extends EventEmitter {
       }
 
       this.initialized = false;
-      console.log('Audio engine stopped');
+      log('Audio engine stopped');
     } catch (error) {
       console.error('Error stopping audio engine:', error);
     }

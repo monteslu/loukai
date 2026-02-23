@@ -1,3 +1,4 @@
+import { log } from '../logger.js';
 /**
  * Editor IPC Handlers
  * Handles song editing operations (KAI and M4A formats)
@@ -13,12 +14,12 @@ export function registerEditorHandlers(mainApp) {
   // Load song file for editing (KAI or M4A)
   ipcMain.handle('editor:loadKai', async (event, filePath) => {
     try {
-      console.log('Load song file for editing:', filePath);
+      log('Load song file for editing:', filePath);
 
       const editorService = await import('../../shared/services/editorService.js');
       const result = await editorService.loadSong(filePath);
 
-      console.log(
+      log(
         `${result.format.toUpperCase()} file loaded for editing, has lyrics:`,
         result.kaiData.lyrics?.length || 0
       );
@@ -37,8 +38,8 @@ export function registerEditorHandlers(mainApp) {
   // Save song file (KAI or M4A)
   ipcMain.handle('editor:saveKai', async (event, kaiData, originalPath) => {
     try {
-      console.log('Save song file request:', originalPath);
-      console.log('Updated lyrics:', kaiData.lyrics?.length || 0, 'lines');
+      log('Save song file request:', originalPath);
+      log('Updated lyrics:', kaiData.lyrics?.length || 0, 'lines');
 
       // Determine format from file extension
       const lowerPath = originalPath.toLowerCase();
@@ -58,7 +59,7 @@ export function registerEditorHandlers(mainApp) {
         lyrics: kaiData.lyrics,
       });
 
-      console.log(`${format.toUpperCase()} file saved successfully`);
+      log(`${format.toUpperCase()} file saved successfully`);
       return { success: true };
     } catch (error) {
       console.error('Failed to save song file:', error);
@@ -69,7 +70,7 @@ export function registerEditorHandlers(mainApp) {
   // Reload song file in player (KAI or M4A)
   ipcMain.handle('editor:reloadKai', async (event, filePath) => {
     try {
-      console.log('Reload song file request:', filePath);
+      log('Reload song file request:', filePath);
 
       // Determine format and call appropriate loader
       const lowerPath = filePath.toLowerCase();
@@ -84,7 +85,7 @@ export function registerEditorHandlers(mainApp) {
       }
 
       if (result && result.success) {
-        console.log('Song file reloaded successfully');
+        log('Song file reloaded successfully');
         return { success: true };
       } else {
         console.error('Failed to reload song file');

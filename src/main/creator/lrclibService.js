@@ -1,3 +1,4 @@
+import { log } from '../logger.js';
 /**
  * LRCLIB Service - Lyrics lookup from lrclib.net
  *
@@ -73,7 +74,7 @@ export async function searchLyrics(title, artist) {
     }
 
     const url = `${LRCLIB_API_BASE}/search?${params}`;
-    console.log(`Searching LRCLIB for: ${title} by ${artist || 'unknown'}`);
+    log(`Searching LRCLIB for: ${title} by ${artist || 'unknown'}`);
 
     const response = await fetch(url, {
       headers: {
@@ -97,9 +98,7 @@ export async function searchLyrics(title, artist) {
     // Find first non-instrumental result with plain lyrics
     for (const result of results) {
       if (!result.instrumental && result.plainLyrics) {
-        console.log(
-          `Found lyrics: ${result.name || 'Unknown'} from ${result.albumName || 'Unknown'}`
-        );
+        log(`Found lyrics: ${result.name || 'Unknown'} from ${result.albumName || 'Unknown'}`);
         return {
           id: result.id,
           name: result.name,
@@ -128,7 +127,7 @@ export async function searchLyrics(title, artist) {
 export async function getLyricsById(id) {
   try {
     const url = `${LRCLIB_API_BASE}/get/${id}`;
-    console.log(`Fetching LRCLIB track: ${id}`);
+    log(`Fetching LRCLIB track: ${id}`);
 
     const response = await fetch(url, {
       headers: {
@@ -278,7 +277,7 @@ export async function prepareWhisperContext(title, artist, existingLyrics = null
 
     if (vocabularyHints) {
       initialPrompt = `${title}. ${vocabularyHints}`;
-      console.log(`Whisper initial prompt: ${initialPrompt.substring(0, 100)}...`);
+      log(`Whisper initial prompt: ${initialPrompt.substring(0, 100)}...`);
     } else {
       initialPrompt = title;
     }

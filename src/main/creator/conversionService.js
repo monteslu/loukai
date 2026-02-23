@@ -1,3 +1,4 @@
+import { log } from '../logger.js';
 /**
  * Conversion Service - Orchestrates the full karaoke creation pipeline
  *
@@ -162,7 +163,7 @@ export async function runConversion(
       // ========================================
       // LYRICS-ONLY MODE: Skip stem separation
       // ========================================
-      console.log('🎤 Lyrics-only mode: extracting vocals from existing stem file');
+      log('🎤 Lyrics-only mode: extracting vocals from existing stem file');
 
       // Step 1: Extract vocals track to temp WAV (0-10%)
       onProgress('extract', `[${STEPS.extract}] Extracting vocals track...`, 0);
@@ -258,7 +259,7 @@ export async function runConversion(
     checkCancelled();
 
     if (initialPrompt) {
-      console.log(`🎤 Whisper prompt: ${initialPrompt}`);
+      log(`🎤 Whisper prompt: ${initialPrompt}`);
     }
 
     let whisperResult = await runWhisper(
@@ -342,7 +343,7 @@ export async function runConversion(
       if (pitchData?.pitch_data) {
         const keyResult = detectKey(pitchData);
         if (keyResult.key !== 'unknown') {
-          console.log(
+          log(
             `🎵 Detected key: ${keyResult.key} (confidence: ${(keyResult.confidence * 100).toFixed(0)}%)`
           );
           pitchData.detected_key = keyResult;

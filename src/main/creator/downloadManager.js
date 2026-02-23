@@ -1,3 +1,4 @@
+import { log } from '../logger.js';
 /**
  * Download Manager - Handles downloading and installing AI components for Creator
  *
@@ -106,8 +107,8 @@ function getPythonBuildUrl() {
 // SECURITY FIX (#29): Add max redirects parameter to prevent infinite loops
 function downloadFile(url, destPath, onProgress = null, maxRedirects = 5) {
   return new Promise((resolve, reject) => {
-    console.log(`📥 Downloading: ${url}`);
-    console.log(`   Destination: ${destPath}`);
+    log(`📥 Downloading: ${url}`);
+    log(`   Destination: ${destPath}`);
 
     let protocol;
     try {
@@ -125,7 +126,7 @@ function downloadFile(url, destPath, onProgress = null, maxRedirects = 5) {
     if (!existsSync(dir)) {
       try {
         mkdirSync(dir, { recursive: true });
-        console.log(`✅ Created directory: ${dir}`);
+        log(`✅ Created directory: ${dir}`);
       } catch (error) {
         console.error(`❌ Failed to create directory: ${dir}`);
         console.error('Error:', error);
@@ -136,13 +137,13 @@ function downloadFile(url, destPath, onProgress = null, maxRedirects = 5) {
     }
 
     const request = protocol.get(url, (response) => {
-      console.log(`📡 Response status: ${response.statusCode} ${response.statusMessage}`);
-      console.log(`   Headers:`, JSON.stringify(response.headers, null, 2));
+      log(`📡 Response status: ${response.statusCode} ${response.statusMessage}`);
+      log(`   Headers:`, JSON.stringify(response.headers, null, 2));
 
       // Handle redirects
       if (response.statusCode === 301 || response.statusCode === 302) {
         const location = response.headers.location;
-        console.log(`🔀 Redirect to: ${location}`);
+        log(`🔀 Redirect to: ${location}`);
 
         // SECURITY FIX (#29): Check redirect limit to prevent infinite loops/SSRF
         if (maxRedirects <= 0) {
@@ -153,8 +154,10 @@ function downloadFile(url, destPath, onProgress = null, maxRedirects = 5) {
         try {
           // Handle relative redirects by resolving against original URL
           const redirectUrl = location.startsWith('http') ? location : new URL(location, url).href;
-          console.log(`🔀 Resolved redirect URL: ${redirectUrl} (${maxRedirects - 1} redirects remaining)`);
-          downloadFile(redirectUrl, destPath, onProgress, maxRedirects - 1).then(resolve).catch(reject);
+          log(`🔀 Resolved redirect URL: ${redirectUrl} (${maxRedirects - 1} redirects remaining)`);
+          downloadFile(redirectUrl, destPath, onProgress, maxRedirects - 1)
+            .then(resolve)
+            .catch(reject);
         } catch (error) {
           console.error(`❌ Failed to resolve redirect URL`);
           console.error('Original URL:', url);
@@ -176,7 +179,7 @@ function downloadFile(url, destPath, onProgress = null, maxRedirects = 5) {
       }
 
       const totalBytes = parseInt(response.headers['content-length'] || '0', 10);
-      console.log(`📦 Content length: ${(totalBytes / 1024 / 1024).toFixed(2)} MB`);
+      log(`📦 Content length: ${(totalBytes / 1024 / 1024).toFixed(2)} MB`);
       let downloadedBytes = 0;
       let lastLoggedPercent = -1;
 
@@ -191,7 +194,7 @@ function downloadFile(url, destPath, onProgress = null, maxRedirects = 5) {
 
           // Log progress every 10%
           if (percent >= lastLoggedPercent + 10 || percent === 100) {
-            console.log(
+            log(
               `   Progress: ${percent}% (${(downloadedBytes / 1024 / 1024).toFixed(2)} / ${(totalBytes / 1024 / 1024).toFixed(2)} MB)`
             );
             lastLoggedPercent = percent;
@@ -209,8 +212,8 @@ function downloadFile(url, destPath, onProgress = null, maxRedirects = 5) {
 
       fileStream.on('finish', () => {
         fileStream.close();
-        console.log(`✅ Download complete: ${destPath}`);
-        console.log(`   Size: ${(downloadedBytes / 1024 / 1024).toFixed(2)} MB`);
+        log(`✅ Download complete: ${destPath}`);
+        log(`   Size: ${(downloadedBytes / 1024 / 1024).toFixed(2)} MB`);
         resolve();
       });
 
@@ -391,67 +394,67 @@ function detectGPU() {
  * Download and install Python
  */
 export async function downloadPython(onProgress = null) {
-  console.log('🐍 Starting Python installation...');
+  log('🐍 Starting Python installation...');
   const cacheDir = getCacheDir();
   const pythonDir = join(cacheDir, 'python');
-  console.log(`   Cache dir: ${cacheDir}`);
-  console.log(`   Python dir: ${pythonDir}`);
+  log(`   Cache dir: ${cacheDir}`);
+  log(`   Python dir: ${pythonDir}`);
 
   // Check if already installed
   const pythonPath = getPythonPath();
-  console.log(`   Checking for existing Python: ${pythonPath}`);
+  log(`   Checking for existing Python: ${pythonPath}`);
   if (existsSync(pythonPath)) {
-    console.log('✅ Python already installed');
+    log('✅ Python already installed');
     if (onProgress) onProgress('complete', 'Python already installed');
     return { success: true, path: pythonPath };
   }
 
   try {
     const url = getPythonBuildUrl();
-    console.log(`🌐 Python download URL: ${url}`);
+    log(`🌐 Python download URL: ${url}`);
     const tarPath = join(cacheDir, 'python.tar.gz');
 
     // Download
-    console.log('📥 Starting Python download...');
+    log('📥 Starting Python download...');
     if (onProgress) onProgress('downloading', 'Downloading Python...');
     await downloadFile(url, tarPath, (percent) => {
       if (onProgress) onProgress('downloading', `Downloading Python... ${percent}%`);
     });
 
     // Extract
-    console.log('📦 Extracting Python...');
+    log('📦 Extracting Python...');
     if (onProgress) onProgress('extracting', 'Extracting Python...');
 
     // Create python directory
     if (!existsSync(pythonDir)) {
-      console.log(`   Creating Python directory: ${pythonDir}`);
+      log(`   Creating Python directory: ${pythonDir}`);
       mkdirSync(pythonDir, { recursive: true });
     }
 
     // Use tar to extract (available on all platforms)
-    console.log('   Loading tar module...');
+    log('   Loading tar module...');
     const tar = await import('tar');
-    console.log('   Extracting tarball...');
+    log('   Extracting tarball...');
     await tar.extract({
       file: tarPath,
       cwd: pythonDir,
       strip: 1,
     });
-    console.log('✅ Extraction complete');
+    log('✅ Extraction complete');
 
     // Remove quarantine on macOS
     if (process.platform === 'darwin') {
-      console.log('🍎 Removing macOS quarantine attributes...');
+      log('🍎 Removing macOS quarantine attributes...');
       try {
         execSync(`xattr -cr "${pythonDir}"`, { stdio: 'ignore' });
-        console.log('✅ Quarantine removed');
+        log('✅ Quarantine removed');
       } catch (error) {
         console.warn('⚠️ Failed to remove quarantine (non-fatal):', error.message);
       }
     }
 
     // Clean up tarball
-    console.log('🧹 Cleaning up tarball...');
+    log('🧹 Cleaning up tarball...');
     rmSync(tarPath, { force: true });
 
     // Upgrade pip and setuptools, fix common conflicts
@@ -465,7 +468,7 @@ export async function downloadPython(onProgress = null) {
       // Non-fatal - coverage may not be installed
     }
 
-    console.log('✅ Python installation complete');
+    log('✅ Python installation complete');
     if (onProgress) onProgress('complete', 'Python installed successfully');
     return { success: true, path: pythonPath };
   } catch (error) {
@@ -807,14 +810,14 @@ except Exception as e:
  * Download FFmpeg binary
  */
 export async function downloadFFmpeg(onProgress = null) {
-  console.log('🎬 Starting FFmpeg installation...');
+  log('🎬 Starting FFmpeg installation...');
   const cacheDir = getCacheDir();
   const binDir = join(cacheDir, 'bin');
-  console.log(`   Binary dir: ${binDir}`);
+  log(`   Binary dir: ${binDir}`);
 
   if (!existsSync(binDir)) {
     mkdirSync(binDir, { recursive: true });
-    console.log(`   Created binary directory`);
+    log(`   Created binary directory`);
   }
 
   const plat = process.platform;
@@ -822,13 +825,13 @@ export async function downloadFFmpeg(onProgress = null) {
   const ffprobeName = plat === 'win32' ? 'ffprobe.exe' : 'ffprobe';
   const ffmpegPath = join(binDir, ffmpegName);
   const ffprobePath = join(binDir, ffprobeName);
-  console.log(`   Platform: ${plat}`);
-  console.log(`   FFmpeg path: ${ffmpegPath}`);
-  console.log(`   FFprobe path: ${ffprobePath}`);
+  log(`   Platform: ${plat}`);
+  log(`   FFmpeg path: ${ffmpegPath}`);
+  log(`   FFprobe path: ${ffprobePath}`);
 
   // Check if both already exist
   if (existsSync(ffmpegPath) && existsSync(ffprobePath)) {
-    console.log('✅ FFmpeg and FFprobe already installed');
+    log('✅ FFmpeg and FFprobe already installed');
     if (onProgress) onProgress('complete', 'FFmpeg already downloaded');
     return { success: true, ffmpegPath, ffprobePath };
   }
@@ -849,16 +852,16 @@ export async function downloadFFmpeg(onProgress = null) {
       // John Van Sickle builds include both ffmpeg and ffprobe
       url = 'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz';
     }
-    console.log(`🌐 FFmpeg download URL: ${url}`);
+    log(`🌐 FFmpeg download URL: ${url}`);
     if (ffprobeUrl) {
-      console.log(`🌐 FFprobe download URL: ${ffprobeUrl}`);
+      log(`🌐 FFprobe download URL: ${ffprobeUrl}`);
     }
 
     const archivePath = join(binDir, plat === 'linux' ? 'ffmpeg.tar.xz' : 'ffmpeg.zip');
-    console.log(`   Archive path: ${archivePath}`);
+    log(`   Archive path: ${archivePath}`);
 
     // Download ffmpeg
-    console.log('📥 Starting FFmpeg download...');
+    log('📥 Starting FFmpeg download...');
     if (onProgress) onProgress('downloading', 'Downloading FFmpeg...');
     await downloadFile(url, archivePath, (percent) => {
       if (onProgress) onProgress('downloading', `Downloading FFmpeg... ${percent}%`);
@@ -868,7 +871,7 @@ export async function downloadFFmpeg(onProgress = null) {
     let ffprobeArchivePath = null;
     if (ffprobeUrl) {
       ffprobeArchivePath = join(binDir, 'ffprobe.zip');
-      console.log('📥 Starting FFprobe download...');
+      log('📥 Starting FFprobe download...');
       if (onProgress) onProgress('downloading', 'Downloading FFprobe...');
       await downloadFile(ffprobeUrl, ffprobeArchivePath, (percent) => {
         if (onProgress) onProgress('downloading', `Downloading FFprobe... ${percent}%`);
@@ -876,7 +879,7 @@ export async function downloadFFmpeg(onProgress = null) {
     }
 
     // Extract
-    console.log('📦 Extracting FFmpeg...');
+    log('📦 Extracting FFmpeg...');
     if (onProgress) onProgress('extracting', 'Extracting FFmpeg...');
 
     // Extract and find ffmpeg binary
@@ -885,15 +888,15 @@ export async function downloadFFmpeg(onProgress = null) {
     const tempDir = mkdtempSync(join(tmpdir(), 'ffmpeg-'));
 
     try {
-      console.log(`   Extracting to temp dir: ${tempDir}`);
+      log(`   Extracting to temp dir: ${tempDir}`);
       if (plat === 'linux') {
-        console.log('   Using tar to extract...');
+        log('   Using tar to extract...');
         execSync(`tar -xf "${archivePath}" -C "${tempDir}"`);
       } else {
-        console.log('   Using yauzl to extract...');
+        log('   Using yauzl to extract...');
         await extractZip(archivePath, tempDir);
       }
-      console.log('   Extraction complete, searching for binary...');
+      log('   Extraction complete, searching for binary...');
 
       // Find binary recursively by name
       const findBinary = (dir, name) => {
@@ -923,13 +926,13 @@ export async function downloadFFmpeg(onProgress = null) {
 
       if (ffmpegFound) {
         const ffmpegDest = join(binDir, ffmpegName);
-        console.log(`   Found ffmpeg: ${ffmpegFound}`);
-        console.log(`   Copying to: ${ffmpegDest}`);
+        log(`   Found ffmpeg: ${ffmpegFound}`);
+        log(`   Copying to: ${ffmpegDest}`);
         copyFileSync(ffmpegFound, ffmpegDest);
         if (plat !== 'win32') {
           chmodSync(ffmpegDest, 0o755);
         }
-        console.log('✅ ffmpeg binary installed');
+        log('✅ ffmpeg binary installed');
       } else {
         console.error('❌ ffmpeg binary not found in archive');
         console.error(`   Searched in: ${tempDir}`);
@@ -937,26 +940,26 @@ export async function downloadFFmpeg(onProgress = null) {
       }
 
       if (ffprobeFound) {
-        console.log(`   Found ffprobe: ${ffprobeFound}`);
-        console.log(`   Copying to: ${ffprobePath}`);
+        log(`   Found ffprobe: ${ffprobeFound}`);
+        log(`   Copying to: ${ffprobePath}`);
         copyFileSync(ffprobeFound, ffprobePath);
         if (plat !== 'win32') {
           chmodSync(ffprobePath, 0o755);
         }
-        console.log('✅ ffprobe binary installed');
+        log('✅ ffprobe binary installed');
       } else if (ffprobeArchivePath) {
         // macOS: Extract ffprobe from separate archive
-        console.log('📦 Extracting FFprobe from separate archive...');
+        log('📦 Extracting FFprobe from separate archive...');
         const ffprobeTempDir = mkdtempSync(join(tmpdir(), 'ffprobe-'));
         try {
           await extractZip(ffprobeArchivePath, ffprobeTempDir);
           const ffprobeExtracted = findBinary(ffprobeTempDir, ffprobeName);
           if (ffprobeExtracted) {
-            console.log(`   Found ffprobe: ${ffprobeExtracted}`);
-            console.log(`   Copying to: ${ffprobePath}`);
+            log(`   Found ffprobe: ${ffprobeExtracted}`);
+            log(`   Copying to: ${ffprobePath}`);
             copyFileSync(ffprobeExtracted, ffprobePath);
             chmodSync(ffprobePath, 0o755);
-            console.log('✅ ffprobe binary installed');
+            log('✅ ffprobe binary installed');
           } else {
             console.warn('⚠️ ffprobe not found in separate archive');
           }
@@ -971,11 +974,11 @@ export async function downloadFFmpeg(onProgress = null) {
       }
 
       // Clean up
-      console.log('🧹 Cleaning up temporary files...');
+      log('🧹 Cleaning up temporary files...');
       rmSync(tempDir, { recursive: true, force: true });
       rmSync(archivePath, { force: true });
 
-      console.log('✅ FFmpeg installation complete');
+      log('✅ FFmpeg installation complete');
       if (onProgress) onProgress('complete', 'FFmpeg installed');
       return { success: true, ffmpegPath, ffprobePath };
     } catch (extractError) {
@@ -997,9 +1000,9 @@ export async function downloadFFmpeg(onProgress = null) {
  * Install all components in order
  */
 export async function installAllComponents(onProgress = null) {
-  console.log('🚀 Starting installation of all components...');
-  console.log(`   Platform: ${process.platform}`);
-  console.log(`   Architecture: ${process.arch}`);
+  log('🚀 Starting installation of all components...');
+  log(`   Platform: ${process.platform}`);
+  log(`   Architecture: ${process.arch}`);
 
   const results = {};
 
@@ -1036,9 +1039,9 @@ export async function installAllComponents(onProgress = null) {
     },
   ];
 
-  console.log(`📋 Installation plan: ${steps.length} components`);
+  log(`📋 Installation plan: ${steps.length} components`);
   steps.forEach((s, i) => {
-    console.log(`   ${i + 1}. ${s.label} (${s.size})`);
+    log(`   ${i + 1}. ${s.label} (${s.size})`);
   });
 
   let completedWeight = 0;
@@ -1050,7 +1053,7 @@ export async function installAllComponents(onProgress = null) {
     const totalSteps = steps.length;
     const action = step.action || 'Installing';
 
-    console.log(`\n📦 [${stepNumber}/${totalSteps}] ${action} ${step.label}...`);
+    log(`\n📦 [${stepNumber}/${totalSteps}] ${action} ${step.label}...`);
 
     if (onProgress) {
       const percent = Math.floor((completedWeight / totalWeight) * 100);
@@ -1094,7 +1097,7 @@ export async function installAllComponents(onProgress = null) {
       return { success: false, failed: step.name, error: result.error, results };
     }
 
-    console.log(`✅ [${stepNumber}/${totalSteps}] ${step.label} installed successfully`);
+    log(`✅ [${stepNumber}/${totalSteps}] ${step.label} installed successfully`);
 
     completedWeight += step.weight;
 
@@ -1104,10 +1107,10 @@ export async function installAllComponents(onProgress = null) {
     }
   }
 
-  console.log('\n🎉 All components installed successfully!');
-  console.log('Installation results:');
+  log('\n🎉 All components installed successfully!');
+  log('Installation results:');
   Object.entries(results).forEach(([name, result]) => {
-    console.log(`   ${result.success ? '✅' : '❌'} ${name}`);
+    log(`   ${result.success ? '✅' : '❌'} ${name}`);
   });
 
   if (onProgress) onProgress(100, 'All components installed successfully!');

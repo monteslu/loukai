@@ -1,3 +1,4 @@
+import { log } from '../logger.js';
 /**
  * Canvas Window IPC Handlers
  * Handles canvas window management and WebRTC streaming operations
@@ -42,7 +43,7 @@ export function registerCanvasHandlers(mainApp) {
 
   // Canvas window ready signal
   ipcMain.on('canvas:childReady', () => {
-    console.log('Child window ready, starting canvas streaming');
+    log('Child window ready, starting canvas streaming');
     // Small delay to ensure everything is fully initialized
     setTimeout(() => {
       mainApp.startCanvasStreaming();
@@ -51,7 +52,7 @@ export function registerCanvasHandlers(mainApp) {
 
   // Relay ICE candidates between sender and receiver
   ipcMain.handle('canvas:sendICECandidate', (event, source, candidate) => {
-    console.log('🧊 Relaying ICE candidate from', source);
+    log('🧊 Relaying ICE candidate from', source);
     if (source === 'sender') {
       // Send to receiver via IPC
       if (mainApp.canvasWindow && !mainApp.canvasWindow.isDestroyed()) {
@@ -68,7 +69,7 @@ export function registerCanvasHandlers(mainApp) {
   // Toggle canvas window fullscreen
   ipcMain.handle('canvas:toggleFullscreen', (event, shouldBeFullscreen) => {
     if (mainApp.canvasWindow && !mainApp.canvasWindow.isDestroyed()) {
-      console.log('🖥️ Toggling canvas window fullscreen:', shouldBeFullscreen);
+      log('🖥️ Toggling canvas window fullscreen:', shouldBeFullscreen);
       mainApp.canvasWindow.setFullScreen(shouldBeFullscreen);
       return { success: true, fullscreen: shouldBeFullscreen };
     }

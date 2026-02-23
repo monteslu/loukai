@@ -1,3 +1,4 @@
+import { log } from '../logger.js';
 /**
  * Creator IPC Handlers
  * Handles AI tool installation and karaoke file creation
@@ -155,5 +156,5 @@ export function registerCreatorHandlers(mainApp) {
     return llmService.testLLMConnection(settings);
   });
 
-  console.log('✅ Creator handlers registered');
+  log('✅ Creator handlers registered');
 }

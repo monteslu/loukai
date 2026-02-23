@@ -92,7 +92,6 @@ export function loadSettings(webServer) {
     }
 
     const finalSettings = { ...webServer.defaultSettings, ...savedSettings };
-    console.log('🔧 Final loaded settings:', finalSettings);
     return finalSettings;
   } catch (error) {
     console.error('Error loading settings:', error);

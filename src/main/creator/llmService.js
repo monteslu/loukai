@@ -1,3 +1,4 @@
+import { log } from '../logger.js';
 /**
  * LLM Service for lyrics correction
  * Supports OpenAI, Anthropic Claude, Google Gemini, and local LM Studio
@@ -49,7 +50,7 @@ function getLLMProvider(settings) {
  */
 export async function correctLyrics(whisperOutput, referenceLyrics, settings) {
   if (!settings.enabled) {
-    console.log('🤖 LLM correction disabled, using Whisper output as-is');
+    log('🤖 LLM correction disabled, using Whisper output as-is');
     return {
       output: whisperOutput,
       stats: null,
@@ -57,14 +58,14 @@ export async function correctLyrics(whisperOutput, referenceLyrics, settings) {
   }
 
   if (!referenceLyrics || !referenceLyrics.trim()) {
-    console.log('🤖 No reference lyrics provided, skipping LLM correction');
+    log('🤖 No reference lyrics provided, skipping LLM correction');
     return {
       output: whisperOutput,
       stats: null,
     };
   }
 
-  console.log(`🤖 Starting LLM lyrics correction with ${settings.provider}...`);
+  log(`🤖 Starting LLM lyrics correction with ${settings.provider}...`);
 
   try {
     const provider = getLLMProvider(settings);
@@ -77,9 +78,9 @@ export async function correctLyrics(whisperOutput, referenceLyrics, settings) {
       missingLines,
     } = parseCorrection(llmResponse, whisperOutput);
 
-    console.log(`✅ LLM correction complete (${corrections.length} lines changed)`);
+    log(`✅ LLM correction complete (${corrections.length} lines changed)`);
     if (missingLines.length > 0) {
-      console.log(`📝 LLM suggested ${missingLines.length} missing lines`);
+      log(`📝 LLM suggested ${missingLines.length} missing lines`);
     }
 
     return {
@@ -101,7 +102,7 @@ export async function correctLyrics(whisperOutput, referenceLyrics, settings) {
     };
   } catch (error) {
     console.error('❌ LLM correction failed:', error.message);
-    console.log('⚠️ Falling back to original Whisper output');
+    log('⚠️ Falling back to original Whisper output');
     return {
       output: whisperOutput,
       stats: {
@@ -304,7 +305,12 @@ export function getLLMSettings(settingsManager) {
   const apiKey = llmConfig.apiKey || LLM_DEFAULTS.apiKey;
 
   // SECURITY FIX (#25): Mask API key - only show last 4 chars to renderer
-  const maskedApiKey = apiKey && apiKey.length > 8 ? `${'•'.repeat(apiKey.length - 4)}${apiKey.slice(-4)}` : apiKey ? '••••••••' : '';
+  const maskedApiKey =
+    apiKey && apiKey.length > 8
+      ? `${'•'.repeat(apiKey.length - 4)}${apiKey.slice(-4)}`
+      : apiKey
+        ? '••••••••'
+        : '';
 
   return {
     enabled: llmConfig.enabled ?? LLM_DEFAULTS.enabled,

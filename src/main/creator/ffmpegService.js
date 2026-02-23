@@ -1,3 +1,4 @@
+import { log } from '../logger.js';
 /**
  * FFmpeg Service - Audio conversion and processing
  *
@@ -451,7 +452,7 @@ export function extractStemTrack(inputPath, outputPath, trackIndex, options = {}
       outputPath,
     ];
 
-    console.log(`🎤 Extracting audio track ${trackIndex} to WAV...`);
+    log(`🎤 Extracting audio track ${trackIndex} to WAV...`);
     const proc = spawn(ffmpeg, args, { timeout: 300000 }); // 5 min timeout
 
     let stderr = '';
@@ -465,7 +466,7 @@ export function extractStemTrack(inputPath, outputPath, trackIndex, options = {}
         reject(new Error(`Track extraction failed: ${stderr.slice(-500)}`));
         return;
       }
-      console.log(`✅ Track ${trackIndex} extracted successfully`);
+      log(`✅ Track ${trackIndex} extracted successfully`);
       resolve();
     });
 

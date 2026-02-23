@@ -11,6 +11,7 @@ import { Server } from 'socket.io';
 import http from 'http';
 import rateLimit from 'express-rate-limit';
 import Fuse from 'fuse.js';
+import { log } from './logger.js';
 import * as queueService from '../shared/services/queueService.js';
 import * as libraryService from '../shared/services/libraryService.js';
 import * as playerService from '../shared/services/playerService.js';
@@ -63,20 +64,20 @@ class WebServer {
    */
   generateSongId(songPath) {
     if (!songPath) return null;
-    
+
     // Check cache first
     if (this.songPathToId.has(songPath)) {
       return this.songPathToId.get(songPath);
     }
-    
+
     // Create a short, URL-safe hash
     const hash = crypto.createHash('sha256').update(songPath).digest('base64url').slice(0, 16);
     const id = `song_${hash}`;
-    
+
     // Cache both directions
     this.songPathToId.set(songPath, id);
     this.songIdToPath.set(id, songPath);
-    
+
     return id;
   }
 
@@ -93,9 +94,9 @@ class WebServer {
    */
   sanitizeSongForPublic(song) {
     if (!song) return null;
-    
+
     const id = this.generateSongId(song.path);
-    
+
     return {
       id,
       title: song.title || 'Unknown Title',
@@ -114,8 +115,8 @@ class WebServer {
    */
   sanitizeQueueForPublic(queue) {
     if (!Array.isArray(queue)) return [];
-    
-    return queue.map(item => ({
+
+    return queue.map((item) => ({
       position: item.position,
       singerName: item.singerName,
       song: item.song ? this.sanitizeSongForPublic(item.song) : null,
@@ -128,23 +129,25 @@ class WebServer {
   setupMiddleware() {
     // CORS configuration - restrict to localhost and LAN origins
     // Prevents malicious websites from making cross-origin requests
-    this.app.use(cors({
-      origin: (origin, callback) => {
-        // Allow requests with no origin (same-origin, non-browser clients, curl, etc.)
-        if (!origin) {
-          return callback(null, true);
-        }
-        
-        if (this.isAllowedOrigin(origin)) {
-          return callback(null, true);
-        }
-        
-        // Reject other origins
-        callback(new Error('CORS not allowed for this origin'));
-      },
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    }));
+    this.app.use(
+      cors({
+        origin: (origin, callback) => {
+          // Allow requests with no origin (same-origin, non-browser clients, curl, etc.)
+          if (!origin) {
+            return callback(null, true);
+          }
+
+          if (this.isAllowedOrigin(origin)) {
+            return callback(null, true);
+          }
+
+          // Reject other origins
+          callback(new Error('CORS not allowed for this origin'));
+        },
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+      })
+    );
     this.app.use(express.json());
     this.app.use(express.urlencoded({ extended: true }));
 
@@ -313,11 +316,11 @@ class WebServer {
     // Get available letters for alphabet navigation
     this.app.get('/api/letters', async (req, res) => {
       try {
-        console.log('API: Getting available letters...');
+        log('API: Getting available letters...');
 
         // Get songs from cache
         const allSongs = await this.getCachedSongs();
-        console.log(`API: Found ${allSongs.length} songs`);
+        log(`API: Found ${allSongs.length} songs`);
 
         // Group by first letter of artist
         const letterCounts = {};
@@ -356,7 +359,7 @@ class WebServer {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 100;
 
-        console.log(`API: Getting songs for letter ${letter}, page ${page}, limit ${limit}`);
+        log(`API: Getting songs for letter ${letter}, page ${page}, limit ${limit}`);
 
         // Get songs from cache
         const allSongs = await this.getCachedSongs();
@@ -408,12 +411,12 @@ class WebServer {
         const search = req.query.search || '';
         const limit = parseInt(req.query.limit) || 50;
 
-        console.log('API: Getting songs from cache...');
+        log('API: Getting songs from cache...');
 
         // Get songs from cache
         const allSongs = await this.getCachedSongs();
 
-        console.log(`API: Found ${allSongs.length} songs`);
+        log(`API: Found ${allSongs.length} songs`);
 
         let songs = allSongs;
 
@@ -476,7 +479,9 @@ class WebServer {
 
         // Use fuzzy search
         const fuseResults = this.fuse.search(query);
-        const results = fuseResults.slice(0, limit).map((result) => this.sanitizeSongForPublic(result.item));
+        const results = fuseResults
+          .slice(0, limit)
+          .map((result) => this.sanitizeSongForPublic(result.item));
 
         res.json({ results });
       } catch (error) {
@@ -488,17 +493,17 @@ class WebServer {
     // Submit song request (with rate limiting)
     this.app.post('/api/request', this.apiLimiter, async (req, res) => {
       try {
-        console.log('🎤 NEW REQUEST received:', req.body);
+        log('🎤 NEW REQUEST received:', req.body);
 
         if (!this.settings.allowSongRequests) {
-          console.log('❌ REQUEST DENIED: requests disabled');
+          log('❌ REQUEST DENIED: requests disabled');
           return res.status(403).json({ error: 'Song requests are currently disabled' });
         }
 
         const { songId, requesterName, message } = req.body;
 
         if (!songId || !requesterName) {
-          console.log('❌ REQUEST DENIED: missing required fields', {
+          log('❌ REQUEST DENIED: missing required fields', {
             songId: Boolean(songId),
             requesterName: Boolean(requesterName),
           });
@@ -507,26 +512,26 @@ class WebServer {
 
         // Find the song in the library
         // Support both opaque IDs (new) and paths (legacy/admin)
-        console.log('🔍 Looking for song with ID:', songId);
+        log('🔍 Looking for song with ID:', songId);
         const allSongs = await this.getCachedSongs();
-        console.log('📚 Found library with', allSongs.length, 'songs');
-        
+        log('📚 Found library with', allSongs.length, 'songs');
+
         // Try to find by opaque ID first, then fall back to path (for backwards compatibility)
         const songPath = this.getSongPathFromId(songId);
-        const song = songPath 
+        const song = songPath
           ? allSongs.find((s) => s.path === songPath)
           : allSongs.find((s) => s.path === songId);
 
         if (!song) {
-          console.log('❌ SONG NOT FOUND in library:', songId);
+          log('❌ SONG NOT FOUND in library:', songId);
           return res.status(404).json({ error: 'Song not found' });
         }
 
-        console.log('✅ Song found:', song.title, 'by', song.artist);
+        log('✅ Song found:', song.title, 'by', song.artist);
 
         // Generate opaque ID for the song if not already cached
         const opaqueSongId = this.generateSongId(song.path);
-        
+
         const request = {
           id: Date.now() + Math.random(),
           songId: opaqueSongId, // Store opaque ID, not path
@@ -542,33 +547,33 @@ class WebServer {
           clientIP: req.clientIP,
         };
 
-        console.log('📝 Created request object:', request);
+        log('📝 Created request object:', request);
         this.songRequests.push(request);
-        console.log('📋 Request added to list, total requests:', this.songRequests.length);
+        log('📋 Request added to list, total requests:', this.songRequests.length);
 
         // If auto-approval is enabled, add to queue immediately
         if (!this.settings.requireKJApproval) {
-          console.log('⚡ Auto-approval enabled, adding to queue...');
+          log('⚡ Auto-approval enabled, adding to queue...');
           try {
             await this.addToQueue(request);
             request.status = 'queued';
-            console.log('✅ Successfully added to queue');
+            log('✅ Successfully added to queue');
           } catch (queueError) {
             console.error('❌ Failed to add to queue:', queueError);
             throw queueError;
           }
         } else {
-          console.log('⏳ Manual approval required, request pending');
+          log('⏳ Manual approval required, request pending');
         }
 
         // Notify the main app about the new request
-        console.log('📢 Notifying main app about new request...');
+        log('📢 Notifying main app about new request...');
         this.mainApp.onSongRequest?.(request);
 
         // Broadcast to admin clients and renderer
         this.io.to('admin-clients').emit('song-request', request);
         this.io.to('electron-apps').emit('song-request', request);
-        console.log('📡 Broadcasted request to admin and renderer');
+        log('📡 Broadcasted request to admin and renderer');
 
         const responseData = {
           success: true,
@@ -579,7 +584,7 @@ class WebServer {
           status: request.status,
         };
 
-        console.log('📤 Sending success response:', responseData);
+        log('📤 Sending success response:', responseData);
         res.json(responseData);
       } catch (error) {
         console.error('❌ ERROR processing request:', error);
@@ -660,11 +665,11 @@ class WebServer {
     this.app.get('/api/butterchurn-screenshot/:presetName', (req, res) => {
       const presetName = decodeURIComponent(req.params.presetName);
 
-      console.log(`Screenshot API request for: "${presetName}"`);
+      log(`Screenshot API request for: "${presetName}"`);
 
       // Sanitize preset name same way as screenshot generator
       const sanitizedName = presetName.replace(/[^a-zA-Z0-9-_\s]/g, '_') + '.png';
-      console.log(`Sanitized filename: "${sanitizedName}"`);
+      log(`Sanitized filename: "${sanitizedName}"`);
 
       const screenshotsDir = path.join(__dirname, '../../static/images/butterchurn-screenshots');
 
@@ -708,23 +713,25 @@ class WebServer {
     this.app.get('/api/state', (req, res) => {
       try {
         const state = this.mainApp.appState.getSnapshot();
-        
+
         // Sanitize for public consumption - only include safe info
         const sanitizedState = {
           // Current playback status (no paths)
-          currentSong: state.currentSong ? {
-            title: state.currentSong.title,
-            artist: state.currentSong.artist,
-            duration: state.currentSong.duration,
-            requester: state.currentSong.requester,
-          } : null,
+          currentSong: state.currentSong
+            ? {
+                title: state.currentSong.title,
+                artist: state.currentSong.artist,
+                duration: state.currentSong.duration,
+                requester: state.currentSong.requester,
+              }
+            : null,
           playback: {
             isPlaying: state.playback?.isPlaying || false,
             position: state.playback?.position || 0,
             duration: state.playback?.duration || 0,
           },
           // Queue info (sanitized - no paths)
-          queue: (state.queue || []).map(item => ({
+          queue: (state.queue || []).map((item) => ({
             id: item.id,
             title: item.title,
             artist: item.artist,
@@ -738,14 +745,14 @@ class WebServer {
           },
           // Exclude: mixer, effects, preferences, webServer config, paths, etc.
         };
-        
+
         res.json(sanitizedState);
       } catch (error) {
         console.error('Error fetching app state:', error);
         res.status(500).json({ error: 'Failed to fetch state' });
       }
     });
-    
+
     // Full state endpoint for admin - includes everything (behind auth via /admin/ prefix)
     this.app.get('/admin/state-full', (req, res) => {
       try {
@@ -1083,9 +1090,9 @@ class WebServer {
           // For M4A files, add download URLs for extracted audio tracks
           const audioFiles = result.kaiData.audio.sources.map((source) => {
             const trackName = source.name;
-            const fileId = Buffer.from(`${validatedPath}:${trackName}:${source.trackIndex}`).toString(
-              'base64url'
-            );
+            const fileId = Buffer.from(
+              `${validatedPath}:${trackName}:${source.trackIndex}`
+            ).toString('base64url');
 
             return {
               name: source.name,
@@ -1197,7 +1204,7 @@ class WebServer {
         const trackIndex = parseInt(trackIndexStr, 10);
         const m4aPath = validation.resolvedPath;
 
-        console.log('📥 M4A audio request:', { m4aPath, trackName, trackIndex });
+        log('📥 M4A audio request:', { m4aPath, trackName, trackIndex });
 
         // Load the M4A file to extract the audio track
         const M4ALoader = (await import('../utils/m4aLoader.js')).default;
@@ -1216,7 +1223,7 @@ class WebServer {
         // Extract the audio track if not already extracted
         let audioData = audioSource.audioData;
         if (!audioData) {
-          console.log(`🎵 Extracting track ${trackIndex} from M4A file...`);
+          log(`🎵 Extracting track ${trackIndex} from M4A file...`);
           audioData = await M4ALoader.extractTrack(m4aPath, trackIndex);
         }
 
@@ -1233,7 +1240,7 @@ class WebServer {
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(audioData);
 
-        console.log(`✅ Sent M4A track: ${filename} (${audioData.length} bytes)`);
+        log(`✅ Sent M4A track: ${filename} (${audioData.length} bytes)`);
       } catch (error) {
         console.error('Failed to download M4A audio:', error);
         res.status(500).json({
@@ -1435,7 +1442,7 @@ class WebServer {
     // Refresh library cache
     this.app.post('/admin/library/refresh', async (req, res) => {
       try {
-        console.log('🔄 Admin requested library cache refresh');
+        log('🔄 Admin requested library cache refresh');
 
         // Use libraryService to scan library
         const result = await libraryService.scanLibrary(this.mainApp);
@@ -2002,17 +2009,17 @@ class WebServer {
       this.io.to('admin-clients').emit('playback-state-update', playbackState);
     });
 
-    console.log('✅ State change listeners configured for WebSocket broadcasting');
+    log('✅ State change listeners configured for WebSocket broadcasting');
   }
 
   setupSocketHandlers() {
     this.io.on('connection', (socket) => {
-      console.log('Client connected:', socket.id);
+      log('Client connected:', socket.id);
 
       // Handle connection type identification
       socket.on('identify', (data) => {
         socket.clientType = data.type; // 'electron-app', 'web-ui', or 'admin'
-        console.log(`Client identified as: ${data.type}`);
+        log(`Client identified as: ${data.type}`);
 
         if (data.type === 'electron-app') {
           socket.join('electron-apps');
@@ -2027,7 +2034,7 @@ class WebServer {
             return;
           }
           socket.join('admin-clients');
-          console.log('Admin client connected and authenticated');
+          log('Admin client connected and authenticated');
 
           // Send current state to newly connected admin client
           const currentState = this.mainApp.appState.getSnapshot();
@@ -2046,7 +2053,7 @@ class WebServer {
             currentSong: currentState.currentSong,
           });
           socket.emit('playback-state-update', currentState.playback);
-          console.log('📤 Sent initial state to admin client:', {
+          log('📤 Sent initial state to admin client:', {
             mixer: currentState.mixer,
             queue: currentState.queue.length,
             playback: currentState.playback,
@@ -2057,7 +2064,7 @@ class WebServer {
 
       // Handle disconnection
       socket.on('disconnect', () => {
-        console.log('Client disconnected:', socket.id);
+        log('Client disconnected:', socket.id);
       });
 
       // Song request events
@@ -2102,13 +2109,13 @@ class WebServer {
       socket.on('effect-control', (data) => {
         // Forward effect control commands to electron apps
         socket.to('electron-apps').emit('effect-control', data);
-        console.log(`Effect control: ${data.action}`);
+        log(`Effect control: ${data.action}`);
       });
     });
   }
 
   async addToQueue(request) {
-    console.log('🎵 Adding to queue:', request.song.title);
+    log('🎵 Adding to queue:', request.song.title);
 
     // Add the song to the main app's queue
     if (this.mainApp.addSongToQueue) {
@@ -2117,12 +2124,12 @@ class WebServer {
         requester: request.requesterName,
         addedVia: 'web-request',
       };
-      console.log('🎵 Queue item:', queueItem);
-      console.log('🎵 Calling mainApp.addSongToQueue...');
+      log('🎵 Queue item:', queueItem);
+      log('🎵 Calling mainApp.addSongToQueue...');
 
       try {
         await this.mainApp.addSongToQueue(queueItem);
-        console.log('✅ Successfully called mainApp.addSongToQueue');
+        log('✅ Successfully called mainApp.addSongToQueue');
       } catch (error) {
         console.error('❌ Error in mainApp.addSongToQueue:', error);
         throw error;
@@ -2166,11 +2173,11 @@ class WebServer {
               if (!origin) {
                 return callback(null, true);
               }
-              
+
               if (this.isAllowedOrigin(origin)) {
                 return callback(null, true);
               }
-              
+
               callback(new Error('CORS not allowed for this origin'));
             },
             methods: ['GET', 'POST'],
@@ -2207,7 +2214,7 @@ class WebServer {
         this.server = this.httpServer.listen(currentPort, (err) => {
           if (err) {
             if (err.code === 'EADDRINUSE' && currentPort < port + 10) {
-              console.log(`Port ${currentPort} in use, trying ${currentPort + 1}...`);
+              log(`Port ${currentPort} in use, trying ${currentPort + 1}...`);
               tryPort(currentPort + 1);
             } else {
               reject(err);
@@ -2218,9 +2225,9 @@ class WebServer {
             // Load settings from persistent storage now that mainApp is available
             this.settings = this.loadSettings();
 
-            console.log(`Web server started on http://localhost:${this.port}`);
-            console.log(`Socket.IO server ready for connections`);
-            console.log(`🔧 Loaded settings:`, this.settings);
+            log(`Web server started on http://localhost:${this.port}`);
+            log(`Socket.IO server ready for connections`);
+            log(`🔧 Loaded settings:`, this.settings);
             resolve(this.port);
           }
         });
@@ -2247,7 +2254,7 @@ class WebServer {
     if (this.server) {
       this.server.close();
       this.server = null;
-      console.log('Web server and Socket.IO server stopped');
+      log('Web server and Socket.IO server stopped');
     }
 
     if (this.httpServer) {
@@ -2328,7 +2335,7 @@ class WebServer {
       }
 
       return false;
-    } catch (error) {
+    } catch {
       // Invalid URL - reject
       return false;
     }
@@ -2342,7 +2349,7 @@ class WebServer {
   isPrivateIP(ip) {
     // IPv4 private ranges
     const parts = ip.split('.').map(Number);
-    if (parts.length === 4 && parts.every(p => p >= 0 && p <= 255)) {
+    if (parts.length === 4 && parts.every((p) => p >= 0 && p <= 255)) {
       // 10.0.0.0/8
       if (parts[0] === 10) return true;
       // 172.16.0.0/12 (172.16.x.x - 172.31.x.x)
@@ -2437,7 +2444,7 @@ class WebServer {
   // Get cached songs or refresh cache if needed
   async getCachedSongs() {
     if (!this.cachedSongs) {
-      console.log('📚 Loading songs into cache...');
+      log('📚 Loading songs into cache...');
       await this.refreshSongsCache();
     }
     return this.cachedSongs;
@@ -2446,14 +2453,14 @@ class WebServer {
   // Refresh the songs cache by scanning the directory
   async refreshSongsCache() {
     try {
-      console.log('🔄 Refreshing songs cache...');
+      log('🔄 Refreshing songs cache...');
       this.cachedSongs = (await this.mainApp.getLibrarySongs?.()) || [];
       this.songsCacheTime = Date.now();
 
       // Reset Fuse.js instance since songs changed
       this.fuse = null;
 
-      console.log(`✅ Cached ${this.cachedSongs.length} songs`);
+      log(`✅ Cached ${this.cachedSongs.length} songs`);
     } catch (error) {
       console.error('❌ Failed to refresh songs cache:', error);
       this.cachedSongs = [];
@@ -2462,7 +2469,7 @@ class WebServer {
 
   // Clear the songs cache (useful for manual refresh)
   clearSongsCache() {
-    console.log('🗑️ Clearing songs cache...');
+    log('🗑️ Clearing songs cache...');
     this.cachedSongs = null;
     this.songsCacheTime = null;
     this.fuse = null;
@@ -2480,7 +2487,7 @@ class WebServer {
       // Save it persistently
       if (this.mainApp.settings) {
         this.mainApp.settings.set(keyName, secretKey);
-        console.log('🔐 Generated new cookie encryption key');
+        log('🔐 Generated new cookie encryption key');
       }
     }
 

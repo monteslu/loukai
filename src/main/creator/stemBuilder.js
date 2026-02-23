@@ -1,3 +1,4 @@
+import { log } from '../logger.js';
 /**
  * Stem Builder - Creates .stem.m4a files with embedded stem data
  *
@@ -107,7 +108,7 @@ export async function buildStemM4a(options) {
 
   // Log key if detected
   if (pitch?.detected_key?.key) {
-    console.log(`🎵 Writing key to metadata: ${pitch.detected_key.key}`);
+    log(`🎵 Writing key to metadata: ${pitch.detected_key.key}`);
   }
 
   // Copy codecs (stems are already AAC)
@@ -160,7 +161,7 @@ export async function buildStemM4a(options) {
   // Per NI Stems spec, stems array should have exactly 4 entries (NOT including master)
   // Track order: drums, bass, other, vocals (corresponding to tracks 2-5)
   const stemPartsOnly = stemNames.filter((name) => name !== 'master');
-  console.log(
+  log(
     `🎛️ Writing NI Stems metadata for ${stemPartsOnly.length} stem parts: ${stemPartsOnly.join(', ')}`
   );
   await M4AAtoms.addNiStemsMetadata(outputPath, stemPartsOnly);
@@ -168,7 +169,7 @@ export async function buildStemM4a(options) {
   // Verify stem atom was written (debug)
   const { stat } = await import('fs/promises');
   const afterStemSize = (await stat(outputPath)).size;
-  console.log(`📊 File size after stem atom: ${afterStemSize} bytes`);
+  log(`📊 File size after stem atom: ${afterStemSize} bytes`);
 
   // Now inject kara atom for karaoke data using m4a-stems library
   await injectKaraokeAtoms(outputPath, {
@@ -270,18 +271,18 @@ async function injectKaraokeAtoms(filePath, data) {
   }
 
   // Write kara atom using m4a-stems library
-  console.log(`💾 Writing kara atom: ${lines.length} lines`);
+  log(`💾 Writing kara atom: ${lines.length} lines`);
   await M4AAtoms.writeKaraAtom(filePath, karaData);
 
   // Verify final file size (debug)
   const { stat } = await import('fs/promises');
   const finalSize = (await stat(filePath)).size;
-  console.log(`📊 Final file size after kara atom: ${finalSize} bytes`);
+  log(`📊 Final file size after kara atom: ${finalSize} bytes`);
 
   // Note: Vocal pitch tracking is done at runtime, not stored in file.
   // CREPE output is used only for key detection (stored in standard metadata).
 
-  console.log('✅ Karaoke atoms written successfully');
+  log('✅ Karaoke atoms written successfully');
 }
 
 /**
@@ -298,7 +299,7 @@ async function injectKaraokeAtoms(filePath, data) {
 export async function injectLyricsIntoStemFile(options) {
   const { filePath, lyrics, llmCorrections, tags } = options;
 
-  console.log(`🎤 Injecting lyrics into existing stem file: ${filePath}`);
+  log(`🎤 Injecting lyrics into existing stem file: ${filePath}`);
 
   // Read existing kara atom to preserve timing/tags
   let existingKara = null;
@@ -376,10 +377,10 @@ export async function injectLyricsIntoStemFile(options) {
   }
 
   // Write kara atom
-  console.log(`💾 Writing kara atom: ${lines.length} lines`);
+  log(`💾 Writing kara atom: ${lines.length} lines`);
   await M4AAtoms.writeKaraAtom(filePath, karaData);
 
-  console.log('✅ Lyrics injected successfully');
+  log('✅ Lyrics injected successfully');
 }
 
 /**
@@ -392,7 +393,7 @@ export async function injectLyricsIntoStemFile(options) {
  * @returns {Promise<Object>} Repair result
  */
 export async function repairStemFile(filePath, options = {}) {
-  console.log(`🔧 Checking stem file: ${filePath}`);
+  log(`🔧 Checking stem file: ${filePath}`);
 
   // Default NI Stems order (excluding master, which is track 0)
   const stemPartsOnly = ['drums', 'bass', 'other', 'vocals'];
@@ -408,8 +409,8 @@ export async function repairStemFile(filePath, options = {}) {
 
     if (existingMetadata && existingMetadata.stems && !options.force) {
       const existingStems = existingMetadata.stems.map((s) => s.name).join(', ');
-      console.log(`✅ File already has valid NI Stems metadata: ${existingStems}`);
-      console.log('   Use --force to rewrite anyway.');
+      log(`✅ File already has valid NI Stems metadata: ${existingStems}`);
+      log('   Use --force to rewrite anyway.');
       return {
         success: true,
         filePath,
@@ -420,15 +421,15 @@ export async function repairStemFile(filePath, options = {}) {
 
     // Write the stem atom with correct 4-stem metadata
     if (existingMetadata) {
-      console.log(`🔄 Force rewriting NI Stems metadata for ${stemPartsOnly.length} stem parts`);
+      log(`🔄 Force rewriting NI Stems metadata for ${stemPartsOnly.length} stem parts`);
     } else {
-      console.log(`🎛️ Adding NI Stems metadata for ${stemPartsOnly.length} stem parts`);
+      log(`🎛️ Adding NI Stems metadata for ${stemPartsOnly.length} stem parts`);
     }
     await M4AAtoms.addNiStemsMetadata(filePath, stemPartsOnly);
 
-    console.log('✅ Stem file repaired successfully');
-    console.log('⚠️  Note: Track disposition flags cannot be fixed without re-encoding.');
-    console.log('    File should work in Mixxx/Traktor but may play wrong track in some players.');
+    log('✅ Stem file repaired successfully');
+    log('⚠️  Note: Track disposition flags cannot be fixed without re-encoding.');
+    log('    File should work in Mixxx/Traktor but may play wrong track in some players.');
 
     return {
       success: true,
@@ -451,7 +452,7 @@ export async function repairStemFile(filePath, options = {}) {
  * @returns {Promise<Object>} Batch repair results
  */
 export async function repairStemFiles(filePaths, options = {}) {
-  console.log(`🔧 Batch checking ${filePaths.length} stem files...`);
+  log(`🔧 Batch checking ${filePaths.length} stem files...`);
 
   const results = {
     total: filePaths.length,
@@ -477,7 +478,7 @@ export async function repairStemFiles(filePaths, options = {}) {
     }
   }
 
-  console.log(
+  log(
     `\n📊 Complete: ${results.alreadyValid} already valid, ${results.repaired} repaired, ${results.failed} failed`
   );
   return results;

@@ -23,10 +23,11 @@ import {
   loadAndSync,
   getBroadcastChannel,
 } from '../shared/services/settingsService.js';
+import { log } from './logger.js';
 
-console.log('📦 About to import registerAllHandlers...');
+log('📦 About to import registerAllHandlers...');
 import { registerAllHandlers } from './handlers/index.js';
-console.log('✅ registerAllHandlers imported:', typeof registerAllHandlers);
+log('✅ registerAllHandlers imported:', typeof registerAllHandlers);
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -153,9 +154,13 @@ class KaiPlayerApp {
   }
 
   async initialize() {
+    // Set app name to 'loukai' for consistent userData path across all installs
+    // This ensures settings go to ~/.config/loukai/ (Linux), matching creator paths
+    app.setName('loukai');
+
     await app.whenReady();
 
-    console.log('🚀 App starting...', {
+    log('🚀 App starting...', {
       isPackaged: app.isPackaged,
       __dirname,
       resourcesPath: process.resourcesPath,
@@ -226,7 +231,7 @@ class KaiPlayerApp {
 
     // Log all console messages from renderer
     this.mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-      console.log(`[Renderer ${level}] ${message} (${sourceId}:${line})`);
+      log(`[Renderer ${level}] ${message} (${sourceId}:${line})`);
     });
 
     // Log renderer loading events
@@ -235,7 +240,7 @@ class KaiPlayerApp {
     });
 
     this.mainWindow.webContents.on('did-finish-load', () => {
-      console.log('✅ Renderer finished loading');
+      log('✅ Renderer finished loading');
     });
 
     // Set dock icon on macOS
@@ -276,7 +281,7 @@ class KaiPlayerApp {
         // F12 key
         if (input.key === 'F12') {
           event.preventDefault();
-          console.log('F12 pressed, toggling DevTools...');
+          log('F12 pressed, toggling DevTools...');
           try {
             if (this.mainWindow.webContents.isDevToolsOpened()) {
               this.mainWindow.webContents.closeDevTools();
@@ -290,7 +295,7 @@ class KaiPlayerApp {
         // Ctrl+Shift+I
         if ((input.control || input.meta) && input.shift && input.key === 'I') {
           event.preventDefault();
-          console.log('Ctrl+Shift+I pressed, toggling DevTools...');
+          log('Ctrl+Shift+I pressed, toggling DevTools...');
           try {
             if (this.mainWindow.webContents.isDevToolsOpened()) {
               this.mainWindow.webContents.closeDevTools();
@@ -344,7 +349,7 @@ class KaiPlayerApp {
     });
 
     this.canvasWindow.on('closed', () => {
-      console.log('🔴 Child window closed, stopping streaming and cleanup');
+      log('🔴 Child window closed, stopping streaming and cleanup');
       this.stopCanvasStreaming();
       this.canvasWindow = null;
     });
@@ -405,12 +410,12 @@ class KaiPlayerApp {
 
     // Only proceed if child window is still open and not destroyed
     if (this.canvasWindow.isDestroyed()) {
-      console.log('❌ Child window destroyed, cannot start streaming');
+      log('❌ Child window destroyed, cannot start streaming');
       return;
     }
 
     try {
-      console.log('Starting WebRTC canvas streaming...');
+      log('Starting WebRTC canvas streaming...');
 
       // Set up WebRTC sender in main window via IPC
       const senderResult = await this.sendWebRTCCommand('setupSender');
@@ -430,19 +435,19 @@ class KaiPlayerApp {
       await this.establishWebRTCConnection();
 
       this.canvasStreaming.isStreaming = true;
-      console.log('✅ WebRTC canvas streaming started successfully');
+      log('✅ WebRTC canvas streaming started successfully');
     } catch (error) {
       console.error('Canvas streaming setup error:', error);
     }
   }
 
   async establishWebRTCConnection() {
-    console.log('🤝 Starting WebRTC handshake...');
+    log('🤝 Starting WebRTC handshake...');
 
     let offer;
     try {
       // Create offer in sender (main window) via IPC
-      console.log('📤 Creating offer in sender...');
+      log('📤 Creating offer in sender...');
 
       offer = await this.sendWebRTCCommand('createOffer');
 
@@ -450,14 +455,14 @@ class KaiPlayerApp {
         throw new Error('Sender error: ' + offer.error);
       }
 
-      console.log('✅ Offer creation successful, moving to receiver...');
+      log('✅ Offer creation successful, moving to receiver...');
     } catch (error) {
       console.error('❌ Failed to create offer:', error);
       throw error;
     }
 
     try {
-      console.log('📥 Setting offer in receiver and creating answer...');
+      log('📥 Setting offer in receiver and creating answer...');
 
       // First check if child window is ready
       if (!this.canvasWindow || this.canvasWindow.isDestroyed()) {
@@ -465,9 +470,9 @@ class KaiPlayerApp {
       }
 
       // Check if receiver is ready via IPC
-      console.log('🔍 Checking if child window is ready...');
+      log('🔍 Checking if child window is ready...');
       const childReady = await this.sendCanvasWebRTCCommand('checkReceiverReady');
-      console.log('🏓 Child window status:', childReady);
+      log('🏓 Child window status:', childReady);
 
       if (!childReady.hasReceiverPC) {
         throw new Error('Receiver PC not found in child window');
@@ -481,10 +486,10 @@ class KaiPlayerApp {
       }
 
       // Set answer in sender via IPC
-      console.log('📤 Setting answer in sender...');
+      log('📤 Setting answer in sender...');
       await this.sendWebRTCCommand('setAnswer', answer);
 
-      console.log('✅ WebRTC peer connection handshake complete');
+      log('✅ WebRTC peer connection handshake complete');
 
       // Wait a bit for ICE connection to establish
       setTimeout(() => {
@@ -501,9 +506,9 @@ class KaiPlayerApp {
 
       const receiverStatus = await this.sendCanvasWebRTCCommand('getReceiverStatus');
 
-      console.log('📊 Connection Status:');
-      console.log('  Sender:', senderStatus);
-      console.log('  Receiver:', receiverStatus);
+      log('📊 Connection Status:');
+      log('  Sender:', senderStatus);
+      log('  Receiver:', receiverStatus);
     } catch (error) {
       console.error('Error checking connection status:', error);
     }
@@ -513,7 +518,7 @@ class KaiPlayerApp {
     if (!this.canvasStreaming.isStreaming) return;
 
     try {
-      console.log('Stopping canvas streaming...');
+      log('Stopping canvas streaming...');
 
       // Cleanup sender (main window) via IPC
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
@@ -526,7 +531,7 @@ class KaiPlayerApp {
       }
 
       this.canvasStreaming.isStreaming = false;
-      console.log('Canvas streaming stopped');
+      log('Canvas streaming stopped');
     } catch (error) {
       console.error('Error stopping canvas streaming:', error);
     }
@@ -613,7 +618,7 @@ class KaiPlayerApp {
             label: 'Toggle Developer Tools',
             accelerator: process.platform === 'darwin' ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
             click: (item, focusedWindow) => {
-              console.log('Menu: Toggle Developer Tools clicked', {
+              log('Menu: Toggle Developer Tools clicked', {
                 hasFocusedWindow: Boolean(focusedWindow),
                 windowType: focusedWindow?.getTitle(),
               });
@@ -624,10 +629,10 @@ class KaiPlayerApp {
               if (targetWindow) {
                 try {
                   if (targetWindow.webContents.isDevToolsOpened()) {
-                    console.log('Closing DevTools...');
+                    log('Closing DevTools...');
                     targetWindow.webContents.closeDevTools();
                   } else {
-                    console.log('Opening DevTools...');
+                    log('Opening DevTools...');
                     targetWindow.webContents.openDevTools();
                   }
                 } catch (error) {
@@ -760,9 +765,9 @@ class KaiPlayerApp {
     // All IPC handlers have been organized into handler modules
     // See: src/main/handlers/
     try {
-      console.log('🔧 Setting up IPC handlers...');
+      log('🔧 Setting up IPC handlers...');
       registerAllHandlers(this);
-      console.log('✅ IPC setup complete');
+      log('✅ IPC setup complete');
     } catch (error) {
       console.error('❌ Failed to setup IPC handlers:', error);
       console.error('Stack:', error.stack);
@@ -1134,7 +1139,7 @@ class KaiPlayerApp {
         }
       } catch {
         // No kara atom or error reading it - not a karaoke file
-        console.log(`No kara atom in ${m4aFilePath}`);
+        log(`No kara atom in ${m4aFilePath}`);
       }
 
       // Fallback to filename parsing if no tags
@@ -1221,7 +1226,7 @@ class KaiPlayerApp {
 
   async loadCDGFile(mp3Path, cdgPath, format, queueItemId = null) {
     try {
-      console.log('💿 Loading CDG file:', { mp3Path, cdgPath, format, queueItemId });
+      log('💿 Loading CDG file:', { mp3Path, cdgPath, format, queueItemId });
 
       // Get requester from queue if queueItemId is provided
       let requester = 'KJ';
@@ -1255,7 +1260,7 @@ class KaiPlayerApp {
       };
       this.appState.setCurrentSong(songData);
 
-      console.log('💿 CDG loaded, sending to renderer');
+      log('💿 CDG loaded, sending to renderer');
       this.sendToRenderer('song:loaded', cdgData.metadata || {});
       this.sendToRenderer('song:data', cdgData);
 
@@ -1285,7 +1290,7 @@ class KaiPlayerApp {
 
   async loadM4AFile(m4aPath, queueItemId = null) {
     try {
-      console.log('🎵 Loading M4A file:', { m4aPath, queueItemId });
+      log('🎵 Loading M4A file:', { m4aPath, queueItemId });
 
       // Get requester from queue if queueItemId is provided
       let requester = 'KJ';
@@ -1324,7 +1329,7 @@ class KaiPlayerApp {
       };
       this.appState.setCurrentSong(songData);
 
-      console.log('🎵 M4A loaded, sending to renderer');
+      log('🎵 M4A loaded, sending to renderer');
       this.sendToRenderer('song:loaded', m4aData.metadata || {});
       this.sendToRenderer('song:data', m4aData);
 
@@ -1357,17 +1362,17 @@ class KaiPlayerApp {
     const songsFolder = this.settings.getSongsFolder();
 
     if (!songsFolder) {
-      console.log('📁 No songs folder set, prompting user...');
+      log('📁 No songs folder set, prompting user...');
       await this.promptForSongsFolder();
     } else {
-      console.log('📁 Songs folder:', songsFolder);
+      log('📁 Songs folder:', songsFolder);
       // Verify folder still exists
       if (!fs.existsSync(songsFolder)) {
-        console.log('⚠️ Songs folder no longer exists, prompting for new one...');
+        log('⚠️ Songs folder no longer exists, prompting for new one...');
         await this.promptForSongsFolder();
       } else {
         // Trigger library scan on startup in background
-        console.log('📚 Starting library scan...');
+        log('📚 Starting library scan...');
         this.scanLibraryInBackground(songsFolder);
       }
     }
@@ -1383,7 +1388,7 @@ class KaiPlayerApp {
         const cacheData = JSON.parse(await fsPromises.readFile(cacheFile, 'utf8'));
         // Check if cache is for the same folder
         if (cacheData.songsFolder === songsFolder) {
-          console.log(`📂 Found library cache with ${cacheData.files.length} songs`);
+          log(`📂 Found library cache with ${cacheData.files.length} songs`);
 
           // Load from cache
           const files = cacheData.files;
@@ -1400,21 +1405,21 @@ class KaiPlayerApp {
 
           // Notify renderer
           this.sendToRenderer('library:scanComplete', { count: files.length });
-          console.log(`✅ Library loaded from cache: ${files.length} songs`);
+          log(`✅ Library loaded from cache: ${files.length} songs`);
           useCache = true;
         }
       } catch {
         // Cache doesn't exist or is invalid, will scan
-        console.log('📚 No valid cache found, scanning library...');
+        log('📚 No valid cache found, scanning library...');
       }
 
       if (useCache) return;
 
       // First, quickly count all files
-      console.log('📊 Counting files...');
+      log('📊 Counting files...');
       const allFiles = await this.findAllKaiFiles(songsFolder);
       const totalFiles = allFiles.length;
-      console.log(`📊 Found ${totalFiles} files to process`);
+      log(`📊 Found ${totalFiles} files to process`);
 
       // Notify renderer of total count
       this.sendToRenderer('library:scanProgress', { current: 0, total: totalFiles });
@@ -1422,7 +1427,7 @@ class KaiPlayerApp {
       // Now process files with metadata extraction and progress updates
       // Pass null for progressCallback since this.sendToRenderer() is called directly in the method
       const files = await this.scanForKaiFilesWithProgress(songsFolder, totalFiles, null);
-      console.log(`✅ Library scan complete: ${files.length} songs found`);
+      log(`✅ Library scan complete: ${files.length} songs found`);
 
       // Store in main process
       this.cachedLibrary = files;
@@ -1445,7 +1450,7 @@ class KaiPlayerApp {
           }),
           'utf8'
         );
-        console.log('💾 Library cache saved to disk');
+        log('💾 Library cache saved to disk');
       } catch (err) {
         console.error('Failed to save library cache:', err);
       }
@@ -1887,7 +1892,7 @@ class KaiPlayerApp {
    */
   setSongsFolderAndScan(folder) {
     this.settings.setSongsFolder(folder);
-    console.log('📁 Songs folder set to:', folder);
+    log('📁 Songs folder set to:', folder);
 
     // Notify renderer about the new library
     this.sendToRenderer('library:folderSet', folder);
@@ -1967,7 +1972,7 @@ class KaiPlayerApp {
       this.webServer.io.emit(channel, value);
     }
 
-    console.log(`📡 Settings broadcast: ${key} -> ${channel}`);
+    log(`📡 Settings broadcast: ${key} -> ${channel}`);
   }
 
   // Web Server Integration Methods
@@ -1976,8 +1981,8 @@ class KaiPlayerApp {
       this.webServer = new WebServer(this);
       const port = await this.webServer.start(3069);
 
-      console.log(`🌐 Web server started at http://localhost:${port}`);
-      console.log(`📱 Song requests available at: http://localhost:${port}`);
+      log(`🌐 Web server started at http://localhost:${port}`);
+      log(`📱 Song requests available at: http://localhost:${port}`);
 
       // Connect to Socket.IO server
       await this.connectToSocketServer(port);
@@ -1998,32 +2003,32 @@ class KaiPlayerApp {
       this.socket = io(`http://localhost:${port}`);
 
       this.socket.on('connect', () => {
-        console.log('📡 Connected to Socket.IO server');
+        log('📡 Connected to Socket.IO server');
 
         // Identify as electron app
         this.socket.emit('identify', { type: 'electron-app' });
       });
 
       this.socket.on('disconnect', () => {
-        console.log('📡 Disconnected from Socket.IO server');
+        log('📡 Disconnected from Socket.IO server');
       });
 
       this.socket.on('song-request', (request) => {
-        console.log('🎵 Song request received:', request);
+        log('🎵 Song request received:', request);
 
         // Notify renderer about new request
         this.sendToRenderer('songRequest:new', request);
       });
 
       this.socket.on('request-approved', (request) => {
-        console.log('✅ Request approved:', request);
+        log('✅ Request approved:', request);
 
         // Notify renderer about approved request
         this.sendToRenderer('songRequest:approved', request);
       });
 
       this.socket.on('request-rejected', (request) => {
-        console.log('❌ Request rejected:', request);
+        log('❌ Request rejected:', request);
 
         // Notify renderer about rejected request
         this.sendToRenderer('songRequest:rejected', request);
@@ -2034,12 +2039,12 @@ class KaiPlayerApp {
       });
 
       this.socket.on('effect-control', (data) => {
-        console.log('🎨 Effect control received:', data.action);
+        log('🎨 Effect control received:', data.action);
         this.handleEffectControl(data.action);
       });
 
       this.socket.on('settings-update', (settings) => {
-        console.log('🔧 Settings update received from server:', settings);
+        log('🔧 Settings update received from server:', settings);
         this.handleSettingsUpdate(settings);
       });
     } catch (error) {
@@ -2073,10 +2078,10 @@ class KaiPlayerApp {
     // Send effect control command to renderer process
     if (action === 'previous') {
       this.sendToRenderer('effect:previous', {});
-      console.log('🎨 Sent previous effect command to renderer');
+      log('🎨 Sent previous effect command to renderer');
     } else if (action === 'next') {
       this.sendToRenderer('effect:next', {});
-      console.log('🎨 Sent next effect command to renderer');
+      log('🎨 Sent next effect command to renderer');
     }
   }
 
@@ -2089,7 +2094,7 @@ class KaiPlayerApp {
 
     // Send settings update to renderer to update UI
     this.sendToRenderer('settings:update', settings);
-    console.log('🔧 Settings update sent to renderer');
+    log('🔧 Settings update sent to renderer');
   }
 
   // Methods called by WebServer
@@ -2112,7 +2117,7 @@ class KaiPlayerApp {
   }
 
   async addSongToQueue(queueItem) {
-    console.log('🎵 MAIN addSongToQueue called with:', queueItem);
+    log('🎵 MAIN addSongToQueue called with:', queueItem);
 
     // Use shared queueService
     const result = queueService.addSongToQueue(this.appState, queueItem);
@@ -2122,31 +2127,31 @@ class KaiPlayerApp {
       throw new Error(result.error);
     }
 
-    console.log('🎵 Created new queue item:', result.queueItem);
+    log('🎵 Created new queue item:', result.queueItem);
 
     // Update legacy songQueue for compatibility
     this.songQueue = result.queue;
 
     // If queue was empty, automatically load and start playing the first song
     if (result.wasEmpty) {
-      console.log(`🎵 Queue was empty, auto-loading "${result.queueItem.title}"`);
+      log(`🎵 Queue was empty, auto-loading "${result.queueItem.title}"`);
       try {
         // Use the returned queueItem which has the generated ID
         await this.loadKaiFile(result.queueItem.path, result.queueItem.id);
-        console.log('✅ Successfully auto-loaded song from queue');
+        log('✅ Successfully auto-loaded song from queue');
       } catch (error) {
         console.error('❌ Failed to auto-load song from queue:', error);
       }
     }
 
-    console.log(`➕ Added "${queueItem.title}" to queue (requested by ${queueItem.requester})`);
+    log(`➕ Added "${queueItem.title}" to queue (requested by ${queueItem.requester})`);
     return result;
   }
 
   onSongRequest(request) {
     // Notify renderer about new song request
     this.sendToRenderer('songRequest:new', request);
-    console.log(`🎤 New song request: "${request.song.title}" by ${request.requesterName}`);
+    log(`🎤 New song request: "${request.song.title}" by ${request.requesterName}`);
   }
 
   // Effects management methods for web server
@@ -2229,7 +2234,7 @@ class KaiPlayerApp {
 
   // Player control methods for web server
   playerPlay() {
-    console.log('🎮 Admin play command - using playerService');
+    log('🎮 Admin play command - using playerService');
     return playerService.play(this);
   }
 

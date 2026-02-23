@@ -1,5 +1,5 @@
 /**
- * Installation Logger - Intercepts console.log and sends to UI
+ * Installation Logger - Intercepts log and sends to UI
  */
 
 let logCallback = null;
@@ -19,13 +19,11 @@ export function clearLogCallback() {
 }
 
 /**
- * Log a message (sends to console AND callback)
+ * Log a message (sends to callback for UI display)
+ * Note: In production mode, console output is suppressed by the main logger
  */
 export function log(...args) {
-  // Always log to console
-  console.log(...args);
-
-  // Also send to UI if callback is set
+  // Send to UI if callback is set
   if (logCallback) {
     const message = args
       .map((arg) => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg)))
@@ -38,7 +36,7 @@ export function log(...args) {
  * Log an error (sends to console AND callback)
  */
 export function error(...args) {
-  // Always log to console
+  // Always log errors to console
   console.error(...args);
 
   // Also send to UI if callback is set

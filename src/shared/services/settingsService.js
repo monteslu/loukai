@@ -22,7 +22,6 @@ export function initSettingsService(settingsManager, appState, broadcastFn) {
   _appState = appState;
   _broadcastFn = broadcastFn;
   _initialized = true;
-  console.log('✅ Settings service initialized');
 }
 
 /**
@@ -220,7 +219,6 @@ export function loadAndSync() {
   if (settings.audioDevices) syncToAppState('audioDevices', settings.audioDevices);
   if (settings.devicePreferences) syncToAppState('devicePreferences', settings.devicePreferences);
 
-  console.log('✅ Settings loaded and synced to AppState');
   return settings;
 }
 

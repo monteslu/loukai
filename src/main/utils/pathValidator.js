@@ -28,22 +28,26 @@ export function validateSongPath(filePath, songsFolder) {
 
   // Check if the resolved path starts with the songs folder
   // This prevents ../../../etc/passwd style attacks
-  if (!resolvedFilePath.startsWith(resolvedSongsFolder + path.sep) && 
-      resolvedFilePath !== resolvedSongsFolder) {
-    return { 
-      valid: false, 
-      error: 'Access denied: path is outside songs directory' 
+  if (
+    !resolvedFilePath.startsWith(resolvedSongsFolder + path.sep) &&
+    resolvedFilePath !== resolvedSongsFolder
+  ) {
+    return {
+      valid: false,
+      error: 'Access denied: path is outside songs directory',
     };
   }
 
   // Additional check: if the path was absolute, verify it's within songs folder
   if (path.isAbsolute(filePath)) {
     const resolvedAbsolute = path.resolve(filePath);
-    if (!resolvedAbsolute.startsWith(resolvedSongsFolder + path.sep) &&
-        resolvedAbsolute !== resolvedSongsFolder) {
-      return { 
-        valid: false, 
-        error: 'Access denied: absolute path is outside songs directory' 
+    if (
+      !resolvedAbsolute.startsWith(resolvedSongsFolder + path.sep) &&
+      resolvedAbsolute !== resolvedSongsFolder
+    ) {
+      return {
+        valid: false,
+        error: 'Access denied: absolute path is outside songs directory',
       };
     }
     // Use the absolute path as-is if it's valid
@@ -66,7 +70,7 @@ export function validateBase64Path(encodedPath, songsFolder) {
 
   try {
     const decoded = Buffer.from(encodedPath, 'base64url').toString('utf8');
-    
+
     // The decoded format is "path:filename" or "path:trackName:trackIndex"
     const parts = decoded.split(':');
     if (parts.length < 2) {
@@ -74,19 +78,19 @@ export function validateBase64Path(encodedPath, songsFolder) {
     }
 
     const filePath = parts[0];
-    
+
     // Validate the file path portion
     const validation = validateSongPath(filePath, songsFolder);
     if (!validation.valid) {
       return validation;
     }
 
-    return { 
-      valid: true, 
+    return {
+      valid: true,
       decodedPath: decoded,
-      resolvedPath: validation.resolvedPath 
+      resolvedPath: validation.resolvedPath,
     };
-  } catch (error) {
+  } catch {
     return { valid: false, error: 'Invalid base64 encoding' };
   }
 }
@@ -108,5 +112,5 @@ export function isValidFile(filePath) {
 export default {
   validateSongPath,
   validateBase64Path,
-  isValidFile
+  isValidFile,
 };
