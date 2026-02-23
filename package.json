@@ -1,6 +1,6 @@
 {
-  "name": "loukai",
-  "version": "0.3.0",
+  "name": "loukai-app",
+  "version": "0.3.1",
   "type": "module",
   "description": "Loukai Karaoke - Free and open source karaoke system for playing and creating stem-based karaoke files",
   "main": "src/main/main.js",
@@ -16,7 +16,6 @@
     "build:win": "npm run build:all && electron-builder --win && node scripts/rename-artifacts.js",
     "build:mac": "npm run build:all && electron-builder --mac && node scripts/rename-artifacts.js",
     "rebuild": "electron-rebuild",
-    "postinstall": "electron-builder install-app-deps",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
