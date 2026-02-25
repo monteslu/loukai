@@ -142,6 +142,9 @@ export function CreateTab({ bridge: _bridge }) {
   const [llmSettings, setLlmSettings] = useState({ ...LLM_DEFAULTS });
   const [llmTestResult, setLlmTestResult] = useState(null);
 
+  // LLM prompt modal state
+  const [showLlmPrompt, setShowLlmPrompt] = useState(false);
+
   // Output settings
   const [outputToSongsFolder, setOutputToSongsFolder] = useState(false);
   const [whisperModel, setWhisperModel] = useState(CREATOR_DEFAULTS.whisperModel);
@@ -194,7 +197,7 @@ export function CreateTab({ bridge: _bridge }) {
       try {
         const outputToSongs = await window.kaiAPI?.settings?.get(
           'creator.outputToSongsFolder',
-          false
+          CREATOR_DEFAULTS.outputToSongsFolder
         );
         setOutputToSongsFolder(outputToSongs);
         const whisper = await window.kaiAPI?.settings?.get(
@@ -302,6 +305,41 @@ export function CreateTab({ bridge: _bridge }) {
       window.kaiAPI?.creator?.removeConversionErrorListener(onConversionError);
     };
   }, [checkComponents]);
+
+  // Show LLM prompt on first visit when ready
+  useEffect(() => {
+    if (status !== 'ready') return;
+    const checkLlmPrompt = async () => {
+      try {
+        const shown = await window.kaiAPI?.settings?.get('creator.llmPromptShown', false);
+        if (!shown) {
+          setShowLlmPrompt(true);
+        }
+      } catch (err) {
+        console.error('Failed to check LLM prompt status:', err);
+      }
+    };
+    checkLlmPrompt();
+  }, [status]);
+
+  const handleLlmPromptChoice = async (choice) => {
+    let newSettings;
+    if (choice === 'skip') {
+      newSettings = { ...llmSettings, enabled: false };
+    } else if (choice === 'local') {
+      newSettings = { ...llmSettings, enabled: true, provider: 'lmstudio' };
+    } else if (choice === 'openai') {
+      newSettings = { ...llmSettings, enabled: true, provider: 'openai' };
+    }
+    setLlmSettings(newSettings);
+    try {
+      await window.kaiAPI?.creator?.saveLLMSettings(newSettings);
+      await window.kaiAPI?.settings?.set('creator.llmPromptShown', true);
+    } catch (err) {
+      console.error('Failed to save LLM prompt choice:', err);
+    }
+    setShowLlmPrompt(false);
+  };
 
   const handleInstall = async () => {
     setStatus('installing');
@@ -783,6 +821,49 @@ export function CreateTab({ bridge: _bridge }) {
   // Ready state - show create interface
   return (
     <div className="h-full overflow-y-auto p-6">
+      {/* LLM Lyric Correction Prompt Modal */}
+      {showLlmPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-8 max-w-md mx-4">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+              AI Lyric Correction
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+              Would you like to use an AI language model to improve lyrics accuracy? This compares
+              Whisper transcription against reference lyrics to fix errors.
+            </p>
+            <div className="space-y-3">
+              <button
+                className="w-full px-4 py-3 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-medium rounded-lg transition-colors text-left"
+                onClick={() => handleLlmPromptChoice('skip')}
+              >
+                <div className="font-medium">Skip lyric correction</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Use Whisper output as-is
+                </div>
+              </button>
+              <button
+                className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors text-left"
+                onClick={() => handleLlmPromptChoice('local')}
+              >
+                <div className="font-medium">Local LLM (LM Studio, Ollama)</div>
+                <div className="text-xs text-blue-200 mt-1">
+                  Free, private, requires local server running
+                </div>
+              </button>
+              <button
+                className="w-full px-4 py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors text-left"
+                onClick={() => handleLlmPromptChoice('openai')}
+              >
+                <div className="font-medium">OpenAI</div>
+                <div className="text-xs text-green-200 mt-1">
+                  Cloud-based, requires API key (configurable in Settings)
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="max-w-2xl mx-auto">
         {/* Sub-tab navigation */}
         <div className="flex border-b border-gray-300 dark:border-gray-600 mb-6">
