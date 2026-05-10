@@ -322,7 +322,10 @@ export async function getSongInfo(mainApp, filePath) {
     // Not in cache, extract metadata directly
     const lowerPath = filePath.toLowerCase();
     const format =
-      lowerPath.endsWith('.stem.m4a') || lowerPath.endsWith('.m4a') || lowerPath.endsWith('.mp4')
+      lowerPath.endsWith('.stem.mp4') ||
+      lowerPath.endsWith('.stem.m4a') ||
+      lowerPath.endsWith('.m4a') ||
+      lowerPath.endsWith('.mp4')
         ? 'm4a-stems'
         : lowerPath.endsWith('.kar') || lowerPath.endsWith('.zip')
           ? 'cdg-archive'

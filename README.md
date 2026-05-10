@@ -267,7 +267,7 @@ Loukai is built with a multi-process architecture:
 - **Multi-track audio**: Master + 4 stems (drums, bass, other, vocals)
 - **NI Stems atom**: `stem` - standard metadata for DJ software compatibility
 - **Karaoke atom**: `kara` (lyrics with word-level timing)
-- **File extension**: `.stem.m4a` or `.m4a`
+- **File extension**: `.stem.mp4` or `.m4a`
 
 **Full specification:** [docs/m4a_format.md](./docs/m4a_format.md)
 
@@ -280,9 +280,9 @@ Use the built-in **Creator** tab in Loukai:
    - Separate audio into stems using Demucs (AI stem separation)
    - Transcribe lyrics using Whisper (AI speech recognition)
    - Detect musical key using CREPE
-   - Package everything into a `.stem.m4a` file
+   - Package everything into a `.stem.mp4` file
 
-**Output:** `Artist - Title.stem.m4a` saved to your songs folder
+**Output:** `Artist - Title.stem.mp4` saved to your songs folder
 
 ### CDG Format (Legacy)
 
@@ -327,7 +327,7 @@ All settings are automatically saved to:
 2. **Scan Library**: Click "Scan Library" to index all songs
 3. **Search & Play**: Use the Library tab to find and play songs
 
-**Tip:** For best results, use `.stem.m4a` files created with the built-in Creator. M4A files load faster and take less disk space than legacy formats.
+**Tip:** For best results, use `.stem.mp4` files created with the built-in Creator. M4A files load faster and take less disk space than legacy formats.
 
 ### Playing Karaoke
 
@@ -503,7 +503,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 ### Library Not Scanning
 - Ensure songs folder path is correct
 - Check file permissions (read access required)
-- Supported formats: `.m4a` (recommended), `.stem.m4a`, `.cdg` + `.mp3` pairs
+- Supported formats: `.m4a` (recommended), `.stem.mp4`, `.cdg` + `.mp3` pairs
 - For best performance, use M4A Stems format
 
 ### Web Server Not Accessible

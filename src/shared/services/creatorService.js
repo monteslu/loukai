@@ -330,7 +330,7 @@ export function stopConversion() {
 
 /**
  * Repair a stem file to fix NI Stems metadata
- * @param {string} filePath - Path to .stem.m4a file
+ * @param {string} filePath - Path to .stem.mp4 file
  * @returns {Promise<Object>} Repair result
  */
 export async function repairStem(filePath) {
@@ -345,7 +345,7 @@ export async function repairStem(filePath) {
 
 /**
  * Batch repair multiple stem files
- * @param {string[]} filePaths - Array of paths to .stem.m4a files
+ * @param {string[]} filePaths - Array of paths to .stem.mp4 files
  * @returns {Promise<Object>} Batch repair results
  */
 export async function repairStems(filePaths) {

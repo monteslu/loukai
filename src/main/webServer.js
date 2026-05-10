@@ -1928,11 +1928,11 @@ class WebServer {
     // Get audio files that can be converted (from library or direct path)
     this.app.get('/admin/creator/sources', async (req, res) => {
       try {
-        // Get library songs that are audio files (not already .stem.m4a)
+        // Get library songs that are audio files (not already .stem.mp4)
         const allSongs = await this.getCachedSongs();
 
         // Filter to songs that could be source files for conversion
-        // (exclude .stem.m4a which are already karaoke files)
+        // (exclude .stem.mp4 which are already karaoke files)
         const sourceCandidates = allSongs.filter((song) => {
           const ext = song.path.split('.').pop().toLowerCase();
           return [

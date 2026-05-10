@@ -7,7 +7,7 @@ import { log } from '../logger.js';
  * 2. Run Demucs stem separation
  * 3. Run Whisper transcription on vocals
  * 4. Run CREPE pitch detection on vocals (optional)
- * 5. Assemble into .stem.m4a file
+ * 5. Assemble into .stem.mp4 file
  */
 
 import { join, dirname } from 'path';
@@ -369,7 +369,7 @@ export async function runConversion(
       checkCancelled();
 
       // Output to same directory with modified name, or optionally overwrite in place
-      outputPath = join(outputDir, `${safeFileName}.stem.m4a`);
+      outputPath = join(outputDir, `${safeFileName}.stem.mp4`);
 
       // Copy original file to output location if different
       if (inputPath !== outputPath) {
@@ -436,11 +436,11 @@ export async function runConversion(
         checkCancelled();
       }
 
-      // Build .stem.m4a (95-100%)
-      onProgress('build', `[${STEPS.build}] Packaging stem.m4a file...`, 95);
+      // Build .stem.mp4 (95-100%)
+      onProgress('build', `[${STEPS.build}] Packaging stem.mp4 file...`, 95);
       checkCancelled();
 
-      outputPath = join(outputDir, `${safeFileName}.stem.m4a`);
+      outputPath = join(outputDir, `${safeFileName}.stem.mp4`);
 
       await buildStemM4a({
         outputPath,
