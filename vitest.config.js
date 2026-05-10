@@ -22,6 +22,8 @@ export default defineConfig({
         '**/*.config.js',
         // Build scripts
         'scripts/**',
+        // CLI entrypoint (thin Electron launcher)
+        'bin/**',
         // Exclude JSX components (UI code - not unit testable)
         '**/*.jsx',
         // Exclude main process (Electron - requires integration tests)
