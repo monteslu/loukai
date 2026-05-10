@@ -11,7 +11,7 @@ The Loukai format serves two distinct purposes with a single file:
 
 We achieve this by writing **both** the standard NI Stems metadata (for DJ software) and our own karaoke atoms (for Loukai). Software that doesn't understand our karaoke atoms simply ignores them, while software that doesn't understand NI Stems can still use the karaoke data.
 
-This "dual metadata" approach means you don't need separate files for DJing and karaoke - the same `.stem.m4a` file works everywhere.
+This "dual metadata" approach means you don't need separate files for DJing and karaoke - the same `.stem.mp4` file works everywhere.
 
 ## Overview
 
@@ -36,7 +36,7 @@ The format is a standard MPEG-4 container (`.m4a`) containing:
 ## File Structure
 
 ```
-song.stem.m4a
+song.stem.mp4
 ├── ftyp              # File type (M4A)
 ├── moov              # Movie header
 │   ├── mvhd          # Movie header data
@@ -277,10 +277,10 @@ import { Atoms } from 'm4a-stems';
 
 // Write NI Stems metadata (for DJ software compatibility)
 // This defines the audio tracks - kara atom does NOT duplicate this info
-await Atoms.addNiStemsMetadata('song.stem.m4a', ['drums', 'bass', 'other', 'vocals']);
+await Atoms.addNiStemsMetadata('song.stem.mp4', ['drums', 'bass', 'other', 'vocals']);
 
 // Write karaoke data (lyrics, timing, word timing, singers)
-await Atoms.writeKaraAtom('song.stem.m4a', {
+await Atoms.writeKaraAtom('song.stem.mp4', {
   timing: { offset_sec: 0 },
   lines: [
     {
@@ -299,11 +299,11 @@ await Atoms.writeKaraAtom('song.stem.m4a', {
 import { Atoms } from 'm4a-stems';
 
 // Read NI Stems metadata (audio track info)
-const stems = await Atoms.readNiStemsMetadata('song.stem.m4a');
+const stems = await Atoms.readNiStemsMetadata('song.stem.mp4');
 // Returns: { version: 1, mastering_dsp: {...}, stems: [{name: 'drums', ...}, ...] }
 
 // Read karaoke data (lyrics, word timing, singers)
-const kara = await Atoms.readKaraAtom('song.stem.m4a');
+const kara = await Atoms.readKaraAtom('song.stem.mp4');
 // kara.lines[].words?.timings contains word-level timing if available
 ```
 
@@ -326,7 +326,7 @@ Full support for all features: stems, lyrics, word-level highlighting, real-time
 Files created before NI Stems metadata was added can be repaired:
 
 ```bash
-node scripts/repair-stems.js /path/to/song.stem.m4a
+node scripts/repair-stems.js /path/to/song.stem.mp4
 ```
 
 This adds the `stem` atom so files work in Mixxx/Traktor. Note: Track disposition flags cannot be fixed without re-encoding, but most DJ software handles this correctly anyway.
@@ -336,7 +336,7 @@ This adds the `stem` atom so files work in Mixxx/Traktor. Note: Track dispositio
 Files created before the audio section was removed from kara can be migrated:
 
 ```bash
-node scripts/migrate-kara-audio.js /path/to/song.stem.m4a
+node scripts/migrate-kara-audio.js /path/to/song.stem.mp4
 ```
 
 This removes the redundant `audio` section from the kara atom. The audio track information is now read from the NI Stems `stem` atom instead. This migration is optional - old files will continue to work, but the duplicate data is unnecessary.

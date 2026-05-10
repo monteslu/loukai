@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
- * Repair existing .stem.m4a files to fix NI Stems metadata
+ * Repair existing .stem.mp4 files to fix NI Stems metadata
  *
  * Usage:
- *   node scripts/repair-stems.js <file.stem.m4a>
- *   node scripts/repair-stems.js <file1.stem.m4a> <file2.stem.m4a> ...
- *   node scripts/repair-stems.js --force <file.stem.m4a>  # Force rewrite even if valid
+ *   node scripts/repair-stems.js <file.stem.mp4>
+ *   node scripts/repair-stems.js <file1.stem.mp4> <file2.stem.mp4> ...
+ *   node scripts/repair-stems.js --force <file.stem.mp4>  # Force rewrite even if valid
  *
  * For glob patterns, use shell expansion:
- *   node scripts/repair-stems.js /path/to/folder/*.stem.m4a
+ *   node scripts/repair-stems.js /path/to/folder/*.stem.mp4
+ *
+ * Also accepts .stem.m4a files.
  */
 
 import { repairStemFile, repairStemFiles } from '../src/main/creator/stemBuilder.js';
@@ -26,7 +28,7 @@ async function main() {
   }
 
   if (args.length === 0) {
-    console.log('Usage: node scripts/repair-stems.js [--force] <file.stem.m4a> [file2.stem.m4a ...]');
+    console.log('Usage: node scripts/repair-stems.js [--force] <file.stem.mp4> [file2.stem.mp4 ...]');
     console.log('');
     console.log('This script repairs existing stem files to fix NI Stems metadata');
     console.log('so they are properly recognized by Mixxx, Traktor, and other DJ software.');
@@ -35,13 +37,13 @@ async function main() {
     console.log('  --force    Force rewrite metadata even if already valid');
     console.log('');
     console.log('Examples:');
-    console.log('  node scripts/repair-stems.js "Artist - Song.stem.m4a"');
-    console.log('  node scripts/repair-stems.js /path/to/music/*.stem.m4a');
-    console.log('  node scripts/repair-stems.js --force "Artist - Song.stem.m4a"');
+    console.log('  node scripts/repair-stems.js "Artist - Song.stem.mp4"');
+    console.log('  node scripts/repair-stems.js /path/to/music/*.stem.mp4');
+    console.log('  node scripts/repair-stems.js --force "Artist - Song.stem.mp4"');
     process.exit(1);
   }
 
-  // Resolve paths and filter to existing .stem.m4a files
+  // Resolve paths and filter to existing stem files
   const files = args
     .map(f => resolve(f))
     .filter(f => {
@@ -57,7 +59,7 @@ async function main() {
     });
 
   if (files.length === 0) {
-    console.error('No valid .stem.m4a files found');
+    console.error('No valid stem files found');
     process.exit(1);
   }
 

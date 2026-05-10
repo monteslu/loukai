@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 /**
- * Migrate existing .stem.m4a files to remove redundant audio section from kara atom
+ * Migrate existing stem files to remove redundant audio section from kara atom
  *
  * The audio sources are now read from the NI Stems 'stem' atom, so we no longer
  * store them in the kara atom. This script cleans up existing files.
  *
  * Usage:
- *   node scripts/migrate-kara-audio.js <file.stem.m4a>
- *   node scripts/migrate-kara-audio.js <file1.stem.m4a> <file2.stem.m4a> ...
+ *   node scripts/migrate-kara-audio.js <file.stem.mp4>
+ *   node scripts/migrate-kara-audio.js <file1.stem.mp4> <file2.stem.mp4> ...
  *
  * For glob patterns, use shell expansion:
- *   node scripts/migrate-kara-audio.js /path/to/folder/*.stem.m4a
+ *   node scripts/migrate-kara-audio.js /path/to/folder/*.stem.mp4
+ *
+ * Also accepts .stem.m4a files.
  */
 
 import { Atoms as M4AAtoms } from 'm4a-stems';
@@ -66,19 +68,19 @@ async function main() {
   const args = process.argv.slice(2);
 
   if (args.length === 0) {
-    console.log('Usage: node scripts/migrate-kara-audio.js <file.stem.m4a> [file2.stem.m4a ...]');
+    console.log('Usage: node scripts/migrate-kara-audio.js <file.stem.mp4> [file2.stem.mp4 ...]');
     console.log('');
     console.log('This script migrates existing stem files to remove the redundant');
     console.log('audio section from the kara atom. Audio sources are now read from');
     console.log('the NI Stems atom instead.');
     console.log('');
     console.log('Examples:');
-    console.log('  node scripts/migrate-kara-audio.js "Artist - Song.stem.m4a"');
-    console.log('  node scripts/migrate-kara-audio.js /path/to/music/*.stem.m4a');
+    console.log('  node scripts/migrate-kara-audio.js "Artist - Song.stem.mp4"');
+    console.log('  node scripts/migrate-kara-audio.js /path/to/music/*.stem.mp4');
     process.exit(1);
   }
 
-  // Resolve paths and filter to existing .stem.m4a files
+  // Resolve paths and filter to existing stem files
   const files = args
     .map((f) => resolve(f))
     .filter((f) => {
@@ -94,7 +96,7 @@ async function main() {
     });
 
   if (files.length === 0) {
-    console.error('No valid .stem.m4a files found');
+    console.error('No valid stem files found');
     process.exit(1);
   }
 

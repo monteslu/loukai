@@ -49,7 +49,7 @@ class M4ALoader {
 
   /**
    * Load M4A Stems format with karaoke extensions
-   * @param {string} m4aPath - Path to .stem.m4a file
+   * @param {string} m4aPath - Path to .stem.mp4 file
    * @returns {Promise<Object>} M4A data object compatible with KAI structure
    */
   static async load(m4aPath) {

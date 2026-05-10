@@ -246,7 +246,6 @@ class W {
     for (
       this.pc > s && ((this.pc = -1), (o.isRestarting = !0));
       this.pc < s && this.pc < this.numPackets;
-
     ) {
       this.pc++;
       const i = this.pc * 24,

@@ -1,8 +1,8 @@
 import { log } from '../logger.js';
 /**
- * Stem Builder - Creates .stem.m4a files with embedded stem data
+ * Stem Builder - Creates .stem.mp4 files with embedded stem data
  *
- * The .stem.m4a format embeds multiple audio stems in a single M4A container
+ * The .stem.mp4 format embeds multiple audio stems in a single M4A container
  * using custom atoms/boxes. This is compatible with Native Instruments Stems.
  *
  * Structure:
@@ -21,10 +21,10 @@ import { getFFmpegPath } from './systemChecker.js';
 import { Atoms as M4AAtoms } from 'm4a-stems';
 
 /**
- * Build a .stem.m4a file from individual stem files
+ * Build a .stem.mp4 file from individual stem files
  *
  * @param {Object} options - Build options
- * @param {string} options.outputPath - Output .stem.m4a path
+ * @param {string} options.outputPath - Output .stem.mp4 path
  * @param {Object} options.stems - Map of stem name to path
  * @param {Object} options.metadata - Song metadata (title, artist, duration)
  * @param {Object} options.lyrics - Whisper transcription result with word timestamps
@@ -286,11 +286,11 @@ async function injectKaraokeAtoms(filePath, data) {
 }
 
 /**
- * Inject lyrics into an existing .stem.m4a file
+ * Inject lyrics into an existing .stem.mp4 file
  * Used for "lyrics only" mode when stems already exist
  *
  * @param {Object} options - Injection options
- * @param {string} options.filePath - Path to existing .stem.m4a file
+ * @param {string} options.filePath - Path to existing .stem.mp4 file
  * @param {Object} options.lyrics - Whisper transcription result with word timestamps
  * @param {Object} options.llmCorrections - LLM correction stats
  * @param {string[]} options.tags - Tags array for filtering
@@ -384,10 +384,10 @@ export async function injectLyricsIntoStemFile(options) {
 }
 
 /**
- * Repair an existing .stem.m4a file to fix NI Stems metadata
+ * Repair an existing .stem.mp4 file to fix NI Stems metadata
  * This fixes files created before the spec-compliant stem atom was implemented
  *
- * @param {string} filePath - Path to existing .stem.m4a file
+ * @param {string} filePath - Path to existing .stem.mp4 file
  * @param {Object} options - Repair options
  * @param {boolean} options.force - Force rewrite even if metadata exists
  * @returns {Promise<Object>} Repair result
@@ -447,7 +447,7 @@ export async function repairStemFile(filePath, options = {}) {
 
 /**
  * Batch repair multiple stem files
- * @param {string[]} filePaths - Array of paths to .stem.m4a files
+ * @param {string[]} filePaths - Array of paths to .stem.mp4 files
  * @param {Object} options - Repair options (passed to each repairStemFile call)
  * @returns {Promise<Object>} Batch repair results
  */

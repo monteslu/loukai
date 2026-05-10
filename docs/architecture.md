@@ -4,7 +4,7 @@
 
 Loukai is a professional karaoke system that uses AI stem separation and dual-output audio routing to provide coaching capabilities. The system separates vocals from backing music and routes them to different audio devices - vocals to in-ear monitors (IEM) for the singer, music to PA speakers for the audience.
 
-**Key Design Decision:** Loukai uses an open file format (`.stem.m4a`) that serves dual purposes:
+**Key Design Decision:** Loukai uses an open file format (`.stem.mp4`) that serves dual purposes:
 - **DJ Software**: Files work in Traktor and Mixxx via standard NI Stems metadata
 - **Karaoke**: Additional atoms provide lyrics, pitch tracking, and multi-singer support
 
@@ -26,7 +26,7 @@ graph TB
     end
 
     subgraph "File System"
-        M4A[M4A Stems<br/>.stem.m4a]
+        M4A[M4A Stems<br/>.stem.mp4]
         CDG[CDG Files<br/>Legacy Karaoke]
         Settings[settings.json<br/>Persistence]
     end
@@ -166,14 +166,14 @@ graph LR
     Stems --> Lyrics[Lyrics Detection<br/>Whisper]
     Lyrics --> Pitch[Pitch Detection<br/>CREPE]
     Pitch --> LLM[LLM Correction<br/>Optional]
-    LLM --> M4A[.stem.m4a<br/>Output]
+    LLM --> M4A[.stem.mp4<br/>Output]
 ```
 
 **Components:**
 - `systemChecker.js` - Verifies Python, FFmpeg, ML models
 - `downloadManager.js` - Downloads FFmpeg, Python packages
 - `conversionService.js` - Orchestrates conversion pipeline
-- `stemBuilder.js` - Creates .stem.m4a with NI Stems + karaoke atoms
+- `stemBuilder.js` - Creates .stem.mp4 with NI Stems + karaoke atoms
 - `llmService.js` - AI-powered lyrics correction
 - `lrclibService.js` - External lyrics lookup
 - `keyDetection.js` - Musical key detection
@@ -233,7 +233,7 @@ Industry-standard MP4 container built on [NI Stems](https://www.native-instrumen
 
 **Structure:**
 ```
-song.stem.m4a
+song.stem.mp4
 ├── Audio Tracks (AAC)
 │   ├── Track 0: master (enabled - plays in normal players)
 │   ├── Track 1: drums (disabled)

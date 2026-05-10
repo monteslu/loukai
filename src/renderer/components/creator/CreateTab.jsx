@@ -6,7 +6,7 @@
  * 2. Select audio file
  * 3. Configure options (stems, whisper model, etc.)
  * 4. Run conversion pipeline
- * 5. Output .stem.m4a file
+ * 5. Output .stem.mp4 file
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -133,7 +133,7 @@ export function CreateTab({ bridge: _bridge }) {
   const [options, setOptions] = useState({
     title: '',
     artist: '',
-    numStems: 4, // Always 4 stems for .stem.m4a format
+    numStems: 4, // Always 4 stems for .stem.mp4 format
     language: 'en',
     referenceLyrics: '',
   });
@@ -834,7 +834,7 @@ export function CreateTab({ bridge: _bridge }) {
                 </span>
               </label>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                When enabled, created .stem.m4a files will be saved to your configured songs library
+                When enabled, created .stem.mp4 files will be saved to your configured songs library
                 folder instead of next to the source file.
               </p>
             </div>

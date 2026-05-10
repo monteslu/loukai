@@ -38,6 +38,7 @@
   "author": "Luis Montes",
   "license": "AGPL-3.0",
   "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
     "@eslint/js": "^9.37.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
@@ -47,7 +48,6 @@
     "@vitest/ui": "^3.2.4",
     "autoprefixer": "^10.4.21",
     "electron-builder": "^26.0.12",
-    "electron-rebuild": "^3.2.9",
     "eslint": "^9.37.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import": "^2.32.0",

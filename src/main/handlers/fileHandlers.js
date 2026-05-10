@@ -32,7 +32,7 @@ export function registerFileHandlers(mainApp) {
   ipcMain.handle('file:loadKaiFromPath', async (event, filePath) => {
     // Get the songs folder from settings
     const songsFolder = mainApp.settings?.getSongsFolder?.();
-    
+
     // Validate the path is within the songs directory
     const validation = validateSongPath(filePath, songsFolder);
     if (!validation.valid) {
