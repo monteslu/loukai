@@ -38,7 +38,7 @@
   "author": "Luis Montes",
   "license": "AGPL-3.0",
   "devDependencies": {
-    "@electron/rebuild": "^3.7.2",
+    "@electron/rebuild": "^4.0.4",
     "@eslint/js": "^9.37.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
@@ -92,12 +92,6 @@
     "ws": "^8.13.0",
     "yauzl": "^3.0.0",
     "yazl": "^3.3.1"
-  },
-  "overrides": {
-    "@electron/rebuild": {
-      "tar": "^7.5.15",
-      "@tootallnate/once": "^3.0.1"
-    }
   },
   "build": {
     "appId": "com.loukai.app",
