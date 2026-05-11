@@ -58,6 +58,9 @@ export function registerLibraryHandlers(mainApp) {
       // Update all caches (mainApp, webServer, disk)
       await libraryService.updateLibraryCache(mainApp, result.files);
 
+      // Notify renderer so LibraryPanel reloads (matches scanLibrary behavior)
+      mainApp.sendToRenderer('library:scanComplete', { count: result.files.length });
+
       // Return with 'songs' key for renderer compatibility
       return {
         ...result,
