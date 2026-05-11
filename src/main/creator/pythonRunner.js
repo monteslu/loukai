@@ -76,9 +76,10 @@ export function runPythonScript(
       const lines = text.split('\n');
 
       for (const line of lines) {
-        // Emit raw console output
+        // Emit raw console output (round long floats so tqdm progress doesn't jitter)
         if (onConsoleOutput && line.trim()) {
-          onConsoleOutput(line);
+          const cleaned = line.replace(/\d+\.\d{3,}/g, (m) => parseFloat(m).toFixed(2));
+          onConsoleOutput(cleaned);
         }
 
         // Parse our PROGRESS: updates
