@@ -673,10 +673,12 @@ export class KAIPlayer extends PlayerInterface {
   startAudioSources() {
     if (!this.audioContexts.PA || !this.audioContexts.IEM) return;
 
-    // Sync start time for both outputs - add small delay to ensure synchronization
-    const scheduleTime =
-      Math.max(this.audioContexts.PA.currentTime, this.audioContexts.IEM.currentTime) + 0.1;
-    this.startTime = scheduleTime;
+    // Schedule per context — each AudioContext has its own local clock, so a single
+    // shared scheduleTime would bake in a skew equal to |PA.currentTime - IEM.currentTime|.
+    const lead = 0.1;
+    const paStart = this.audioContexts.PA.currentTime + lead;
+    const iemStart = this.audioContexts.IEM.currentTime + lead;
+    this.startTime = paStart; // getCurrentPosition() measures elapsed against PA's clock
 
     this.mixerState.stems.forEach((stem) => {
       // Skip mixdown stems - they contain the full mix and would overlap with individual stems
@@ -701,7 +703,7 @@ export class KAIPlayer extends PlayerInterface {
             const iemSource = this.audioContexts.IEM.createBufferSource();
             iemSource.buffer = audioBuffer;
             iemSource.connect(iemGainNode);
-            iemSource.start(scheduleTime, offset);
+            iemSource.start(iemStart, offset);
             this.outputNodes.IEM.sourceNodes.set(stem.name, iemSource);
 
             // Also create PA source for backup:PA feature (muted by default via vocalsPAGain)
@@ -716,7 +718,7 @@ export class KAIPlayer extends PlayerInterface {
                 this.micEngine.connectMusicSource(paSource);
               }
 
-              paSource.start(scheduleTime, offset);
+              paSource.start(paStart, offset);
               this.outputNodes.PA.sourceNodes.set(stem.name + '_vocalsPA', paSource);
             }
           } else {
@@ -735,7 +737,7 @@ export class KAIPlayer extends PlayerInterface {
               this.micEngine.connectMusicSource(paSource);
             }
 
-            paSource.start(scheduleTime, offset);
+            paSource.start(paStart, offset);
             this.outputNodes.PA.sourceNodes.set(stem.name, paSource);
 
             // Add onended handler as backup to position monitoring
