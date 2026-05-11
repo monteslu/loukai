@@ -180,7 +180,8 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
   const loadLibrary = useCallback(async () => {
     try {
       setLoading(true);
-      const folder = await bridge.getSongsFolder();
+      const result = await bridge.getSongsFolder();
+      const folder = result?.folder ?? null;
       console.log('📁 Songs folder:', folder);
       setSongsFolder(folder);
 
@@ -331,9 +332,9 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
 
   const handleSetFolder = async () => {
     try {
-      const folder = await bridge.setSongsFolder();
-      if (folder) {
-        setSongsFolder(folder);
+      const result = await bridge.setSongsFolder();
+      if (result?.folder) {
+        setSongsFolder(result.folder);
         await loadLibrary();
       }
     } catch (error) {

@@ -391,9 +391,9 @@ export function CreateTab({ bridge: _bridge }) {
       // Get output directory based on settings
       let outputDir = undefined; // Default: same directory as source file
       if (outputToSongsFolder) {
-        const songsFolder = await window.kaiAPI?.library?.getSongsFolder?.();
-        if (songsFolder) {
-          outputDir = songsFolder;
+        const result = await window.kaiAPI?.library?.getSongsFolder?.();
+        if (result?.folder) {
+          outputDir = result.folder;
         }
       }
 
