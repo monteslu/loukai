@@ -1,6 +1,6 @@
 {
   "name": "loukai-app",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "type": "module",
   "description": "Loukai Karaoke - Free and open source karaoke system for playing and creating stem-based karaoke files",
   "main": "src/main/main.js",
@@ -38,7 +38,6 @@
   "author": "Luis Montes",
   "license": "AGPL-3.0",
   "devDependencies": {
-    "@electron/rebuild": "^4.0.4",
     "@eslint/js": "^9.37.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",

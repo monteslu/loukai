@@ -42,6 +42,10 @@ jobs:
           echo "Installing Electron base app (x64)..."
           flatpak install -y flathub org.electronjs.Electron2.BaseApp/x86_64/24.08
 
+      - name: Move electron to devDependencies for electron-builder
+        run: |
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); if(p.dependencies&&p.dependencies.electron){p.devDependencies=p.devDependencies||{}; p.devDependencies.electron=p.dependencies.electron; delete p.dependencies.electron; fs.writeFileSync('package.json', JSON.stringify(p,null,2)+'\n');}"
+
       - name: Build and publish Linux x64
         run: npx electron-builder --linux AppImage flatpak --x64 --publish always && node scripts/rename-artifacts.js
         env:
@@ -87,6 +91,10 @@ jobs:
           echo "Installing Electron base app (arm64)..."
           flatpak install -y flathub org.electronjs.Electron2.BaseApp/aarch64/24.08
 
+      - name: Move electron to devDependencies for electron-builder
+        run: |
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); if(p.dependencies&&p.dependencies.electron){p.devDependencies=p.devDependencies||{}; p.devDependencies.electron=p.dependencies.electron; delete p.dependencies.electron; fs.writeFileSync('package.json', JSON.stringify(p,null,2)+'\n');}"
+
       - name: Build and publish Linux arm64
         run: npx electron-builder --linux AppImage flatpak --arm64 --publish always && node scripts/rename-artifacts.js
         timeout-minutes: 45
@@ -113,6 +121,10 @@ jobs:
       - name: Build renderer and web UI
         run: npm run build:all
 
+      - name: Move electron to devDependencies for electron-builder
+        run: |
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); if(p.dependencies&&p.dependencies.electron){p.devDependencies=p.devDependencies||{}; p.devDependencies.electron=p.dependencies.electron; delete p.dependencies.electron; fs.writeFileSync('package.json', JSON.stringify(p,null,2)+'\n');}"
+
       - name: Build and publish Windows
         run: npm run build:win -- --publish always
         env:
@@ -137,6 +149,10 @@ jobs:
 
       - name: Build renderer and web UI
         run: npm run build:all
+
+      - name: Move electron to devDependencies for electron-builder
+        run: |
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); if(p.dependencies&&p.dependencies.electron){p.devDependencies=p.devDependencies||{}; p.devDependencies.electron=p.dependencies.electron; delete p.dependencies.electron; fs.writeFileSync('package.json', JSON.stringify(p,null,2)+'\n');}"
 
       - name: Build and publish macOS
         run: npm run build:mac -- --publish always
