@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Loukai Viewer</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #000;
+        color: #fff;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        overflow: hidden;
+      }
+      #stage {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #video {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        background: #000;
+        cursor: pointer;
+      }
+      #hint {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.6);
+        padding: 10px 18px;
+        font-size: 14px;
+        border-radius: 999px;
+        backdrop-filter: blur(8px);
+        pointer-events: none;
+        transition: opacity 0.4s;
+        white-space: nowrap;
+      }
+      #hint.hidden {
+        opacity: 0;
+      }
+      #status {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 6px 10px;
+        font-size: 12px;
+        border-radius: 12px;
+        backdrop-filter: blur(8px);
+        opacity: 0.7;
+        transition: opacity 0.4s;
+        pointer-events: none;
+      }
+      #status.error {
+        background: rgba(180, 30, 30, 0.7);
+        opacity: 1;
+      }
+      #status.hidden {
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <video
+        id="video"
+        autoplay
+        playsinline
+        webkit-playsinline
+        muted
+        disablepictureinpicture
+        disableremoteplayback
+      ></video>
+    </div>
+    <div id="hint">Tap for sound &amp; fullscreen</div>
+    <div id="status">connecting…</div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      (function () {
+        const log = (...args) => console.log('[viewer]', ...args);
+        const warn = (...args) => console.warn('[viewer]', ...args);
+        const err = (...args) => console.error('[viewer]', ...args);
+
+        log('page loaded');
+
+        const video = document.getElementById('video');
+        const hint = document.getElementById('hint');
+        const statusEl = document.getElementById('status');
+
+        let pc = null;
+        let pendingICE = [];
+        let wakeLock = null;
+        let queuedOfferIceCount = 0;
+
+        function setStatus(text, isError = false) {
+          if (text) statusEl.textContent = text;
+          statusEl.classList.toggle('error', isError);
+          statusEl.classList.remove('hidden');
+        }
+        function hideStatus() {
+          statusEl.classList.add('hidden');
+        }
+
+        async function requestWakeLock() {
+          if (!('wakeLock' in navigator)) {
+            log('wake lock: not available in this browser');
+            return;
+          }
+          try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            log('wake lock: acquired');
+            wakeLock.addEventListener('release', () => {
+              log('wake lock: released');
+              if (document.visibilityState === 'visible') {
+                requestWakeLock();
+              }
+            });
+          } catch (e) {
+            warn('wake lock failed (likely HTTP-LAN context):', e.message);
+          }
+        }
+
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') requestWakeLock();
+        });
+
+        function isFullscreen() {
+          return Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+        }
+
+        async function toggleFullscreen() {
+          const stage = document.getElementById('stage');
+          // iOS Safari only supports fullscreen on <video> elements via the
+          // native player. We can't programmatically exit iOS native
+          // fullscreen — the user does it from the iOS player controls.
+          // So on iOS we only enter; on every other platform we toggle.
+          if (video.webkitEnterFullscreen && !isFullscreen()) {
+            try {
+              log('entering iOS native video fullscreen');
+              video.webkitEnterFullscreen();
+              return;
+            } catch (e) {
+              warn('webkitEnterFullscreen failed:', e);
+            }
+          }
+
+          if (isFullscreen()) {
+            log('exiting fullscreen');
+            try {
+              await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+            } catch (e) {
+              warn('exitFullscreen failed:', e);
+            }
+            return;
+          }
+
+          const target = stage.requestFullscreen
+            ? stage
+            : video.requestFullscreen
+              ? video
+              : null;
+          if (target) {
+            log('entering standard fullscreen');
+            try {
+              await target.requestFullscreen({ navigationUI: 'hide' });
+            } catch (e) {
+              warn('requestFullscreen failed:', e);
+            }
+          } else {
+            warn('no fullscreen API available');
+          }
+        }
+
+        let interacted = false;
+
+        function handleInteraction() {
+          hint.classList.add('hidden');
+
+          // First interaction: unmute, kick playback, request wake lock.
+          // Subsequent interactions just toggle fullscreen.
+          if (!interacted) {
+            interacted = true;
+            log('first user interaction — unmuting and requesting wake lock');
+            video.muted = false;
+            video
+              .play()
+              .then(() => {
+                log('video.play() succeeded after activation');
+                requestWakeLock();
+              })
+              .catch((e) => warn('video.play after activation failed:', e));
+          }
+
+          toggleFullscreen();
+        }
+        document.addEventListener('click', handleInteraction);
+
+        // Auto-fade the hint after a few seconds — taps still work after it disappears.
+        setTimeout(() => hint.classList.add('hidden'), 5000);
+
+        const viewerId =
+          crypto.randomUUID?.() || `v-${Math.random().toString(36).slice(2, 10)}`;
+        log('viewerId:', viewerId);
+
+        setStatus('connecting…');
+        const socket = io({ withCredentials: true });
+        log('socket.io created, attempting connection');
+
+        socket.on('connect', () => {
+          log('socket connected, id:', socket.id, '→ identifying as viewer');
+          setStatus('authenticating…');
+          socket.emit('identify', { type: 'viewer', viewerId });
+        });
+
+        socket.on('connect_error', (e) => {
+          err('socket connect_error:', e?.message || e);
+          setStatus('connect error', true);
+        });
+
+        socket.on('auth-error', (msg) => {
+          err('auth-error from server:', msg);
+          setStatus('auth required', true);
+        });
+
+        socket.on('viewer:ready', () => {
+          log('server says viewer:ready, awaiting offer');
+          setStatus('waiting for stream…');
+        });
+
+        socket.on('viewer:offer', async ({ offer }) => {
+          log('received offer, sdp length:', offer?.sdp?.length);
+          try {
+            pc = new RTCPeerConnection({ iceServers: [] });
+            log('RTCPeerConnection created');
+
+            // The sender sends video and audio in two separate MediaStreams
+            // (one per transceiver). Combine them on the receiver into a
+            // single stream attached to the <video> element, otherwise the
+            // second ontrack would overwrite the video stream with the
+            // audio-only one and we'd see a blank element.
+            const incomingStream = new MediaStream();
+            video.srcObject = incomingStream;
+
+            pc.ontrack = (event) => {
+              log(
+                'ontrack:',
+                event.track.kind,
+                'streams:',
+                event.streams.length,
+                'readyState:',
+                event.track.readyState
+              );
+              incomingStream.addTrack(event.track);
+              log(
+                'tracks now:',
+                incomingStream.getVideoTracks().length,
+                'video /',
+                incomingStream.getAudioTracks().length,
+                'audio'
+              );
+              // Kick playback after the video track lands (audio-only on a
+              // <video> element doesn't trigger autoplay reliably either).
+              if (event.track.kind === 'video') {
+                video.play().catch((e) => warn('video.play() rejected:', e?.message || e));
+              }
+            };
+
+            video.addEventListener('loadedmetadata', () => {
+              log(
+                'video loadedmetadata —',
+                video.videoWidth,
+                'x',
+                video.videoHeight,
+                'paused?',
+                video.paused
+              );
+            });
+            video.addEventListener('playing', () => log('video playing event'));
+            video.addEventListener('stalled', () => warn('video stalled event'));
+            video.addEventListener('error', () => err('video error event:', video.error));
+
+            // Diagnostics: periodically report whether bytes are flowing
+            const statsInterval = setInterval(async () => {
+              if (!pc || pc.connectionState !== 'connected') return;
+              try {
+                const stats = await pc.getStats();
+                let inboundVideo, inboundAudio;
+                stats.forEach((report) => {
+                  if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                    inboundVideo = report;
+                  }
+                  if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+                    inboundAudio = report;
+                  }
+                });
+                log(
+                  'rtp video bytes:',
+                  inboundVideo?.bytesReceived,
+                  'frames:',
+                  inboundVideo?.framesDecoded,
+                  '| audio bytes:',
+                  inboundAudio?.bytesReceived,
+                  '| video size:',
+                  `${video.videoWidth}x${video.videoHeight}`,
+                  '| paused?',
+                  video.paused
+                );
+              } catch (e) {
+                warn('getStats failed:', e);
+              }
+            }, 3000);
+            // Stop polling when the page goes away
+            window.addEventListener('beforeunload', () => clearInterval(statsInterval));
+
+            pc.onicecandidate = (event) => {
+              if (event.candidate) {
+                log(
+                  'local ICE candidate →',
+                  event.candidate.candidate?.split(' ').slice(0, 5).join(' ')
+                );
+                socket.emit('viewer:ice', {
+                  candidate: {
+                    candidate: event.candidate.candidate,
+                    sdpMid: event.candidate.sdpMid,
+                    sdpMLineIndex: event.candidate.sdpMLineIndex,
+                  },
+                });
+              } else {
+                log('ICE gathering complete');
+              }
+            };
+
+            pc.oniceconnectionstatechange = () =>
+              log('ICE state:', pc.iceConnectionState);
+
+            pc.onconnectionstatechange = () => {
+              log('PC state:', pc.connectionState);
+              if (pc.connectionState === 'connected') {
+                hideStatus();
+              } else if (pc.connectionState === 'failed') {
+                setStatus('connection failed', true);
+              } else if (pc.connectionState === 'disconnected') {
+                setStatus('disconnected', true);
+              } else {
+                setStatus(pc.connectionState);
+              }
+            };
+
+            await pc.setRemoteDescription(new RTCSessionDescription(offer));
+            log('setRemoteDescription complete');
+
+            for (const candidate of pendingICE) {
+              try {
+                // eslint-disable-next-line no-await-in-loop
+                await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                queuedOfferIceCount++;
+              } catch (e) {
+                warn('Queued ICE add failed:', e);
+              }
+            }
+            if (queuedOfferIceCount) log(`flushed ${queuedOfferIceCount} queued ICE candidates`);
+            pendingICE = [];
+
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            log('answer created, sdp length:', answer.sdp.length);
+            socket.emit('viewer:answer', {
+              answer: { type: answer.type, sdp: answer.sdp },
+            });
+            log('answer sent to server');
+          } catch (e) {
+            err('offer handling failed:', e);
+            setStatus('setup failed', true);
+          }
+        });
+
+        socket.on('viewer:ice', async ({ candidate }) => {
+          if (!pc || !pc.remoteDescription) {
+            pendingICE.push(candidate);
+            log('queueing remote ICE candidate (no remote description yet)');
+            return;
+          }
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            log('added remote ICE candidate');
+          } catch (e) {
+            warn('addIceCandidate failed:', e);
+          }
+        });
+
+        socket.on('disconnect', (reason) => {
+          warn('socket disconnected:', reason);
+          setStatus('disconnected', true);
+          if (pc) {
+            pc.close();
+            pc = null;
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

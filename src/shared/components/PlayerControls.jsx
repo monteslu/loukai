@@ -21,6 +21,7 @@ export function PlayerControls({
   onPreviousEffect,
   onNextEffect,
   onOpenCanvasWindow,
+  onOpenViewer,
   className = '',
 }) {
   const { isPlaying, position = 0, duration = 0 } = playback || {};
@@ -194,6 +195,17 @@ export function PlayerControls({
             onClick={onOpenCanvasWindow}
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition flex items-center justify-center"
             title="Open Canvas Window"
+          >
+            <span className="material-icons text-gray-700 dark:text-gray-300 leading-none">
+              open_in_new
+            </span>
+          </button>
+        )}
+        {onOpenViewer && (
+          <button
+            onClick={onOpenViewer}
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition flex items-center justify-center"
+            title="Open Browser Viewer"
           >
             <span className="material-icons text-gray-700 dark:text-gray-300 leading-none">
               open_in_new

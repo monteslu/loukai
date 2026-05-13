@@ -30,6 +30,7 @@ export class KAIPlayer extends PlayerInterface {
         masterGain: null,
         analyser: null, // For butterchurn visualization
         vocalsPAGain: null, // For backup:PA feature - vocals to PA routing
+        streamDestination: null, // MediaStreamAudioDestinationNode for browser viewer streaming
       },
       IEM: {
         sourceNodes: new Map(),
@@ -105,6 +106,12 @@ export class KAIPlayer extends PlayerInterface {
       this.outputNodes.PA.vocalsPAGain = this.audioContexts.PA.createGain();
       this.outputNodes.PA.vocalsPAGain.gain.value = 0; // Muted by default
       this.outputNodes.PA.vocalsPAGain.connect(this.outputNodes.PA.masterGain);
+
+      // Parallel MediaStream destination for browser viewer streaming.
+      // Connected to masterGain in addition to (not instead of) the audio device destination
+      // so PA continues playing locally while the viewer receives the same mix.
+      this.outputNodes.PA.streamDestination = this.audioContexts.PA.createMediaStreamDestination();
+      this.outputNodes.PA.masterGain.connect(this.outputNodes.PA.streamDestination);
 
       // Initialize IEM audio context with validated device
       const iemContextOptions = {};
@@ -948,6 +955,14 @@ export class KAIPlayer extends PlayerInterface {
 
   getDuration() {
     return this.songData?.metadata?.duration || 0;
+  }
+
+  /**
+   * Get the PA bus audio as a MediaStream, for piping into browser viewers via WebRTC.
+   * Returns null if audio hasn't initialized yet.
+   */
+  getPAStream() {
+    return this.outputNodes.PA.streamDestination?.stream ?? null;
   }
 
   getMixerState() {

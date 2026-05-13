@@ -10,6 +10,7 @@ import { SettingsProvider } from '../../shared/contexts/SettingsContext.jsx';
 import { useAudioEngine } from '../../shared/hooks/useAudioEngine.js';
 import { useSettingsPersistence } from '../../shared/hooks/useSettingsPersistence.js';
 import { useWebRTC } from '../../shared/hooks/useWebRTC.js';
+import { useStreamingSender } from '../../shared/hooks/useStreamingSender.js';
 
 function AppInitializer({ children }) {
   // Initialize audio engine
@@ -20,6 +21,9 @@ function AppInitializer({ children }) {
 
   // Initialize WebRTC
   useWebRTC();
+
+  // Initialize streaming sender (broadcasts canvas to /viewer browser tabs)
+  useStreamingSender();
 
   return <>{children}</>;
 }

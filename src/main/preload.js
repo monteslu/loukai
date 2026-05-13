@@ -96,6 +96,31 @@ const api = {
     sendFrame: (dataUrl) => ipcRenderer.invoke('canvas:sendFrame', dataUrl),
   },
 
+  streaming: {
+    // Open the browser viewer URL via the system browser
+    openViewer: () => ipcRenderer.invoke('streaming:openViewer'),
+    // Get the viewer URL (for showing in UI without opening)
+    getViewerUrl: () => ipcRenderer.invoke('streaming:getViewerUrl'),
+
+    // Outbound signaling to viewers (sent through the web server's Socket.IO)
+    sendViewerOffer: ({ viewerId, offer }) =>
+      ipcRenderer.invoke('streaming:sendViewerOffer', { viewerId, offer }),
+    sendViewerICE: ({ viewerId, candidate }) =>
+      ipcRenderer.invoke('streaming:sendViewerICE', { viewerId, candidate }),
+
+    // Inbound signaling from viewers (forwarded from the web server)
+    onViewerJoin: (callback) =>
+      ipcRenderer.on('streaming:viewerJoin', (_e, payload) => callback(payload)),
+    onViewerAnswer: (callback) =>
+      ipcRenderer.on('streaming:viewerAnswer', (_e, payload) => callback(payload)),
+    onViewerICE: (callback) =>
+      ipcRenderer.on('streaming:viewerICE', (_e, payload) => callback(payload)),
+    onViewerLeave: (callback) =>
+      ipcRenderer.on('streaming:viewerLeave', (_e, payload) => callback(payload)),
+
+    getStats: () => ipcRenderer.invoke('streaming:getStats'),
+  },
+
   library: {
     getSongsFolder: () => ipcRenderer.invoke('library:getSongsFolder'),
     setSongsFolder: () => ipcRenderer.invoke('library:setSongsFolder'),
@@ -188,10 +213,16 @@ const api = {
     sendWebRTCResponse: (command, result) => {
       // SECURITY FIX (#24): Whitelist allowed WebRTC commands to prevent IPC channel injection
       const ALLOWED_COMMANDS = [
+        // Receiver side (canvas window)
         'setupReceiver',
         'checkReceiverReady',
         'setOfferAndCreateAnswer',
         'getReceiverStatus',
+        // Sender side (main window)
+        'setupSender',
+        'createOffer',
+        'setAnswer',
+        'getSenderStatus',
       ];
       if (!ALLOWED_COMMANDS.includes(command)) {
         console.warn('Blocked invalid WebRTC command:', command);
