@@ -39,6 +39,8 @@ import { registerAutotuneHandlers } from './autotuneHandlers.js';
 log('✓ autotuneHandlers');
 import { registerCreatorHandlers } from './creatorHandlers.js';
 log('✓ creatorHandlers');
+import { registerStreamingHandlers } from './streamingHandlers.js';
+log('✓ streamingHandlers');
 
 /**
  * Register all IPC handlers
@@ -71,6 +73,9 @@ export function registerAllHandlers(mainApp) {
 
     // Creator handlers
     registerCreatorHandlers(mainApp);
+
+    // Streaming (browser viewer) handlers
+    registerStreamingHandlers(mainApp);
 
     log('✅ All IPC handlers registered');
   } catch (error) {

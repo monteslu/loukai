@@ -477,6 +477,7 @@ export function App() {
                 onSeek={handleSeek}
                 onPreviousEffect={handleEffectPrevious}
                 onNextEffect={handleEffectNext}
+                onOpenViewer={() => window.open('/viewer', '_blank', 'noopener')}
               />
             </div>
             <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">

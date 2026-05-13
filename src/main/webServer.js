@@ -7,6 +7,7 @@ import os from 'os';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import cookieSession from 'cookie-session';
+import Keygrip from 'keygrip';
 import { Server } from 'socket.io';
 import http from 'http';
 import rateLimit from 'express-rate-limit';
@@ -24,6 +25,7 @@ import { getSetting } from '../shared/services/settingsService.js';
 import * as serverSettingsService from '../shared/services/serverSettingsService.js';
 import * as creatorService from '../shared/services/creatorService.js';
 import { validateSongPath, validateBase64Path } from './utils/pathValidator.js';
+import { forwardViewerEvent } from './handlers/streamingHandlers.js';
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -54,8 +56,28 @@ class WebServer {
     this.songPathToId = new Map();
     this.songIdToPath = new Map();
 
+    // Viewer sockets keyed by viewerId for WebRTC signaling
+    this.viewerSockets = new Map();
+
     this.setupMiddleware();
     this.setupRoutes();
+  }
+
+  /**
+   * Send a Socket.IO event to a specific viewer by id.
+   * Called from streamingHandlers when the renderer-side sender produces
+   * an offer or ICE candidate for that viewer.
+   */
+  sendToViewer(viewerId, event, payload) {
+    const socket = this.viewerSockets.get(viewerId);
+    if (socket) {
+      socket.emit(event, payload);
+    }
+  }
+
+  /** Number of currently connected, authenticated viewer sockets. */
+  getViewerCount() {
+    return this.viewerSockets.size;
   }
 
   /**
@@ -311,6 +333,20 @@ class WebServer {
       } else {
         requireAuth(req, res, next); // Require auth for everything else
       }
+    });
+
+    // Browser viewer page — admin-auth gated. Unlike requireAuth (which is
+    // for API endpoints and returns JSON 401), redirect unauthenticated
+    // browsers to the admin login UI so the user gets a sensible flow.
+    const requireAuthOrRedirect = (req, res, next) => {
+      if (req.session && req.session.isAdmin) {
+        next();
+      } else {
+        res.redirect('/admin');
+      }
+    };
+    this.app.get('/viewer', requireAuthOrRedirect, (req, res) => {
+      res.sendFile(path.join(__dirname, '../../static/viewer.html'));
     });
 
     // Get available letters for alphabet navigation
@@ -2025,6 +2061,23 @@ class WebServer {
           socket.join('electron-apps');
         } else if (data.type === 'web-ui') {
           socket.join('web-clients');
+        } else if (data.type === 'viewer') {
+          // Viewer (browser tab opened from "Open Viewer" admin action) — auth-gated.
+          const session = this.validateSocketSession(socket);
+          if (!session || !session.isAdmin) {
+            console.warn('⚠️ Unauthorized viewer connection attempt:', socket.id);
+            socket.emit('auth-error', { message: 'Admin authentication required' });
+            return;
+          }
+          const viewerId = socket.id;
+          socket.viewerId = viewerId;
+          socket.join('viewer-clients');
+          this.viewerSockets.set(viewerId, socket);
+          log(`🎥 Viewer connected: ${viewerId}`);
+          socket.emit('viewer:ready');
+          // Tell the renderer-side StreamingSender to build a peer connection
+          // and send an offer back through us for this viewer.
+          forwardViewerEvent(this.mainApp, 'viewerJoin', { viewerId });
         } else if (data.type === 'admin') {
           // SECURITY FIX (#22): Validate admin session before allowing admin room access
           const session = this.validateSocketSession(socket);
@@ -2062,9 +2115,33 @@ class WebServer {
         }
       });
 
+      // Viewer signaling (answer + ICE candidates from the browser viewer)
+      socket.on('viewer:answer', ({ answer }) => {
+        if (socket.viewerId && this.viewerSockets.has(socket.viewerId)) {
+          forwardViewerEvent(this.mainApp, 'viewerAnswer', {
+            viewerId: socket.viewerId,
+            answer,
+          });
+        }
+      });
+
+      socket.on('viewer:ice', ({ candidate }) => {
+        if (socket.viewerId && this.viewerSockets.has(socket.viewerId)) {
+          forwardViewerEvent(this.mainApp, 'viewerICE', {
+            viewerId: socket.viewerId,
+            candidate,
+          });
+        }
+      });
+
       // Handle disconnection
       socket.on('disconnect', () => {
         log('Client disconnected:', socket.id);
+        if (socket.viewerId && this.viewerSockets.has(socket.viewerId)) {
+          this.viewerSockets.delete(socket.viewerId);
+          forwardViewerEvent(this.mainApp, 'viewerLeave', { viewerId: socket.viewerId });
+          log(`🎥 Viewer disconnected: ${socket.viewerId}`);
+        }
       });
 
       // Song request events
@@ -2520,7 +2597,6 @@ class WebServer {
       }
 
       // Verify signature using Keygrip (same mechanism as cookie-session)
-      const Keygrip = require('keygrip');
       const keys = new Keygrip([this.getOrCreateSecretKey()]);
 
       if (!keys.verify('kai-admin-session=' + sessionCookie, sigCookie)) {

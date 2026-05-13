@@ -95,6 +95,9 @@ export class WebRTCManager {
 
           // Set encoding parameters to maintain resolution
           const setEncodingParams = async () => {
+            // Don't run if the sender's PC has been torn down (the retry
+            // timers below outlive cleanupSender).
+            if (!this.senderPC || this.senderPC.connectionState === 'closed') return;
             try {
               const params = sender.getParameters();
 
