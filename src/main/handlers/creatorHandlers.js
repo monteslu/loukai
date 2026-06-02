@@ -151,9 +151,11 @@ export function registerCreatorHandlers(mainApp) {
     return { success: true };
   });
 
-  // Test LLM connection
+  // Test LLM connection. The renderer may send back the masked key (unchanged);
+  // resolve it to the real stored key before calling the provider.
   ipcMain.handle(CREATOR_CHANNELS.TEST_LLM_CONNECTION, (_event, settings) => {
-    return llmService.testLLMConnection(settings);
+    const resolved = llmService.resolveRuntimeSettings(mainApp.settings, settings);
+    return llmService.testLLMConnection(resolved);
   });
 
   log('✅ Creator handlers registered');

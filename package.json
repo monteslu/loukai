@@ -1,6 +1,6 @@
 {
   "name": "loukai-app",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "Loukai Karaoke - Free and open source karaoke system for playing and creating stem-based karaoke files",
   "main": "src/main/main.js",
@@ -47,6 +47,7 @@
     "@vitest/coverage-v8": "^3.2.4",
     "@vitest/ui": "^3.2.4",
     "autoprefixer": "^10.4.21",
+    "electron": "^40.6.0",
     "electron-builder": "^26.0.12",
     "eslint": "^9.37.0",
     "eslint-config-prettier": "^10.1.8",
@@ -75,7 +76,6 @@
     "cdgraphics": "^7.0.0",
     "cookie-session": "^2.1.1",
     "cors": "^2.8.5",
-    "electron": "^40.6.0",
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
     "fuse.js": "^7.1.0",

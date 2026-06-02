@@ -297,12 +297,48 @@ function parseCorrection(llmResponse, originalOutput) {
 }
 
 /**
- * Get LLM settings from app settings
+ * Whether an API key value is a masked placeholder (contains the bullet char
+ * used by getLLMSettings) rather than a real key. Real keys are ASCII, so any
+ * occurrence of '•' (U+2022) means it came from the masked, renderer-facing
+ * settings and must never be used as a real key or persisted.
+ */
+function isMaskedApiKey(key) {
+  return typeof key === 'string' && key.includes('•');
+}
+
+/**
+ * Read the real (unmasked) stored API key.
+ */
+function getStoredApiKey(settingsManager) {
+  const llmConfig = settingsManager.get('creator.llm', {});
+  return llmConfig.apiKey || LLM_DEFAULTS.apiKey || '';
+}
+
+/**
+ * Get LLM settings with the REAL API key, for internal main-process use
+ * (actual API calls). Never send this to the renderer.
+ */
+export function getLLMSettingsRaw(settingsManager) {
+  const llmConfig = settingsManager.get('creator.llm', {});
+  const apiKey = llmConfig.apiKey || LLM_DEFAULTS.apiKey;
+
+  return {
+    enabled: llmConfig.enabled ?? LLM_DEFAULTS.enabled,
+    provider: llmConfig.provider || LLM_DEFAULTS.provider,
+    model: llmConfig.model || getDefaultModel(llmConfig.provider),
+    apiKey,
+    hasApiKey: Boolean(apiKey),
+    baseUrl: llmConfig.baseUrl || LLM_DEFAULTS.baseUrl,
+  };
+}
+
+/**
+ * Get LLM settings from app settings, with the API key MASKED for the renderer.
  * Uses unified defaults from shared/defaults.js
  */
 export function getLLMSettings(settingsManager) {
-  const llmConfig = settingsManager.get('creator.llm', {});
-  const apiKey = llmConfig.apiKey || LLM_DEFAULTS.apiKey;
+  const raw = getLLMSettingsRaw(settingsManager);
+  const { apiKey } = raw;
 
   // SECURITY FIX (#25): Mask API key - only show last 4 chars to renderer
   const maskedApiKey =
@@ -313,20 +349,36 @@ export function getLLMSettings(settingsManager) {
         : '';
 
   return {
-    enabled: llmConfig.enabled ?? LLM_DEFAULTS.enabled,
-    provider: llmConfig.provider || LLM_DEFAULTS.provider,
-    model: llmConfig.model || getDefaultModel(llmConfig.provider),
+    ...raw,
     apiKey: maskedApiKey,
-    hasApiKey: Boolean(apiKey), // Let renderer know if key is set
-    baseUrl: llmConfig.baseUrl || LLM_DEFAULTS.baseUrl,
   };
 }
 
 /**
- * Save LLM settings
+ * Resolve runtime settings coming from the renderer into settings with a REAL
+ * API key. If the renderer sent back the masked placeholder (key unchanged),
+ * substitute the stored real key. Used before any actual API call.
+ */
+export function resolveRuntimeSettings(settingsManager, settings) {
+  if (isMaskedApiKey(settings.apiKey)) {
+    return { ...settings, apiKey: getStoredApiKey(settingsManager) };
+  }
+  return settings;
+}
+
+/**
+ * Save LLM settings. Never persist a masked placeholder key over the real one:
+ * if the renderer didn't change the key, keep the stored value.
  */
 export function saveLLMSettings(settingsManager, llmSettings) {
-  settingsManager.set('creator.llm', llmSettings);
+  const next = { ...llmSettings };
+  delete next.hasApiKey; // renderer-only helper field, not real config
+
+  if (isMaskedApiKey(next.apiKey)) {
+    next.apiKey = getStoredApiKey(settingsManager);
+  }
+
+  settingsManager.set('creator.llm', next);
 }
 
 /**

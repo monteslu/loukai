@@ -1,22 +1,30 @@
 #!/usr/bin/env node
 /**
- * Ensure the Electron binary is correctly extracted.
+ * Ensure Electron is installed AND correctly extracted.
  *
- * Electron's own postinstall extracts its prebuilt binary with `extract-zip`
- * (which bundles the unmaintained `yauzl@2.x`). On Node 24 that extractor
- * silently stalls after the first zip entry, so the postinstall exits 0 with a
- * half-written `dist/` (only `LICENSES.chromium.html`, no `path.txt`). Later,
- * `require('electron')` throws "Electron failed to install correctly" and our
- * `bin/loukai.js` reports "Could not find Electron."
+ * Electron lives in `devDependencies` because electron-builder requires it
+ * there (and bundles its own copy into the DMG/installer — Electron in
+ * `dependencies`/`optionalDependencies` makes electron-builder copy the whole
+ * ~200MB Electron package into the app on top of the framework). But a
+ * production/npx install skips devDependencies, so Electron is absent at
+ * runtime. `postinstall` still runs for those installs, so this bridges the gap
+ * with two jobs:
  *
- * This runs as loukai-app's own postinstall (after Electron's). If Electron is
- * already installed correctly it is a silent no-op. Otherwise it re-extracts
- * the downloaded zip using the system's archive tool (`unzip` on macOS/Linux,
- * PowerShell `Expand-Archive` on Windows), which is unaffected by the bug, and
- * writes `path.txt` — making `npx loukai-app` reliable on any Node version.
+ *  1. INSTALL: if Electron is missing (production/npx consumer), install it from
+ *     the version range declared in our own package.json. In the dev repo
+ *     Electron is already present, so this never triggers.
  *
- * Best-effort: never fails the install. If repair is impossible it logs
- * actionable guidance and exits 0.
+ *  2. REPAIR: Electron's own postinstall extracts its binary with `extract-zip`
+ *     (bundling the unmaintained `yauzl@2.x`). On Node 24 that extractor
+ *     silently stalls after the first zip entry, leaving a half-written `dist/`
+ *     (only `LICENSES.chromium.html`, no `path.txt`). We re-extract the
+ *     downloaded zip with the system archive tool (`unzip` on macOS/Linux,
+ *     PowerShell on Windows), which is unaffected by the bug, then write
+ *     `path.txt`.
+ *
+ * When Electron is already present and healthy, this is a silent no-op.
+ * Best-effort throughout: it never fails the install; if it can't finish it
+ * logs actionable guidance and exits 0.
  */
 
 import { createRequire } from 'module';
@@ -30,8 +38,11 @@ import {
   mkdirSync,
 } from 'fs';
 import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 const require = createRequire(import.meta.url);
+const here = dirname(fileURLToPath(import.meta.url));
+const projectDir = join(here, '..'); // package root (postinstall cwd may vary)
 
 function log(msg) {
   console.log(`[ensure-electron] ${msg}`);
@@ -53,6 +64,27 @@ function platformBinaryPath(platform) {
   }
 }
 
+function resolveElectronDir() {
+  try {
+    return dirname(require.resolve('electron/package.json', { paths: [projectDir] }));
+  } catch {
+    return null;
+  }
+}
+
+function declaredElectronRange() {
+  try {
+    const pkg = require(join(projectDir, 'package.json'));
+    return (
+      (pkg.devDependencies && pkg.devDependencies.electron) ||
+      (pkg.dependencies && pkg.dependencies.electron) ||
+      null
+    );
+  } catch {
+    return null;
+  }
+}
+
 function isInstalled(electronDir, version, platformPath) {
   try {
     const distVersion = readFileSync(join(electronDir, 'dist', 'version'), 'utf-8').replace(/^v/, '');
@@ -68,7 +100,6 @@ function extractZip(zipPath, destDir) {
   rmSync(destDir, { recursive: true, force: true });
   mkdirSync(destDir, { recursive: true });
   if (process.platform === 'win32') {
-    // PowerShell is present on all supported Windows versions.
     execFileSync(
       'powershell',
       ['-NoProfile', '-NonInteractive', '-Command', `Expand-Archive -Path "${zipPath}" -DestinationPath "${destDir}" -Force`],
@@ -80,41 +111,63 @@ function extractZip(zipPath, destDir) {
   }
 }
 
+function installElectron(range) {
+  const spec = `electron@${range || 'latest'}`;
+  log(`Electron not found; installing ${spec} (devDependency is skipped by production/npx installs)…`);
+  // --no-save: don't touch package.json; install into this package's node_modules.
+  execFileSync(
+    'npm',
+    ['install', spec, '--no-save', '--no-audit', '--no-fund', '--loglevel', 'error'],
+    { cwd: projectDir, stdio: 'inherit', env: { ...process.env, npm_config_save: 'false' } }
+  );
+}
+
 async function main() {
   if (process.env.ELECTRON_SKIP_BINARY_DOWNLOAD) {
     return; // user opted out of the binary entirely
   }
 
-  let electronPkg;
-  try {
-    electronPkg = require.resolve('electron/package.json');
-  } catch {
-    return; // electron not installed (e.g. devDeps pruned) — nothing to repair
-  }
-
-  const electronDir = dirname(electronPkg);
-  const { version } = require(electronPkg);
   const platform = process.env.npm_config_platform || process.platform;
   const arch = process.env.npm_config_arch || process.arch;
   const platformPath = platformBinaryPath(platform);
-
   if (!platformPath) {
     log(`Unsupported platform "${platform}"; leaving Electron untouched.`);
     return;
   }
 
+  // ---- Job 1: ensure the Electron package is present ----
+  let electronDir = resolveElectronDir();
+  if (electronDir == null) {
+    const range = declaredElectronRange();
+    if (range == null) {
+      return; // we don't declare Electron at all — nothing to do
+    }
+    try {
+      installElectron(range);
+    } catch (err) {
+      log(`Could not install Electron automatically: ${err.message}`);
+      log('Install it manually with `npm install electron`, then re-run.');
+      return;
+    }
+    electronDir = resolveElectronDir();
+    if (electronDir == null) {
+      log('Electron still not resolvable after install; aborting (best-effort).');
+      return;
+    }
+  }
+
+  const { version } = require(join(electronDir, 'package.json'));
+
+  // ---- Job 2: ensure the binary is actually extracted ----
   if (isInstalled(electronDir, version, platformPath)) {
-    return; // already good — silent no-op (the common case)
+    return; // healthy — silent no-op (the common dev-repo case)
   }
 
   log(`Electron ${version} is not fully extracted; repairing (Node ${process.version} extract-zip workaround)…`);
 
-  // Resolve the downloaded artifact zip. @electron/get returns the cached zip
-  // path, or downloads it if missing (the download path is unaffected by the
-  // extraction bug). Resolve it from Electron's own dependency tree.
   let zipPath;
   try {
-    const getRequire = createRequire(electronPkg);
+    const getRequire = createRequire(join(electronDir, 'package.json'));
     const { downloadArtifact } = getRequire('@electron/get');
     let checksums;
     try {
@@ -122,13 +175,7 @@ async function main() {
     } catch {
       checksums = undefined;
     }
-    zipPath = await downloadArtifact({
-      version,
-      artifactName: 'electron',
-      platform,
-      arch,
-      checksums,
-    });
+    zipPath = await downloadArtifact({ version, artifactName: 'electron', platform, arch, checksums });
   } catch (err) {
     log(`Could not obtain the Electron zip: ${err.message}`);
     log('Run `npm rebuild electron` (Node 22 or earlier), or reinstall, to fix.');
@@ -138,8 +185,6 @@ async function main() {
   const distDir = join(electronDir, 'dist');
   try {
     extractZip(zipPath, distDir);
-
-    // Mirror Electron's install.js: hoist the type defs and write path.txt.
     const srcTypeDef = join(distDir, 'electron.d.ts');
     if (existsSync(srcTypeDef)) {
       renameSync(srcTypeDef, join(electronDir, 'electron.d.ts'));
@@ -152,13 +197,12 @@ async function main() {
   }
 
   if (isInstalled(electronDir, version, platformPath)) {
-    log('Electron repaired successfully.');
+    log('Electron ready.');
   } else {
     log('Repair did not produce a valid install; try `npm rebuild electron`.');
   }
 }
 
 main().catch((err) => {
-  // Never fail the install over this.
   log(`Unexpected error (ignored): ${err.message}`);
 });

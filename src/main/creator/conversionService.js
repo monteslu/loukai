@@ -287,7 +287,7 @@ export async function runConversion(
     let llmStats = null;
     if (settingsManager && referenceLyrics) {
       try {
-        const llmSettings = llmService.getLLMSettings(settingsManager);
+        const llmSettings = llmService.getLLMSettingsRaw(settingsManager);
         // Local LLM (lmstudio) doesn't require API key
         const hasValidConfig = llmSettings.provider === 'lmstudio' || llmSettings.apiKey;
         if (llmSettings.enabled && hasValidConfig) {
