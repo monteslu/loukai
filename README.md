@@ -11,6 +11,12 @@
 
 Loukai is a free, open source karaoke software that runs locally on your computer to **play** and **create** karaoke files from your own music. Built on M4A Stems (MPEG-4 multi-track audio), it uses industry-standard formats compatible with DJ software, giving you full control over your personal karaoke library.
 
+## Quick start (with nodejs installed)
+
+```
+npx loukai-app
+```
+
 **Key highlights:**
 - **Open Format**: Built on NI Stems — no vendor lock-in, works with Traktor, Mixxx, and other DJ software
 - **Create Your Own**: Built-in Creator processes your audio files into stem-separated karaoke with AI-transcribed lyrics
@@ -24,7 +30,7 @@ Loukai is a free, open source karaoke software that runs locally on your compute
 ## Features
 
 ### Audio & Playback
-- **M4A Stems Format (Primary)**: Built on [NI Stems](https://www.native-instruments.com/en/specials/stems/) with karaoke extensions
+- **MP4 Stems Format (Primary)**: Built on [NI Stems](https://www.native-instruments.com/en/specials/stems/) with karaoke extensions
   - Compatible with DJ software (Traktor, Mixxx) via standard NI Stems metadata
   - Smaller file sizes than legacy formats
   - Embedded lyrics with word-level timing in custom atoms
@@ -51,7 +57,7 @@ Loukai is a free, open source karaoke software that runs locally on your compute
 
 ### Library & Search
 - **Fast Library Scanning**: Automatic metadata extraction from thousands of songs
-- **M4A Stems Native**: Optimized for MPEG-4 multi-track audio with full metadata support
+- **MP4 Stems Native**: Optimized for MPEG-4 multi-track audio with full metadata support
 - **Legacy Format Support**: Also reads CDG/MP3 pairs
 - **Smart Search**: Fuzzy search across titles, artists, and albums
 - **Alphabet Navigation**: Quick filtering by first letter
@@ -194,7 +200,7 @@ Loukai is built with a multi-process architecture:
 - **Library Scanner**: Metadata extraction and caching
 - **Web Server**: Express 5 REST API + Socket.IO
 - **State Management**: Centralized app state with event emitters
-- **File System**: M4A/CDG file parsing and manipulation
+- **File System**: MP4/CDG file parsing and manipulation
 - **IPC Handlers**: Communication bridge to renderer
 
 ### Renderer Process (React)
