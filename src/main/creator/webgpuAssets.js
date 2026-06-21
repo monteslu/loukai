@@ -157,6 +157,7 @@ export function registerWebGpuAssets(app) {
       res.setHeader('Content-Type', mimeFor(key));
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Content-Length', statSync(localFile).size);
       return createReadStream(localFile).pipe(res);
     }
     if (!Object.prototype.hasOwnProperty.call(ASSETS, key)) {
@@ -168,6 +169,7 @@ export function registerWebGpuAssets(app) {
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       // Same-origin already, but mark cross-origin-readable for the isolated context.
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // allow file:// renderer under COEP
+      res.setHeader('Content-Length', statSync(file).size); // let consumers pre-size buffers
       createReadStream(file).pipe(res);
     } catch (e) {
       console.error('webgpu-asset fetch failed:', key, e.message);
@@ -197,6 +199,10 @@ export function registerWebGpuAssets(app) {
       res.setHeader('Content-Type', mimeFor(rel));
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // allow file:// renderer under COEP
+      // Content-Length is REQUIRED so transformers.js pre-sizes its download buffer.
+      // Without it, it repeatedly grows the buffer and OOMs on large models
+      // (v3-turbo's 688MB → 'RangeError: Array buffer allocation failed').
+      res.setHeader('Content-Length', statSync(dest).size);
       createReadStream(dest).pipe(res);
     } catch (e) {
       console.error('webgpu-model fetch failed:', rel, e.message);
