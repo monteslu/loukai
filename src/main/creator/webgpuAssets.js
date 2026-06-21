@@ -146,6 +146,19 @@ async function ensureAsset(key) {
  */
 export function registerWebGpuAssets(app) {
   app.get('/webgpu-assets/*splat', async (req, res) => {
+    // Special non-file key: report whether the htdemucs_ft "best quality" ensemble
+    // is available (4 models cached + cpu-node list). Not hosted on HF → absent on
+    // fresh machines; the UI uses this to disable/relabel "best" vs failing mid-run.
+    // Handled inside this (known-working) splat route to avoid route-precedence issues.
+    if (req.path === '/webgpu-assets/ft-available') {
+      const md = modelsDir();
+      const present = ['drums', 'bass', 'other', 'vocals'].every((s) => {
+        const f = join(md, `htdemucs_ft_${s}_safe16.onnx`);
+        return existsSync(f) && statSync(f).size > 0;
+      });
+      const nodes = existsSync(join(STATIC_WEBGPU, 'ft_cpu_nodes.json'));
+      return res.json({ available: present && nodes });
+    }
     // Express 5 (path-to-regexp v8) requires a named splat, not a bare '*'.
     // Strip the prefix; reject traversal.
     const key = decodeURIComponent(req.path.replace(/^\/webgpu-assets\//, ''));

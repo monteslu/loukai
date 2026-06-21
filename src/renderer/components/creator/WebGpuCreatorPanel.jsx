@@ -129,6 +129,7 @@ export default function WebGpuCreatorPanel() {
   const [stemProgress, setStemProgress] = useState({}); // per-stem 0..1 (ft ensemble)
   // Demucs separation model — default to the fast single htdemucs.
   const [demucsModel, setDemucsModel] = useState('htdemucs');
+  const [ftAvailable, setFtAvailable] = useState(true); // htdemucs_ft models present?
   const [transcribeInfo, setTranscribeInfo] = useState(''); // live transcription status
   const [logLines, setLogLines] = useState([]);
   const [lyrics, setLyrics] = useState([]);
@@ -179,6 +180,15 @@ export default function WebGpuCreatorPanel() {
   useEffect(() => {
     logEnd.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logLines]);
+
+  // Is the htdemucs_ft 'best quality' ensemble installed? (not hosted yet — absent
+  // on fresh machines). If not, disable that option so 'best' never fails mid-run.
+  useEffect(() => {
+    fetch('/webgpu-assets/ft-available')
+      .then((r) => (r.ok ? r.json() : { available: false }))
+      .then((d) => setFtAvailable(Boolean(d.available)))
+      .catch(() => setFtAvailable(false));
+  }, []);
 
   // transformers.js keys its environment detection off `typeof process`. In the
   // Electron renderer (nodeIntegration: true) `process` exists, so it WRONGLY
@@ -439,7 +449,11 @@ export default function WebGpuCreatorPanel() {
       //   'ft'     = htdemucs_ft 4-model fine-tuned ensemble — PyTorch-grade, ~2-3×
       //              realtime (4× the compute); fp16 with the variance prologue pinned
       //              to CPU (forceCpuNodeNames) so fp16 doesn't NaN.
-      const modelDef = DEMUCS_MODELS.find((m) => m.id === demucsModel) || DEMUCS_MODELS[0];
+      let modelDef = DEMUCS_MODELS.find((m) => m.id === demucsModel) || DEMUCS_MODELS[0];
+      if (modelDef.kind === 'ft' && !ftAvailable) {
+        log('htdemucs_ft (best) models not installed — using fast htdemucs');
+        modelDef = DEMUCS_MODELS.find((m) => m.kind === 'single') || DEMUCS_MODELS[0];
+      }
       setStemProgress({});
       const t0 = performance.now();
       let result;
@@ -787,11 +801,15 @@ export default function WebGpuCreatorPanel() {
               onChange={(e) => setDemucsModel(e.target.value)}
               disabled={busy}
             >
-              {DEMUCS_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
+              {DEMUCS_MODELS.map((m) => {
+                const unavail = m.kind === 'ft' && !ftAvailable;
+                return (
+                  <option key={m.id} value={m.id} disabled={unavail}>
+                    {m.label}
+                    {unavail ? ' — not installed' : ''}
+                  </option>
+                );
+              })}
             </select>
           </label>
           <label className="text-sm text-gray-700 dark:text-gray-300">
