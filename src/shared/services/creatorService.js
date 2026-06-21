@@ -16,15 +16,16 @@ import {
 } from '../../main/creator/systemChecker.js';
 import { installAllComponents } from '../../main/creator/downloadManager.js';
 import { searchLyrics, prepareWhisperContext } from '../../main/creator/lrclibService.js';
-import { getAudioInfo, isVideoFile } from '../../main/creator/ffmpegService.js';
+import { getAudioInfo, isVideoFile, encodeToAAC } from '../../main/creator/ffmpegService.js';
 import {
   runConversion,
   cancelConversion,
   isConversionInProgress,
 } from '../../main/creator/conversionService.js';
 import * as creatorJob from '../../main/creator/creatorJob.js';
-import { repairStemFile, repairStemFiles } from '../../main/creator/stemBuilder.js';
-import { basename } from 'path';
+import { repairStemFile, repairStemFiles, buildStemM4a } from '../../main/creator/stemBuilder.js';
+import { basename, join, dirname } from 'path';
+import { mkdirSync, rmSync } from 'fs';
 import { Atoms as M4AAtoms } from 'm4a-stems';
 
 // Track installation state
@@ -391,9 +392,56 @@ export async function repairStems(filePaths) {
   }
 }
 
+/**
+ * Save a WebGPU-Creator result (4 stem WAVs separated + transcribed in-browser)
+ * as a NI-Stems .stem.mp4 in the songs library. Encodes each WAV→AAC, then muxes
+ * with the kara (lyrics) atom via buildStemM4a — same output format as the native
+ * creator, just fed from the browser instead of Python.
+ *
+ * @param {Object} opts
+ *   stems: { drums, bass, other, vocals } → WAV file paths
+ *   metadata: { title, artist, duration }
+ *   lyrics: { lines:[{start,end,text}], words:[{start,end,text}] }
+ *   songsFolder: output directory (the library)
+ * @returns {Promise<{outputPath, fileName}>}
+ */
+export async function saveWebGpuStems({ stems, metadata, lyrics, songsFolder }) {
+  if (!songsFolder) throw new Error('songs folder is not set');
+  const { title = 'Untitled', artist = 'Unknown', duration = 0 } = metadata || {};
+  const safeFileName = (artist ? `${artist} - ${title}` : title).replace(/[<>:"/\\|?*]/g, '_');
+  const outputPath = join(songsFolder, `${safeFileName}.stem.mp4`);
+
+  // Encode each stem WAV → AAC into a temp dir (buildStemM4a uses `-c copy`).
+  const tmpDir = join(dirname(stems.vocals), `mux_${Date.now()}`);
+  mkdirSync(tmpDir, { recursive: true });
+  const aacStems = {};
+  try {
+    for (const name of ['drums', 'bass', 'other', 'vocals']) {
+      const aac = join(tmpDir, `${name}.m4a`);
+      await encodeToAAC(stems[name], aac, { bitrate: '256k' });
+      aacStems[name] = aac;
+    }
+    await buildStemM4a({
+      outputPath,
+      stems: aacStems,
+      metadata: { title, artist, duration },
+      lyrics,
+      tags: ['webgpu'],
+    });
+    return { outputPath, fileName: basename(outputPath) };
+  } finally {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* best-effort temp cleanup */
+    }
+  }
+}
+
 export default {
   checkComponents,
   getStatus,
+  saveWebGpuStems,
   installComponents,
   cancelInstall,
   findLyrics,

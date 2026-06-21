@@ -21,6 +21,7 @@ import * as effectsService from '../shared/services/effectsService.js';
 import * as mixerService from '../shared/services/mixerService.js';
 import * as requestsService from '../shared/services/requestsService.js';
 import { SERVER_DEFAULTS, WAVEFORM_DEFAULTS, AUTOTUNE_DEFAULTS } from '../shared/defaults.js';
+import { STEM_MP4_FORMAT, isStemMp4Format } from '../shared/formatUtils.js';
 import { getSetting } from '../shared/services/settingsService.js';
 import * as serverSettingsService from '../shared/services/serverSettingsService.js';
 import * as creatorService from '../shared/services/creatorService.js';
@@ -1172,8 +1173,8 @@ class WebServer {
               songJson: result.kaiData.originalSongJson || {},
             },
           });
-        } else if (result.format === 'm4a-stems') {
-          // For M4A files, add download URLs for extracted audio tracks
+        } else if (isStemMp4Format(result.format)) {
+          // For Stem MP4 files, add download URLs for extracted audio tracks
           const audioFiles = result.kaiData.audio.sources.map((source) => {
             const trackName = source.name;
             const fileId = Buffer.from(
@@ -1190,7 +1191,7 @@ class WebServer {
           res.json({
             success: true,
             data: {
-              format: 'm4a-stems',
+              format: STEM_MP4_FORMAT,
               metadata: result.kaiData.metadata || {},
               lyrics: result.kaiData.lyrics || [],
               audioFiles: audioFiles,
@@ -1271,7 +1272,7 @@ class WebServer {
       }
     });
 
-    // Download M4A audio track (extracted from M4A Stems file)
+    // Download M4A audio track (extracted from Stem MP4 file)
     this.app.get('/admin/editor/m4a-audio/:fileId', async (req, res) => {
       try {
         const { fileId } = req.params;
@@ -1981,6 +1982,79 @@ class WebServer {
             /* ignore */
           }
           res.status(500).json({ error: e.message || 'Failed to read uploaded file' });
+        }
+      });
+    });
+
+    // ---- WebGPU Creator: save in-browser result as .stem.mp4 ----
+    // The WebGPU tab separates + transcribes in the browser (no Python). It POSTs
+    // the 4 stem WAVs + lyrics JSON here; the backend muxes them into a NI-Stems
+    // .stem.mp4 (ffmpeg + kara/stem atoms via buildStemM4a) in the songs library.
+    const wsd = path.join(getCacheDir(), 'webgpu-creator');
+    try {
+      fs.mkdirSync(wsd, { recursive: true });
+    } catch {
+      /* best-effort */
+    }
+    const wsSaveHandler = multer({
+      storage: multer.diskStorage({
+        destination: (_req, _file, cb) => cb(null, wsd),
+        filename: (_req, file, cb) =>
+          cb(null, `${crypto.randomBytes(8).toString('hex')}_${file.fieldname}.wav`),
+      }),
+      limits: { fileSize: 200 * 1024 * 1024, files: 4 },
+      fileFilter: (_req, file, cb) =>
+        cb(null, ['drums', 'bass', 'other', 'vocals'].includes(file.fieldname)),
+    }).fields([
+      { name: 'drums', maxCount: 1 },
+      { name: 'bass', maxCount: 1 },
+      { name: 'other', maxCount: 1 },
+      { name: 'vocals', maxCount: 1 },
+    ]);
+
+    this.app.post('/admin/webgpu-creator/save', (req, res) => {
+      wsSaveHandler(req, res, async (err) => {
+        const cleanup = () => {
+          for (const fld of ['drums', 'bass', 'other', 'vocals']) {
+            const f = req.files?.[fld]?.[0]?.path;
+            if (f) {
+              try {
+                fs.rmSync(f, { force: true });
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+        };
+        try {
+          if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+          const stems = {};
+          for (const fld of ['drums', 'bass', 'other', 'vocals']) {
+            const f = req.files?.[fld]?.[0]?.path;
+            if (!f) return res.status(400).json({ error: `missing stem: ${fld}` });
+            stems[fld] = f;
+          }
+          const title = (req.body.title || 'Untitled').toString().slice(0, 200);
+          const artist = (req.body.artist || 'Unknown').toString().slice(0, 200);
+          const duration = parseFloat(req.body.duration) || 0;
+          let lyrics = {};
+          try {
+            lyrics = req.body.lyrics ? JSON.parse(req.body.lyrics) : {};
+          } catch {
+            /* ignore malformed lyrics */
+          }
+          const result = await creatorService.saveWebGpuStems({
+            stems,
+            metadata: { title, artist, duration },
+            lyrics,
+            songsFolder: this.mainApp.settings?.getSongsFolder?.(),
+          });
+          cleanup();
+          res.json({ success: true, ...result });
+        } catch (e) {
+          cleanup();
+          console.error('webgpu-creator save failed:', e);
+          res.status(500).json({ error: e.message || 'Save failed' });
         }
       });
     });

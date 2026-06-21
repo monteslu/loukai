@@ -224,6 +224,7 @@ export default function WebGpuCreatorPanel() {
       DemucsProcessor: demucs.DemucsProcessor,
       CONSTANTS: demucs.CONSTANTS,
       pipeline: tf.pipeline,
+      tf, // full transformers.js module (for WhisperTextStreamer)
       ftEnsemble,
     };
     return libs.current;
@@ -266,7 +267,7 @@ export default function WebGpuCreatorPanel() {
     setStemProgress({});
     setRtf(null);
     try {
-      const { ort, demucs, ftEnsemble, pipeline, DemucsProcessor } = await loadLibs();
+      const { ort, demucs, ftEnsemble, pipeline, tf, DemucsProcessor } = await loadLibs();
       const { STEMS, createEnsembleSessions, runEnsemble } = ftEnsemble;
 
       log(`decoding ${file.name} …`);
@@ -363,34 +364,53 @@ export default function WebGpuCreatorPanel() {
       }
       const mono = toMono16k(result.vocals.left, result.vocals.right, audio.sampleRate);
       const audioMin = (mono.length / 16000 / 60).toFixed(1);
-      log(`transcribing ${audioMin} min of vocals on ${device} …`);
-      // Feedback so it doesn't look frozen (transcription is one long call). Whisper
-      // processes in 30s chunks; report each chunk + a periodic heartbeat with elapsed
-      // time and running word count, like the native creator's step updates.
       const tStart = performance.now();
-      let chunkN = 0;
+      log(`transcribing ${audioMin} min of vocals on ${device} …`);
+      // Live feedback (the native tab streams whisper progress; we do the same via
+      // transformers.js's WhisperTextStreamer — VERIFIED to fire, unlike the plain
+      // callback_function). on_chunk_start ticks per 30s chunk; the text callback
+      // streams decoded words. A 1s heartbeat guarantees elapsed time always moves.
+      let chunkIdx = 0;
+      let partial = '';
       const totalChunks = Math.max(1, Math.ceil(mono.length / 16000 / 30));
       const hb = setInterval(() => {
         const el = ((performance.now() - tStart) / 1000).toFixed(0);
-        setTranscribeInfo(`transcribing… ${el}s elapsed`);
+        setTranscribeInfo(
+          `transcribing chunk ${Math.min(chunkIdx, totalChunks)}/${totalChunks} · ${el}s`
+        );
       }, 1000);
+      let streamer = null;
+      try {
+        if (tf?.WhisperTextStreamer) {
+          streamer = new tf.WhisperTextStreamer(asr.tokenizer, {
+            on_chunk_start: () => {
+              chunkIdx += 1;
+              partial = '';
+              const el = ((performance.now() - tStart) / 1000).toFixed(0);
+              log(`  …chunk ${chunkIdx}/${totalChunks} (${el}s)`);
+            },
+            callback_function: (text) => {
+              partial += text;
+              setTranscribeInfo(`chunk ${chunkIdx}/${totalChunks}: …${partial.slice(-48)}`);
+            },
+          });
+        }
+      } catch {
+        streamer = null;
+      }
       let out;
       try {
         out = await asr(mono, {
           chunk_length_s: 30,
           stride_length_s: 5,
           return_timestamps: 'word',
-          chunk_callback: () => {
-            chunkN += 1;
-            const el = ((performance.now() - tStart) / 1000).toFixed(0);
-            log(`  …chunk ${chunkN}/${totalChunks} (${el}s)`);
-            setTranscribeInfo(`transcribing chunk ${chunkN}/${totalChunks} · ${el}s`);
-          },
+          ...(streamer ? { streamer } : {}),
         });
       } finally {
         clearInterval(hb);
         setTranscribeInfo('');
       }
+      const tSec = (performance.now() - tStart) / 1000;
 
       const words = out.chunks || [];
       const lines = words.length
@@ -398,7 +418,11 @@ export default function WebGpuCreatorPanel() {
         : [{ text: (out.text || '').trim(), start: 0, end: audio.duration }];
       setLyrics(lines);
       setStatus('done');
-      log(`done — ${words.length} words → ${lines.length} lyric lines`);
+      log(
+        `transcription done in ${tSec.toFixed(1)}s ` +
+          `(${((parseFloat(audioMin) * 60) / tSec).toFixed(2)}× realtime) — ` +
+          `${words.length} words → ${lines.length} lyric lines`
+      );
     } catch (e) {
       console.error(e);
       log(`ERROR: ${e.message}`);
