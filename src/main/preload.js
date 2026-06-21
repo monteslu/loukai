@@ -254,6 +254,7 @@ const api = {
     cancelConversion: () => ipcRenderer.invoke('creator:cancelConversion'),
     saveWebGpuStems: (payload) => ipcRenderer.invoke('creator:saveWebGpuStems', payload),
     correctLyrics: (payload) => ipcRenderer.invoke('creator:correctLyrics', payload),
+    updateStemLyrics: (payload) => ipcRenderer.invoke('creator:updateStemLyrics', payload),
 
     // LLM settings
     getLLMSettings: () => ipcRenderer.invoke('creator:getLLMSettings'),

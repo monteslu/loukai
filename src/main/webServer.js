@@ -2100,6 +2100,32 @@ class WebServer {
       });
     });
 
+    // Lyrics-only update (web admin): rewrite the kara atom (+key) on an existing
+    // library .stem.mp4 by filename — no re-upload of the audio. The file must
+    // resolve inside the songs folder (traversal-guarded).
+    this.app.post('/admin/webgpu-creator/update-lyrics', async (req, res) => {
+      try {
+        const songsFolder = this.mainApp.settings?.getSongsFolder?.();
+        if (!songsFolder) return res.status(400).json({ error: 'songs folder not set' });
+        const name = (req.body.file || '').toString();
+        if (!name || name.includes('..') || name.includes('/') || name.includes('\\')) {
+          return res.status(400).json({ error: 'invalid file name' });
+        }
+        const inputPath = path.join(songsFolder, name);
+        const key = req.body.key ? req.body.key.toString().slice(0, 16) : undefined;
+        const result = await creatorService.updateStemLyrics({
+          inputPath,
+          lyrics: req.body.lyrics || {},
+          key,
+          pitch: req.body.pitch,
+        });
+        res.json({ success: true, ...result });
+      } catch (e) {
+        console.error('update-lyrics failed:', e);
+        res.status(500).json({ error: e.message || 'Update failed' });
+      }
+    });
+
     // Get file info (for library songs)
     this.app.post('/admin/creator/file-info', async (req, res) => {
       try {

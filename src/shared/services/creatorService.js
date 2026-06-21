@@ -25,6 +25,7 @@ import {
 import * as creatorJob from '../../main/creator/creatorJob.js';
 import { repairStemFile, repairStemFiles } from '../../main/creator/stemBuilder.js';
 import { basename, join } from 'path';
+import { existsSync } from 'fs';
 import { Atoms as M4AAtoms, StemMp4Writer } from 'stem-mp4';
 
 // Track installation state
@@ -446,10 +447,46 @@ export async function saveWebGpuStems({ stems, metadata, lyrics, pitch, songsFol
   return { outputPath, fileName: basename(outputPath) };
 }
 
+/**
+ * Lyrics-only update: rewrite the kara (lyrics) atom — and optionally the musical
+ * key — on an EXISTING .stem.mp4, without re-separating or re-encoding the audio.
+ * Used by the WebGPU creator's lyrics-only mode (re-transcribe an existing file).
+ * The stems/audio are untouched; only the lyrics+key atoms change.
+ * @param {Object} opts
+ * @param {string} opts.inputPath - path to the existing .stem.mp4
+ * @param {{lines:Array}} opts.lyrics
+ * @param {string} [opts.key]
+ * @param {Object} [opts.pitch]
+ * @returns {Promise<{outputPath, fileName}>}
+ */
+export async function updateStemLyrics({ inputPath, lyrics, key, pitch }) {
+  if (!inputPath || !existsSync(inputPath)) throw new Error('stem file not found');
+  // Edit in place — the file is already in the library.
+  if (lyrics && lyrics.lines) {
+    await M4AAtoms.writeKaraAtom(inputPath, { lines: lyrics.lines });
+  }
+  if (key) {
+    try {
+      await M4AAtoms.addMusicalKey(inputPath, key);
+    } catch (e) {
+      console.warn('addMusicalKey failed:', e.message);
+    }
+  }
+  if (pitch && pitch.data?.length) {
+    try {
+      await M4AAtoms.writeVpchAtom(inputPath, pitch);
+    } catch (e) {
+      console.warn('writeVpchAtom failed:', e.message);
+    }
+  }
+  return { outputPath: inputPath, fileName: basename(inputPath) };
+}
+
 export default {
   checkComponents,
   getStatus,
   saveWebGpuStems,
+  updateStemLyrics,
   installComponents,
   cancelInstall,
   findLyrics,

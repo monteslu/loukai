@@ -237,5 +237,16 @@ export function registerCreatorHandlers(mainApp) {
     }
   });
 
+  // Lyrics-only update: rewrite the kara atom (+key) on an existing .stem.mp4
+  // (re-transcribed in-browser). Audio/stems untouched. Player path (file on disk).
+  ipcMain.handle('creator:updateStemLyrics', async (_event, { inputPath, lyrics, key, pitch }) => {
+    try {
+      const result = await creatorService.updateStemLyrics({ inputPath, lyrics, key, pitch });
+      return { success: true, ...result };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
   log('✅ Creator handlers registered');
 }
