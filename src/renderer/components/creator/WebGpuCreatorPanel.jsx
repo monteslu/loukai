@@ -133,6 +133,13 @@ export default function WebGpuCreatorPanel() {
   const [logLines, setLogLines] = useState([]);
   const [lyrics, setLyrics] = useState([]);
   const [rtf, setRtf] = useState(null);
+  // Lyric-assist (parity with native creator): title/artist for LRCLIB lookup,
+  // reference lyrics (Whisper prompt + LLM correction source), correction stats.
+  const [songTitle, setSongTitle] = useState('');
+  const [songArtist, setSongArtist] = useState('');
+  const [referenceLyrics, setReferenceLyrics] = useState('');
+  const [lookingUp, setLookingUp] = useState(false);
+  const [llmStats, setLlmStats] = useState(null);
   const fileRef = useRef(null);
   const libs = useRef({}); // cached dynamic imports
   const logEnd = useRef(null);
@@ -262,6 +269,55 @@ export default function WebGpuCreatorPanel() {
       ftEnsemble,
     };
     return libs.current;
+  }
+
+  // Dual-path call to a creator service: IPC in the Electron player (no admin HTTP
+  // session there), authed REST in the web admin. ipcFn = (payload)=>Promise,
+  // restPath = '/admin/creator/...'. Mirrors the save flow.
+  async function creatorCall(ipcMethod, restPath, payload) {
+    const api = window.kaiAPI?.creator;
+    if (api?.[ipcMethod]) return api[ipcMethod](payload);
+    const res = await fetch(restPath, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      throw new Error(e.error || `request failed (${res.status})`);
+    }
+    return res.json();
+  }
+
+  // Look up reference lyrics from LRCLIB (title/artist) — fills the reference field,
+  // which sharpens transcription (Whisper prompt) and powers LLM correction.
+  async function lookupLyrics() {
+    if (!songTitle) {
+      log('enter a title (and artist) to look up lyrics');
+      return;
+    }
+    setLookingUp(true);
+    try {
+      log(`looking up lyrics: ${songArtist ? songArtist + ' - ' : ''}${songTitle} …`);
+      const r = await creatorCall('searchLyrics', '/admin/creator/search-lyrics', {
+        title: songTitle,
+        artist: songArtist,
+      });
+      const plain = r?.plainLyrics || r?.lyrics?.plainLyrics || '';
+      if (plain) {
+        setReferenceLyrics(plain);
+        log(
+          `found lyrics (${plain.split('\n').length} lines) — will guide transcription + correction`
+        );
+      } else {
+        log('no lyrics found for that title/artist');
+      }
+    } catch (e) {
+      log(`lyric lookup failed: ${e.message}`);
+    } finally {
+      setLookingUp(false);
+    }
   }
 
   // Decode an uploaded file into stereo Float32 channel data via WebAudio.
@@ -433,12 +489,18 @@ export default function WebGpuCreatorPanel() {
       } catch {
         streamer = null;
       }
+      // Reference lyrics as a Whisper prompt nudges it toward the right words
+      // (names, slang, rare words) — same idea as the native creator's hints.
+      const promptText = referenceLyrics.trim()
+        ? referenceLyrics.replace(/\s+/g, ' ').trim().slice(0, 200)
+        : null;
       let out;
       try {
         out = await asr(mono, {
           chunk_length_s: 30,
           stride_length_s: 5,
           return_timestamps: 'word',
+          ...(promptText ? { prompt: promptText } : {}),
           ...(streamer ? { streamer } : {}),
         });
       } finally {
@@ -448,7 +510,7 @@ export default function WebGpuCreatorPanel() {
       const tSec = (performance.now() - tStart) / 1000;
 
       const words = out.chunks || [];
-      const lines = words.length
+      let lines = words.length
         ? groupWordsIntoLines(words)
         : [{ text: (out.text || '').trim(), start: 0, end: audio.duration }];
       setLyrics(lines);
@@ -458,16 +520,46 @@ export default function WebGpuCreatorPanel() {
           `${words.length} words → ${lines.length} lyric lines`
       );
 
+      // --- LLM correction (parity): auto-run when reference lyrics are present ---
+      // Sends the transcription + reference lyrics to the configured LLM to fix
+      // mis-heard words. No-ops gracefully if no LLM is configured.
+      let correctedWords = words;
+      setLlmStats(null);
+      if (referenceLyrics.trim()) {
+        setStatus('correcting');
+        log('correcting lyrics with LLM (reference lyrics provided) …');
+        try {
+          const cr = await creatorCall('correctLyrics', '/admin/creator/correct', {
+            whisperOutput: { lines, words },
+            referenceLyrics,
+          });
+          if (cr?.success !== false && cr?.lines?.length) {
+            lines = cr.lines;
+            if (cr.words?.length) correctedWords = cr.words;
+            setLyrics(lines);
+            const st = cr.llmStats || cr.stats;
+            if (st) setLlmStats(st);
+            log(
+              `LLM correction applied${st?.corrections_applied != null ? `: ${st.corrections_applied} lines changed` : ''}`
+            );
+          } else {
+            log(`LLM correction skipped (${cr?.error || 'no LLM configured'})`);
+          }
+        } catch (e) {
+          log(`LLM correction failed (${e.message}) — using raw transcription`);
+        }
+      }
+
       // --- Save as .stem.mp4 (encode 4 stems → POST → backend muxes via ffmpeg) ---
       setStatus('saving');
       log('encoding stems + saving .stem.mp4 …');
-      // Title/artist from "Artist - Title.ext" filename (best-effort).
+      // Title/artist: prefer the UI fields, else parse "Artist - Title.ext".
       const baseName = file.name.replace(/\.[^.]+$/, '');
       const dash = baseName.match(/^(.+?)\s*-\s*(.+)$/);
-      const artist = dash ? dash[1].trim() : '';
-      const title = dash ? dash[2].trim() : baseName;
+      const artist = songArtist.trim() || (dash ? dash[1].trim() : '');
+      const title = songTitle.trim() || (dash ? dash[2].trim() : baseName);
       // Normalize Whisper word objects → {start,end,text} for the kara atom.
-      const wordObjs = words
+      const wordObjs = correctedWords
         .map((w) => ({
           text: (w.text || '').trim(),
           start: w.timestamp?.[0] ?? w.start ?? null,
@@ -528,7 +620,11 @@ export default function WebGpuCreatorPanel() {
     }
   }
 
-  const busy = status === 'separating' || status === 'transcribing' || status === 'saving';
+  const busy =
+    status === 'separating' ||
+    status === 'transcribing' ||
+    status === 'correcting' ||
+    status === 'saving';
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -566,6 +662,53 @@ export default function WebGpuCreatorPanel() {
             className="text-sm"
             disabled={busy}
           />
+
+          {/* Lyric assist: title/artist → LRCLIB lookup → reference lyrics, which
+              guide transcription (Whisper prompt) + power LLM correction. */}
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="text-xs text-gray-600 dark:text-gray-400 flex flex-col">
+              Title
+              <input
+                type="text"
+                value={songTitle}
+                onChange={(e) => setSongTitle(e.target.value)}
+                disabled={busy}
+                placeholder="Song title"
+                className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
+              />
+            </label>
+            <label className="text-xs text-gray-600 dark:text-gray-400 flex flex-col">
+              Artist
+              <input
+                type="text"
+                value={songArtist}
+                onChange={(e) => setSongArtist(e.target.value)}
+                disabled={busy}
+                placeholder="Artist"
+                className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={lookupLyrics}
+              disabled={busy || lookingUp || !songTitle}
+              className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-sm hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
+            >
+              {lookingUp ? 'Looking…' : '🔎 Find lyrics'}
+            </button>
+          </div>
+          <label className="text-xs text-gray-600 dark:text-gray-400 flex flex-col">
+            Reference lyrics (optional — improves accuracy + enables LLM correction)
+            <textarea
+              value={referenceLyrics}
+              onChange={(e) => setReferenceLyrics(e.target.value)}
+              disabled={busy}
+              rows={3}
+              placeholder="Paste known lyrics, or use Find lyrics above"
+              className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm font-mono"
+            />
+          </label>
+
           <label className="text-sm text-gray-700 dark:text-gray-300">
             Demucs model:
             <select
@@ -645,6 +788,11 @@ export default function WebGpuCreatorPanel() {
             {transcribeInfo || 'Transcribing vocals…'}
           </div>
         )}
+        {status === 'correcting' && (
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            <span className="inline-block animate-pulse">●</span> Correcting lyrics with LLM…
+          </div>
+        )}
         {status === 'saving' && (
           <div className="text-sm text-gray-600 dark:text-gray-400">
             <span className="inline-block animate-pulse">●</span> Encoding stems + saving .stem.mp4…
@@ -653,6 +801,12 @@ export default function WebGpuCreatorPanel() {
         {rtf !== null && (
           <div className="text-xs text-gray-500 dark:text-gray-400">
             separation: {rtf.toFixed(2)}× realtime · htdemucs_ft on WebGPU
+          </div>
+        )}
+        {llmStats && (
+          <div className="text-xs text-green-700 dark:text-green-400">
+            LLM correction: {llmStats.corrections_applied ?? 0} lines changed
+            {llmStats.suggestions_made != null ? ` (${llmStats.suggestions_made} suggestions)` : ''}
           </div>
         )}
 
