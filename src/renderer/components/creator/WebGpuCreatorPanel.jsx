@@ -228,13 +228,14 @@ export default function WebGpuCreatorPanel() {
     // All from /webgpu-assets/* — never a CDN. Self-contained ESM bundles
     // (ort.webgpu.bundle.min.mjs has no sub-imports), so dynamic import works.
     // transformers.js is imported with Node globals hidden (see importTransformers).
-    let ort, demucs, tf, ftEnsemble;
+    let ort, demucs, tf, ftEnsemble, vadMod;
     try {
-      [ort, demucs, tf, ftEnsemble] = await Promise.all([
+      [ort, demucs, tf, ftEnsemble, vadMod] = await Promise.all([
         import(/* @vite-ignore */ `${base}/ort.webgpu.bundle.min.mjs`),
         import(/* @vite-ignore */ `${base}/demucs/index.js`),
         importTransformers(`${base}/transformers.min.js`),
         import(/* @vite-ignore */ `${base}/ft-ensemble.js`),
+        import(/* @vite-ignore */ `${base}/vad-gate.js`),
       ]);
     } catch (e) {
       throw new Error(
@@ -288,6 +289,7 @@ export default function WebGpuCreatorPanel() {
       pipeline: tf.pipeline,
       tf, // full transformers.js module (for WhisperTextStreamer)
       ftEnsemble,
+      vadMod,
     };
     return libs.current;
   }
@@ -437,7 +439,7 @@ export default function WebGpuCreatorPanel() {
     setStemProgress({});
     setRtf(null);
     try {
-      const { ort, demucs, ftEnsemble, pipeline, tf, DemucsProcessor } = await loadLibs();
+      const { ort, demucs, ftEnsemble, pipeline, tf, vadMod, DemucsProcessor } = await loadLibs();
       const { STEMS, createEnsembleSessions, runEnsemble } = ftEnsemble;
 
       log(`decoding ${file.name} …`);
@@ -539,6 +541,37 @@ export default function WebGpuCreatorPanel() {
       }
       const mono = toMono16k(result.vocals.left, result.vocals.right, audio.sampleRate);
       const audioMin = (mono.length / 16000 / 60).toFixed(1);
+
+      // --- VAD: detect speech regions (to suppress Whisper hallucination on the
+      // instrumental sections of the vocals stem — Demucs bleed isn't silent, and
+      // Whisper invents "thank you" etc. on it). Used to FILTER out transcribed lines
+      // that fall entirely outside speech. Best-effort: skip on failure.
+      let speechRegions = null;
+      try {
+        const { detectSpeechRegions } = vadMod;
+        if (!libs.current.vadSession) {
+          log('loading VAD (Silero) …');
+          const vbuf = await fetch(
+            '/webgpu-models/onnx-community/silero-vad/resolve/main/onnx/model.onnx'
+          ).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`vad ${r.status}`))));
+          libs.current.vadSession = await ort.InferenceSession.create(new Uint8Array(vbuf), {
+            executionProviders: ['wasm'],
+          });
+        }
+        log('detecting speech regions (VAD) …');
+        speechRegions = await detectSpeechRegions(ort, libs.current.vadSession, mono, {
+          onProgress: (f) => setTranscribeInfo(`VAD ${Math.round(f * 100)}%`),
+        });
+        setTranscribeInfo('');
+        const speechSec = speechRegions.reduce((a, r) => a + (r.end - r.start), 0);
+        log(
+          `VAD: ${speechRegions.length} speech regions, ${speechSec.toFixed(0)}s of ${(mono.length / 16000).toFixed(0)}s is vocals`
+        );
+      } catch (e) {
+        log(`VAD skipped (${e.message}) — transcribing without speech-gating`);
+        speechRegions = null;
+      }
+
       const tStart = performance.now();
       log(`transcribing ${audioMin} min of vocals on ${device} …`);
       // Live feedback (the native tab streams whisper progress; we do the same via
@@ -593,7 +626,22 @@ export default function WebGpuCreatorPanel() {
       }
       const tSec = (performance.now() - tStart) / 1000;
 
-      const words = out.chunks || [];
+      let words = out.chunks || [];
+      // VAD post-filter: drop words whose midpoint is outside every speech region
+      // (these are the hallucinations on instrumental/silence). Skip if VAD failed.
+      if (speechRegions && speechRegions.length) {
+        const before = words.length;
+        const inSpeech = (t) =>
+          t == null || speechRegions.some((r) => t >= r.start - 0.3 && t <= r.end + 0.3);
+        words = words.filter((w) => {
+          const ts = w.timestamp || [w.start, w.end];
+          const mid = ts[0] != null && ts[1] != null ? (ts[0] + ts[1]) / 2 : ts[0];
+          return inSpeech(mid);
+        });
+        if (before - words.length > 0) {
+          log(`VAD filtered ${before - words.length} hallucinated word(s) outside speech`);
+        }
+      }
       let lines = words.length
         ? groupWordsIntoLines(words)
         : [{ text: (out.text || '').trim(), start: 0, end: audio.duration }];
