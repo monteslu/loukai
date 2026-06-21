@@ -30,6 +30,7 @@ import {
   validatePathInRoots,
 } from './utils/pathValidator.js';
 import { getCacheDir } from './creator/systemChecker.js';
+import { registerWebGpuAssets } from './creator/webgpuAssets.js';
 import multer from 'multer';
 import { forwardViewerEvent } from './handlers/streamingHandlers.js';
 
@@ -191,12 +192,13 @@ class WebServer {
         'Content-Security-Policy',
         [
           "default-src 'self'",
-          // Vite-built bundles + transformers.js need inline/eval + wasm; CDN libs.
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://esm.sh https://cdn.jsdelivr.net",
+          // WebGPU libs/models are served same-origin from /webgpu-assets +
+          // /webgpu-models (backend-cached) — the UI never loads external sites.
+          // wasm-unsafe-eval for onnxruntime-web; eval/inline for the bundlers.
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'",
           "style-src 'self' 'unsafe-inline'",
-          // Models/wheels fetched from HuggingFace + CDNs; sockets; blobs.
-          "connect-src 'self' ws: wss: https://esm.sh https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co https://*.huggingface.co https://cdn-lfs.huggingface.co",
-          "img-src 'self' data: blob: https:",
+          "connect-src 'self' ws: wss:",
+          "img-src 'self' data: blob:",
           "media-src 'self' blob: data:",
           "worker-src 'self' blob:",
           "font-src 'self' data:",
@@ -284,6 +286,11 @@ class WebServer {
   }
 
   setupRoutes() {
+    // WebGPU Creator assets (JS libs + WASM + models) — fetched/cached by the
+    // backend and served SAME-ORIGIN so the UI never touches external sites
+    // (avoids CORS/COEP in the web admin; works offline after first fetch).
+    registerWebGpuAssets(this.app);
+
     // Main song request page (React app - public)
     this.app.get('/', (req, res) => {
       const webDistPath = path.join(__dirname, '../web/dist');

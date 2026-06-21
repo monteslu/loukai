@@ -12,14 +12,24 @@ import { useEffect, useRef, useState } from 'react';
  * standalone experiment; the browser caches the models after first run.
  */
 
-// CDN module URLs — match the combination proven by the JIG bench. transformers.js
-// loads from jsdelivr's bundled dist file (esm.sh's package mis-resolves its deps);
-// onnxruntime-web's WASM artifacts are pointed at jsdelivr explicitly.
-const ORT_URL = 'https://esm.sh/onnxruntime-web@1.27.0/webgpu';
-const ORT_WASM_PATH = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/';
-const DEMUCS_URL = 'https://esm.sh/demucs-web@1.0.2';
-const TRANSFORMERS_URL =
-  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js';
+// ALL assets (JS libs, WASM, models) are served SAME-ORIGIN by loukai's backend
+// from /webgpu-assets/* — the UI never fetches from external sites (avoids
+// CORS/COEP in the web admin; works offline once the backend has cached them).
+// The backend (webgpuAssets.js) downloads + caches them on first request.
+//
+// Resolve the asset base: in the web admin the server is same-origin (relative
+// path); in the Electron renderer (file://) we use the local web server's URL.
+async function resolveAssetBase() {
+  if (window.kaiAPI?.webServer?.getUrl) {
+    try {
+      const url = await window.kaiAPI.webServer.getUrl();
+      if (url) return url.replace(/\/$/, '') + '/webgpu-assets';
+    } catch {
+      /* fall through to relative */
+    }
+  }
+  return '/webgpu-assets';
+}
 
 const WHISPER_MODELS = [
   { id: 'Xenova/whisper-tiny.en', label: 'tiny.en · fast' },
@@ -70,27 +80,38 @@ export default function WebGpuCreatorPanel() {
   const eps = () => (gpu === 'available' ? ['webgpu', 'wasm'] : ['wasm']);
 
   async function loadLibs() {
-    if (!libs.current.ort) {
-      log('loading onnxruntime-web + demucs-web + transformers.js from CDN …');
-      const [ort, demucs, tf] = await Promise.all([
-        import(/* @vite-ignore */ ORT_URL),
-        import(/* @vite-ignore */ DEMUCS_URL),
-        import(/* @vite-ignore */ TRANSFORMERS_URL),
-      ]);
-      // ONNX Runtime Web needs an explicit path to its .wasm artifacts.
-      try {
-        if (ort.env?.wasm) ort.env.wasm.wasmPaths = ORT_WASM_PATH;
-        if (ort.env?.webgpu) ort.env.webgpu.powerPreference = 'high-performance';
-      } catch {
-        /* ignore */
+    if (libs.current.ort) return libs.current;
+    const base = await resolveAssetBase();
+    log('loading libraries from loukai (same-origin, backend-cached) …');
+    // All from /webgpu-assets/* — never a CDN. Self-contained ESM bundles
+    // (ort.webgpu.bundle.min.mjs has no sub-imports), so dynamic import works.
+    const [ort, demucs, tf] = await Promise.all([
+      import(/* @vite-ignore */ `${base}/ort.webgpu.bundle.min.mjs`),
+      import(/* @vite-ignore */ `${base}/demucs/index.js`),
+      import(/* @vite-ignore */ `${base}/transformers.min.js`),
+    ]);
+    try {
+      // WASM artifacts also served by us.
+      if (ort.env?.wasm) ort.env.wasm.wasmPaths = `${base}/`;
+      if (ort.env?.webgpu) ort.env.webgpu.powerPreference = 'high-performance';
+      // transformers.js: pull models through loukai too (no HuggingFace from UI).
+      if (tf.env) {
+        tf.env.allowLocalModels = true;
+        tf.env.allowRemoteModels = true;
+        tf.env.remoteHost = base.replace(/\/webgpu-assets$/, '/webgpu-models');
+        tf.env.remotePathTemplate = '{model}';
+        if (tf.env.backends?.onnx?.wasm) tf.env.backends.onnx.wasm.wasmPaths = `${base}/`;
       }
-      libs.current = {
-        ort,
-        DemucsProcessor: demucs.DemucsProcessor,
-        CONSTANTS: demucs.CONSTANTS,
-        pipeline: tf.pipeline,
-      };
+    } catch {
+      /* ignore */
     }
+    libs.current = {
+      ort,
+      base,
+      DemucsProcessor: demucs.DemucsProcessor,
+      CONSTANTS: demucs.CONSTANTS,
+      pipeline: tf.pipeline,
+    };
     return libs.current;
   }
 
@@ -131,7 +152,7 @@ export default function WebGpuCreatorPanel() {
     setSepProgress(0);
     setRtf(null);
     try {
-      const { ort, DemucsProcessor, CONSTANTS, pipeline } = await loadLibs();
+      const { ort, DemucsProcessor, pipeline } = await loadLibs();
 
       log(`decoding ${file.name} …`);
       const audio = await decodeAudio(file);
@@ -144,7 +165,13 @@ export default function WebGpuCreatorPanel() {
         onProgress: ({ progress }) => setSepProgress(progress || 0),
         onLog: (phase, m) => log(`[${phase}] ${m}`),
       });
-      const modelBuf = await fetch(CONSTANTS.DEFAULT_MODEL_URL).then((r) => r.arrayBuffer());
+      // Demucs ONNX weights via loukai's backend (cached), not the CDN/HF.
+      const modelUrl = `${libs.current.base.replace(/\/webgpu-assets$/, '/webgpu-models')}/htdemucs.onnx`;
+      log('fetching htdemucs model from loukai (cached) …');
+      const modelBuf = await fetch(modelUrl).then((r) => {
+        if (!r.ok) throw new Error(`model fetch ${r.status}`);
+        return r.arrayBuffer();
+      });
       await proc.loadModel(modelBuf);
       const t0 = performance.now();
       const result = await proc.separate(audio.left, audio.right);
