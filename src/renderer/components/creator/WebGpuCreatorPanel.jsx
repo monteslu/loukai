@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import * as StemExtractor from 'stem-mp4/extractor';
 
 /**
  * WebGPU Creator (experimental) — runs Demucs stem separation + Whisper
@@ -420,6 +421,39 @@ export default function WebGpuCreatorPanel() {
     };
   }
 
+  // Lyrics-only mode: pull the VOCALS track out of an existing .stem.mp4 (in-browser
+  // via stem-mp4's isomorphic extractor), decode it to stereo Float32. NI-Stems track
+  // order: 0=master,1=drums,2=bass,3=other,4=vocals — pick vocals by index, falling
+  // back to the last track. Returns the same shape as decodeAudio().
+  async function extractVocalsFromStem(file) {
+    const arr = await file.arrayBuffer();
+    let vocalsIdx = 4;
+    try {
+      const info = StemExtractor.getTrackInfo(arr);
+      const count = StemExtractor.getTrackCount(arr);
+      if (count && vocalsIdx >= count) vocalsIdx = count - 1; // last track = vocals
+      if (Array.isArray(info) && info.length) vocalsIdx = Math.min(vocalsIdx, info.length - 1);
+    } catch {
+      /* use default index 4 */
+    }
+    const trackBuf = StemExtractor.extractTrack(arr, vocalsIdx);
+    if (!trackBuf) throw new Error('could not extract vocals track');
+    const u8 = trackBuf instanceof Uint8Array ? trackBuf : new Uint8Array(trackBuf);
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    const buf = await ctx.decodeAudioData(
+      u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)
+    );
+    const left = buf.getChannelData(0);
+    const right = buf.numberOfChannels > 1 ? buf.getChannelData(1) : buf.getChannelData(0);
+    return {
+      left: Float32Array.from(left),
+      right: Float32Array.from(right),
+      sampleRate: buf.sampleRate,
+      duration: buf.duration,
+    };
+  }
+
   // Downmix to mono 16k for Whisper.
   function toMono16k(left, right, sampleRate) {
     const n = left.length;
@@ -445,70 +479,85 @@ export default function WebGpuCreatorPanel() {
         await loadLibs();
       const { STEMS, createEnsembleSessions, runEnsemble } = ftEnsemble;
 
-      log(`decoding ${file.name} …`);
-      const audio = await decodeAudio(file);
+      // Lyrics-only mode: an existing .stem.mp4 → re-transcribe its vocals track and
+      // rewrite the lyrics atom, skipping separation entirely.
+      const lyricsOnly = /\.stem\.mp4$/i.test(file.name);
 
-      // --- Demucs stem separation (in-browser, WebGPU) ---
-      // The selected DEMUCS_MODELS entry's `kind` picks the runner:
-      //   'single' = one htdemucs (demucs-web) — fast (~8× realtime).
-      //   'ft'     = htdemucs_ft 4-model fine-tuned ensemble — PyTorch-grade, ~2-3×
-      //              realtime (4× the compute); fp16 with the variance prologue pinned
-      //              to CPU (forceCpuNodeNames) so fp16 doesn't NaN.
-      let modelDef = DEMUCS_MODELS.find((m) => m.id === demucsModel) || DEMUCS_MODELS[0];
-      if (modelDef.kind === 'ft' && !ftAvailable) {
-        log('htdemucs_ft (best) models not installed — using fast htdemucs');
-        modelDef = DEMUCS_MODELS.find((m) => m.kind === 'single') || DEMUCS_MODELS[0];
-      }
-      setStemProgress({});
-      const t0 = performance.now();
+      let audio;
       let result;
-      let modeLabel;
-      if (modelDef.kind === 'ft') {
-        modeLabel = 'htdemucs_ft (best)';
-        log('loading htdemucs_ft ensemble (4 models) from loukai …');
-        const cpuNodes = await fetch('/webgpu-models/ft_cpu_nodes.json')
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null);
-        const sessions = await createEnsembleSessions({
-          ort,
-          modelUrl: (stem) => `/webgpu-models/htdemucs_ft_${stem}_safe16.onnx`,
-          cpuNodes,
-          onLog: (m) => log(m),
-        });
-        log(`separating on webgpu — htdemucs_ft ensemble (${STEMS.length} stems) …`);
-        const r = await runEnsemble({
-          ort,
-          sessions,
-          proc: demucs,
-          left: audio.left,
-          right: audio.right,
-          onStemProgress: (idx, frac) => setStemProgress((p) => ({ ...p, [STEMS[idx]]: frac })),
-        });
-        result = r.stems;
+      if (lyricsOnly) {
+        log(`lyrics-only: extracting vocals from ${file.name} …`);
+        audio = await extractVocalsFromStem(file);
+        result = { vocals: { left: audio.left, right: audio.right } };
+        setRtf(null);
+        log(`vocals extracted (${audio.duration.toFixed(0)}s) — skipping separation`);
       } else {
-        modeLabel = 'htdemucs (fast)';
-        log('loading htdemucs (single model) from loukai …');
-        const modelBuf = await fetch('/webgpu-models/htdemucs.onnx').then((res) => {
-          if (!res.ok) throw new Error(`model fetch ${res.status}`);
-          return res.arrayBuffer();
-        });
-        const proc = new DemucsProcessor({
-          ort,
-          sessionOptions: { executionProviders: gpu === 'available' ? ['webgpu'] : ['wasm'] },
-          onProgress: ({ progress }) =>
-            setStemProgress(STEMS.reduce((a, s) => ({ ...a, [s]: progress || 0 }), {})),
-          onLog: (phase, m) => log(`[${phase}] ${m}`),
-        });
-        await proc.loadModel(modelBuf);
-        log('separating on webgpu — htdemucs (single) …');
-        result = await proc.separate(audio.left, audio.right);
+        log(`decoding ${file.name} …`);
+        audio = await decodeAudio(file);
       }
-      const sec = (performance.now() - t0) / 1000;
-      const realtime = audio.duration / sec;
-      setRtf(realtime);
-      log(
-        `separation done in ${sec.toFixed(1)}s — ${realtime.toFixed(2)}× realtime [${modeLabel}]`
-      );
+
+      // --- Demucs stem separation (in-browser, WebGPU) --- (skipped in lyrics-only)
+      if (!lyricsOnly) {
+        // The selected DEMUCS_MODELS entry's `kind` picks the runner:
+        //   'single' = one htdemucs (demucs-web) — fast (~8× realtime).
+        //   'ft'     = htdemucs_ft 4-model fine-tuned ensemble — PyTorch-grade, ~2-3×
+        //              realtime (4× the compute); fp16 with the variance prologue pinned
+        //              to CPU (forceCpuNodeNames) so fp16 doesn't NaN.
+        let modelDef = DEMUCS_MODELS.find((m) => m.id === demucsModel) || DEMUCS_MODELS[0];
+        if (modelDef.kind === 'ft' && !ftAvailable) {
+          log('htdemucs_ft (best) models not installed — using fast htdemucs');
+          modelDef = DEMUCS_MODELS.find((m) => m.kind === 'single') || DEMUCS_MODELS[0];
+        }
+        setStemProgress({});
+        const t0 = performance.now();
+        let modeLabel;
+        if (modelDef.kind === 'ft') {
+          modeLabel = 'htdemucs_ft (best)';
+          log('loading htdemucs_ft ensemble (4 models) from loukai …');
+          const cpuNodes = await fetch('/webgpu-models/ft_cpu_nodes.json')
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null);
+          const sessions = await createEnsembleSessions({
+            ort,
+            modelUrl: (stem) => `/webgpu-models/htdemucs_ft_${stem}_safe16.onnx`,
+            cpuNodes,
+            onLog: (m) => log(m),
+          });
+          log(`separating on webgpu — htdemucs_ft ensemble (${STEMS.length} stems) …`);
+          const r = await runEnsemble({
+            ort,
+            sessions,
+            proc: demucs,
+            left: audio.left,
+            right: audio.right,
+            onStemProgress: (idx, frac) => setStemProgress((p) => ({ ...p, [STEMS[idx]]: frac })),
+          });
+          result = r.stems;
+        } else {
+          modeLabel = 'htdemucs (fast)';
+          log('loading htdemucs (single model) from loukai …');
+          const modelBuf = await fetch('/webgpu-models/htdemucs.onnx').then((res) => {
+            if (!res.ok) throw new Error(`model fetch ${res.status}`);
+            return res.arrayBuffer();
+          });
+          const proc = new DemucsProcessor({
+            ort,
+            sessionOptions: { executionProviders: gpu === 'available' ? ['webgpu'] : ['wasm'] },
+            onProgress: ({ progress }) =>
+              setStemProgress(STEMS.reduce((a, s) => ({ ...a, [s]: progress || 0 }), {})),
+            onLog: (phase, m) => log(`[${phase}] ${m}`),
+          });
+          await proc.loadModel(modelBuf);
+          log('separating on webgpu — htdemucs (single) …');
+          result = await proc.separate(audio.left, audio.right);
+        }
+        const sec = (performance.now() - t0) / 1000;
+        const realtime = audio.duration / sec;
+        setRtf(realtime);
+        log(
+          `separation done in ${sec.toFixed(1)}s — ${realtime.toFixed(2)}× realtime [${modeLabel}]`
+        );
+      } // end separation (skipped in lyrics-only)
 
       // --- Whisper transcription of the vocals stem (in-browser) ---
       setStatus('transcribing');
@@ -741,6 +790,43 @@ export default function WebGpuCreatorPanel() {
 
       const sr = audio.sampleRate;
       const lyricsPayload = { lines, words: wordObjs };
+
+      let saved;
+      if (lyricsOnly) {
+        // Lyrics-only: rewrite the kara atom (+key) on the existing file — no re-encode.
+        log('updating lyrics on existing .stem.mp4 …');
+        if (window.kaiAPI?.creator?.updateStemLyrics) {
+          const r = await window.kaiAPI.creator.updateStemLyrics({
+            inputPath: file.path, // Electron File exposes the disk path
+            lyrics: lyricsPayload,
+            key: detectedKey,
+            pitch: pitchData,
+          });
+          if (!r?.success) throw new Error(`update failed: ${r?.error || 'unknown'}`);
+          saved = r;
+        } else {
+          const res = await fetch('/admin/webgpu-creator/update-lyrics', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              file: file.name,
+              lyrics: lyricsPayload,
+              key: detectedKey,
+              pitch: pitchData,
+            }),
+            credentials: 'include',
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(`update failed (${res.status}): ${err.error || ''}`);
+          }
+          saved = await res.json();
+        }
+        setStatus('done');
+        log(`✅ lyrics updated: ${saved.fileName}`);
+        return;
+      }
+
       // master = the RAW original mix (NI-Stems track 0), not a sum of stems.
       const wavBlobs = {
         master: encodeWav(audio.left, audio.right, sr),
@@ -750,7 +836,6 @@ export default function WebGpuCreatorPanel() {
         vocals: encodeWav(result.vocals.left, result.vocals.right, sr),
       };
 
-      let saved;
       if (window.kaiAPI?.creator?.saveWebGpuStems) {
         // Electron player: IPC (no admin HTTP session here). Send WAVs as bytes.
         const stems = {};
@@ -834,7 +919,7 @@ export default function WebGpuCreatorPanel() {
           <input
             ref={fileRef}
             type="file"
-            accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,.mp4"
+            accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,.mp4,.stem.mp4"
             className="text-sm"
             disabled={busy}
           />
