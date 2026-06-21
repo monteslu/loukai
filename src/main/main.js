@@ -194,12 +194,17 @@ class KaiPlayerApp {
   }
 
   createMainWindow() {
-    // In production, resources are in app.asar or Resources folder
-    const resourcesPath = app.isPackaged ? process.resourcesPath : path.join(__dirname, '../..');
-
-    const iconPath = app.isPackaged
-      ? path.join(resourcesPath, 'static', 'images', 'logo.png')
-      : path.join(process.cwd(), 'static', 'images', 'logo.png');
+    // Resolve the app icon across dev + all packaging formats (AppImage, Flatpak,
+    // DMG, NSIS). `static/` may live inside app.asar (__dirname/../../static),
+    // unpacked next to it, or under process.resourcesPath depending on the build.
+    const iconCandidates = [
+      path.join(__dirname, '..', '..', 'static', 'images', 'logo.png'), // asar / source layout
+      app.isPackaged && path.join(process.resourcesPath, 'static', 'images', 'logo.png'),
+      app.isPackaged &&
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'static', 'images', 'logo.png'),
+      path.join(process.cwd(), 'static', 'images', 'logo.png'),
+    ].filter(Boolean);
+    const iconPath = iconCandidates.find((p) => fs.existsSync(p)) || iconCandidates[0];
 
     const windowOptions = {
       width: 1200,
