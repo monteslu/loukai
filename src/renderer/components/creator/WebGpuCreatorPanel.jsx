@@ -25,17 +25,57 @@ function assetBase() {
   return '/webgpu-assets';
 }
 
+// All word-timestamped (onnx-community *_timestamped). Word-level timing is what
+// karaoke needs — we group the words into lyric LINES (groupWordsIntoLines), which
+// also fixes line-timing drift since each line's start/end come from real word
+// timings, not Whisper's coarse segment timestamps. Larger = more accurate, more VRAM.
 const WHISPER_MODELS = [
-  { id: 'Xenova/whisper-tiny.en', label: 'tiny.en · fast' },
-  { id: 'Xenova/whisper-base.en', label: 'base.en · balanced' },
-  { id: 'Xenova/whisper-small.en', label: 'small.en · best (slow)' },
-  { id: 'Xenova/whisper-base', label: 'base · multilingual' },
+  { id: 'onnx-community/whisper-tiny_timestamped', label: 'tiny · fastest, least accurate' },
+  { id: 'onnx-community/whisper-base_timestamped', label: 'base · fast (default)' },
+  { id: 'onnx-community/whisper-small_timestamped', label: 'small · more accurate' },
+  {
+    id: 'onnx-community/whisper-large-v3-turbo_timestamped',
+    label: 'large-v3-turbo · best (needs ~2GB+ VRAM)',
+  },
 ];
+
+// Group word-level timestamps into lyric lines. Breaks on sentence punctuation,
+// long pauses between words, or a max line length — each line's start/end is taken
+// from its first/last word so line timing is accurate.
+function groupWordsIntoLines(words, { maxGap = 1.0, maxWords = 10, maxDur = 8 } = {}) {
+  const lines = [];
+  let cur = null;
+  for (const w of words) {
+    const text = (w.text || '').trim();
+    if (!text) continue;
+    const [start, end] = w.timestamp || [w.start, w.end];
+    if (start == null) continue;
+    if (!cur) {
+      cur = { text, start, end, n: 1 };
+    } else {
+      const gap = start - cur.end;
+      const tooLong = cur.n >= maxWords || end - cur.start > maxDur;
+      const endsSentence = /[.!?]$/.test(cur.text);
+      if (gap > maxGap || tooLong || endsSentence) {
+        lines.push({ text: cur.text.trim(), start: cur.start, end: cur.end });
+        cur = { text, start, end, n: 1 };
+      } else {
+        // join (no space before clitics/punctuation)
+        cur.text += /^[,.!?;:']/.test(text) ? text : ` ${text}`;
+        cur.end = end;
+        cur.n += 1;
+      }
+    }
+  }
+  if (cur) lines.push({ text: cur.text.trim(), start: cur.start, end: cur.end });
+  return lines;
+}
 
 export default function WebGpuCreatorPanel() {
   const [gpu, setGpu] = useState('checking'); // checking | available | unavailable
-  const [asrModel, setAsrModel] = useState('Xenova/whisper-base.en');
-  const [wordMode, setWordMode] = useState(true);
+  // Default to large-v3-turbo — most accurate; fits an 8GB GPU. Falls to a smaller
+  // model only if the user picks one (e.g. low-VRAM machines).
+  const [asrModel, setAsrModel] = useState('onnx-community/whisper-large-v3-turbo_timestamped');
   const [status, setStatus] = useState('idle'); // idle | separating | transcribing | done | error
   const [sepProgress, setSepProgress] = useState(0);
   const [logLines, setLogLines] = useState([]);
@@ -255,33 +295,28 @@ export default function WebGpuCreatorPanel() {
 
       // --- Whisper transcription of the vocals stem (in-browser) ---
       setStatus('transcribing');
-      const want = wordMode ? 'onnx-community/whisper-base_timestamped' : asrModel;
+      const want = asrModel;
       // Device naming in transformers.js: 'webgpu' = GPU, 'cpu' = the WASM/CPU
       // backend ('wasm' is rejected). With the Node-globals fix above, the
-      // timestamped model runs on webgpu too (the earlier 'cuda/cpu only' was the
-      // Node-misdetection, not a real model limit). Use GPU when available.
+      // timestamped models run on webgpu. Use GPU when available.
       const device = gpu === 'available' ? 'webgpu' : 'cpu';
       log(`transcribing vocals · ${want} · ${device} …`);
       const asr = await pipeline('automatic-speech-recognition', want, { device });
       const mono = toMono16k(result.vocals.left, result.vocals.right, audio.sampleRate);
+      // Always get WORD-level timestamps, then group into lyric lines ourselves.
       const out = await asr(mono, {
         chunk_length_s: 30,
         stride_length_s: 5,
-        return_timestamps: wordMode ? 'word' : true,
+        return_timestamps: 'word',
       });
 
-      // Normalize to lines with timing.
-      const chunks = out.chunks || [];
-      const lines = chunks.length
-        ? chunks.map((c) => ({
-            text: c.text?.trim() || '',
-            start: c.timestamp?.[0] ?? null,
-            end: c.timestamp?.[1] ?? null,
-          }))
+      const words = out.chunks || [];
+      const lines = words.length
+        ? groupWordsIntoLines(words)
         : [{ text: (out.text || '').trim(), start: 0, end: audio.duration }];
       setLyrics(lines);
       setStatus('done');
-      log(`done — ${lines.length} ${wordMode ? 'words' : 'lines'}`);
+      log(`done — ${words.length} words → ${lines.length} lyric lines`);
     } catch (e) {
       console.error(e);
       log(`ERROR: ${e.message}`);
@@ -328,12 +363,12 @@ export default function WebGpuCreatorPanel() {
             disabled={busy}
           />
           <label className="text-sm text-gray-700 dark:text-gray-300">
-            Whisper model:
+            Whisper model (word-timed → grouped into lines):
             <select
               className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
               value={asrModel}
               onChange={(e) => setAsrModel(e.target.value)}
-              disabled={busy || wordMode}
+              disabled={busy}
             >
               {WHISPER_MODELS.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -341,15 +376,6 @@ export default function WebGpuCreatorPanel() {
                 </option>
               ))}
             </select>
-          </label>
-          <label className="text-sm text-gray-700 dark:text-gray-300 flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={wordMode}
-              onChange={(e) => setWordMode(e.target.checked)}
-              disabled={busy}
-            />
-            Word-level timing (whisper-base_timestamped)
           </label>
           <button
             onClick={run}
@@ -359,8 +385,8 @@ export default function WebGpuCreatorPanel() {
             {busy ? 'Working…' : 'Create (in-browser)'}
           </button>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            First run downloads htdemucs (~172 MB) + the whisper model from CDN/HuggingFace, then
-            the browser caches them.
+            First run downloads htdemucs (~172 MB) + the chosen Whisper model via loukai (cached
+            locally afterwards). large-v3-turbo is most accurate but largest.
           </p>
         </div>
 
