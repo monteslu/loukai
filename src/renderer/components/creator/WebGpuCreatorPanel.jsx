@@ -30,12 +30,12 @@ function assetBase() {
 // also fixes line-timing drift since each line's start/end come from real word
 // timings, not Whisper's coarse segment timestamps. Larger = more accurate, more VRAM.
 const WHISPER_MODELS = [
-  { id: 'onnx-community/whisper-tiny_timestamped', label: 'tiny · fastest, least accurate' },
+  { id: 'onnx-community/whisper-tiny_timestamped', label: 'tiny · fastest' },
   { id: 'onnx-community/whisper-base_timestamped', label: 'base · fast (default)' },
-  { id: 'onnx-community/whisper-small_timestamped', label: 'small · more accurate' },
+  { id: 'onnx-community/whisper-small_timestamped', label: 'small · more accurate, slower' },
   {
     id: 'onnx-community/whisper-large-v3-turbo_timestamped',
-    label: 'large-v3-turbo · best (needs ~2GB+ VRAM)',
+    label: 'large-v3-turbo · most accurate but VERY slow on WebGPU',
   },
 ];
 
@@ -86,9 +86,11 @@ function groupWordsIntoLines(words, { maxGap = 1.0, maxWords = 10, maxDur = 8 } 
 
 export default function WebGpuCreatorPanel() {
   const [gpu, setGpu] = useState('checking'); // checking | available | unavailable
-  // Default to large-v3-turbo — most accurate; fits an 8GB GPU. Falls to a smaller
-  // model only if the user picks one (e.g. low-VRAM machines).
-  const [asrModel, setAsrModel] = useState('onnx-community/whisper-large-v3-turbo_timestamped');
+  // Default to base — fast on WebGPU and gives word-level timing for line grouping.
+  // large-v3-turbo is the most accurate but is VERY slow on the WebGPU EP (688MB
+  // decoder, fp32, CPU-fallback nodes) — offered but not default. Measured: it did
+  // not finish 30s of audio in 4 min on an RX 7600.
+  const [asrModel, setAsrModel] = useState('onnx-community/whisper-base_timestamped');
   const [status, setStatus] = useState('idle'); // idle | separating | transcribing | done | error
   const [stemProgress, setStemProgress] = useState({}); // per-stem 0..1 (ft ensemble)
   // Demucs separation model — default to the fast single htdemucs.
