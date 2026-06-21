@@ -86,7 +86,8 @@ function download(url, destPath, redirects = 5) {
   return new Promise((resolve, reject) => {
     mkdirSync(join(destPath, '..'), { recursive: true });
     const req = https.get(url, (res) => {
-      if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
+      // HuggingFace uses 307 (and CDNs use 308) — follow all redirect codes.
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
         if (redirects <= 0) return reject(new Error('too many redirects'));
         res.resume();
         const next = res.headers.location.startsWith('http')
