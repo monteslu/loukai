@@ -29,6 +29,8 @@ finish-args:
   - --socket=x11
   - --socket=wayland
   - --device=dri
+  # Chromium/Electron needs the session bus (also used by the notifications portal).
+  - --socket=session-bus
   # Audio (required for karaoke playback)
   - --socket=pulseaudio
   # Network (web remote-control server + Socket.IO)
