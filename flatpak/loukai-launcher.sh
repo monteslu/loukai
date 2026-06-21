@@ -4,4 +4,5 @@
 # SUID binaries). TMPDIR is kept inside the app's runtime dir.
 export TMPDIR="${XDG_RUNTIME_DIR}/app/${FLATPAK_ID}"
 mkdir -p "$TMPDIR"
-exec zypak-wrapper /app/loukai/loukai "$@"
+# electron-builder names the binary after the package name ("loukai-app").
+exec zypak-wrapper /app/loukai/loukai-app "$@"

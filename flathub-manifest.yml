@@ -65,7 +65,7 @@ modules:
       - install -Dm755 flatpak/loukai-launcher.sh /app/bin/loukai
       # Desktop entry, icon, and AppStream metainfo.
       - install -Dm644 com.loukai.app.desktop /app/share/applications/com.loukai.app.desktop
-      - install -Dm644 static/images/logo.png /app/share/icons/hicolor/512x512/apps/com.loukai.app.png
+      - install -Dm644 static/images/logo-512.png /app/share/icons/hicolor/512x512/apps/com.loukai.app.png
       - install -Dm644 com.loukai.app.metainfo.xml /app/share/metainfo/com.loukai.app.metainfo.xml
     sources:
       - type: git
