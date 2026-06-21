@@ -78,6 +78,10 @@ export default function WebGpuCreatorPanel() {
   const [asrModel, setAsrModel] = useState('onnx-community/whisper-large-v3-turbo_timestamped');
   const [status, setStatus] = useState('idle'); // idle | separating | transcribing | done | error
   const [stemProgress, setStemProgress] = useState({}); // per-stem 0..1 (ft ensemble)
+  // Separation quality/speed: 'fast' = single htdemucs (~8× realtime on a good GPU),
+  // 'best' = htdemucs_ft 4-model ensemble (PyTorch-grade, ~2-3× realtime, 4× heavier).
+  // Default fast so the GPU path is genuinely fast; opt into best for top quality.
+  const [sepMode, setSepMode] = useState('fast');
   const [logLines, setLogLines] = useState([]);
   const [lyrics, setLyrics] = useState([]);
   const [rtf, setRtf] = useState(null);
@@ -240,45 +244,68 @@ export default function WebGpuCreatorPanel() {
     setStemProgress({});
     setRtf(null);
     try {
-      const { ort, demucs, ftEnsemble, pipeline } = await loadLibs();
+      const { ort, demucs, ftEnsemble, pipeline, DemucsProcessor } = await loadLibs();
       const { STEMS, createEnsembleSessions, runEnsemble } = ftEnsemble;
 
       log(`decoding ${file.name} …`);
       const audio = await decodeAudio(file);
 
-      // --- Demucs stem separation: htdemucs_ft 4-model ENSEMBLE (PyTorch-quality) ---
-      // 4 fine-tuned fp16 specialists on WebGPU; the variance prologue is pinned to
-      // CPU (forceCpuNodeNames) so fp16 doesn't NaN. Models + cpu-node lists from
-      // loukai's backend. Per-stem progress like the native creator.
-      log('loading htdemucs_ft ensemble (4 models) from loukai …');
-      const cpuNodes = await fetch('/webgpu-models/ft_cpu_nodes.json')
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null);
+      // --- Demucs stem separation (in-browser, WebGPU) ---
+      // Two modes (speed vs quality — see sepMode):
+      //   fast: single htdemucs (demucs-web) — ~8× realtime on a good GPU.
+      //   best: htdemucs_ft 4-model fine-tuned ensemble — PyTorch-grade, ~2-3×
+      //         realtime (4× the compute); fp16 with the variance prologue pinned to
+      //         CPU (forceCpuNodeNames) so fp16 doesn't NaN.
       setStemProgress({});
-      const sessions = await createEnsembleSessions({
-        ort,
-        modelUrl: (stem) => `/webgpu-models/htdemucs_ft_${stem}_safe16.onnx`,
-        cpuNodes,
-        onLog: (m) => log(m),
-      });
-      log(`separating on webgpu — htdemucs_ft ensemble (${STEMS.length} stems) …`);
       const t0 = performance.now();
-      const { stems, realtime } = await runEnsemble({
-        ort,
-        sessions,
-        proc: demucs,
-        left: audio.left,
-        right: audio.right,
-        onStemProgress: (idx, frac) => setStemProgress((p) => ({ ...p, [STEMS[idx]]: frac })),
-      });
+      let result;
+      let modeLabel;
+      if (sepMode === 'best') {
+        modeLabel = 'htdemucs_ft (best)';
+        log('loading htdemucs_ft ensemble (4 models) from loukai …');
+        const cpuNodes = await fetch('/webgpu-models/ft_cpu_nodes.json')
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+        const sessions = await createEnsembleSessions({
+          ort,
+          modelUrl: (stem) => `/webgpu-models/htdemucs_ft_${stem}_safe16.onnx`,
+          cpuNodes,
+          onLog: (m) => log(m),
+        });
+        log(`separating on webgpu — htdemucs_ft ensemble (${STEMS.length} stems) …`);
+        const r = await runEnsemble({
+          ort,
+          sessions,
+          proc: demucs,
+          left: audio.left,
+          right: audio.right,
+          onStemProgress: (idx, frac) => setStemProgress((p) => ({ ...p, [STEMS[idx]]: frac })),
+        });
+        result = r.stems;
+      } else {
+        modeLabel = 'htdemucs (fast)';
+        log('loading htdemucs (single model) from loukai …');
+        const modelBuf = await fetch('/webgpu-models/htdemucs.onnx').then((res) => {
+          if (!res.ok) throw new Error(`model fetch ${res.status}`);
+          return res.arrayBuffer();
+        });
+        const proc = new DemucsProcessor({
+          ort,
+          sessionOptions: { executionProviders: gpu === 'available' ? ['webgpu'] : ['wasm'] },
+          onProgress: ({ progress }) =>
+            setStemProgress(STEMS.reduce((a, s) => ({ ...a, [s]: progress || 0 }), {})),
+          onLog: (phase, m) => log(`[${phase}] ${m}`),
+        });
+        await proc.loadModel(modelBuf);
+        log('separating on webgpu — htdemucs (single) …');
+        result = await proc.separate(audio.left, audio.right);
+      }
       const sec = (performance.now() - t0) / 1000;
+      const realtime = audio.duration / sec;
       setRtf(realtime);
       log(
-        `separation done in ${sec.toFixed(1)}s — ${realtime.toFixed(2)}× realtime ` +
-          `[htdemucs_ft on WEBGPU]`
+        `separation done in ${sec.toFixed(1)}s — ${realtime.toFixed(2)}× realtime [${modeLabel}]`
       );
-      // Map ensemble output to the shape the rest of the pipeline expects.
-      const result = stems;
 
       // --- Whisper transcription of the vocals stem (in-browser) ---
       setStatus('transcribing');
@@ -350,6 +377,18 @@ export default function WebGpuCreatorPanel() {
             disabled={busy}
           />
           <label className="text-sm text-gray-700 dark:text-gray-300">
+            Separation:
+            <select
+              className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
+              value={sepMode}
+              onChange={(e) => setSepMode(e.target.value)}
+              disabled={busy}
+            >
+              <option value="fast">Fast · htdemucs (~8× realtime)</option>
+              <option value="best">Best · htdemucs_ft 4-model (PyTorch-grade, ~2-3×)</option>
+            </select>
+          </label>
+          <label className="text-sm text-gray-700 dark:text-gray-300">
             Whisper model (word-timed → grouped into lines):
             <select
               className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
@@ -380,7 +419,8 @@ export default function WebGpuCreatorPanel() {
         {status === 'separating' && (
           <div>
             <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-              Separating stems (htdemucs_ft · 4 models on GPU)…
+              Separating stems · {sepMode === 'best' ? 'htdemucs_ft (4 models)' : 'htdemucs'} on
+              GPU…
             </div>
             <div className="flex flex-col gap-1.5">
               {['drums', 'bass', 'other', 'vocals'].map((stem) => {
