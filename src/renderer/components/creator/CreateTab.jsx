@@ -120,6 +120,8 @@ export function CreateTab({ bridge: _bridge }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [fileLoading, setFileLoading] = useState(false); // Loading state for file selection
   const [conversionProgress, setConversionProgress] = useState(null);
+  // Shared cross-surface job (may be running from the web admin or another window).
+  const [currentJob, setCurrentJob] = useState(null);
   const [completedFile, setCompletedFile] = useState(null);
   const [llmStats, setLlmStats] = useState(null);
   const [songDuration, setSongDuration] = useState(null);
@@ -146,6 +148,10 @@ export function CreateTab({ bridge: _bridge }) {
   const [outputToSongsFolder, setOutputToSongsFolder] = useState(false);
   const [whisperModel, setWhisperModel] = useState(CREATOR_DEFAULTS.whisperModel);
   const [enableCrepe, setEnableCrepe] = useState(CREATOR_DEFAULTS.enableCrepe);
+  const [torchDevice, setTorchDevice] = useState(CREATOR_DEFAULTS.torchDevice);
+  const [transcriptionEngine, setTranscriptionEngine] = useState(
+    CREATOR_DEFAULTS.transcriptionEngine
+  );
 
   const checkComponents = useCallback(async () => {
     setStatus('checking');
@@ -207,6 +213,16 @@ export function CreateTab({ bridge: _bridge }) {
           CREATOR_DEFAULTS.enableCrepe
         );
         setEnableCrepe(crepe);
+        const device = await window.kaiAPI?.settings?.get(
+          'creator.torchDevice',
+          CREATOR_DEFAULTS.torchDevice
+        );
+        setTorchDevice(device);
+        const engine = await window.kaiAPI?.settings?.get(
+          'creator.transcriptionEngine',
+          CREATOR_DEFAULTS.transcriptionEngine
+        );
+        setTranscriptionEngine(engine);
       } catch (err) {
         console.error('Failed to load output settings:', err);
       }
@@ -286,12 +302,43 @@ export function CreateTab({ bridge: _bridge }) {
       setConversionProgress(null);
     };
 
+    // Cross-surface job updates (a conversion may be started from the web admin
+    // or another window). Keep this tab in sync so it shows "already running".
+    const onCreatorJob = (_event, job) => {
+      setCurrentJob(job);
+      if (job?.status === 'running') {
+        // Reflect an externally-started job into this UI.
+        setStatus((prev) => (prev === 'creating' ? prev : 'creating'));
+        if (typeof job.progress === 'number') {
+          setConversionProgress({ step: job.step, message: job.step, progress: job.progress });
+        }
+      }
+    };
+
     window.kaiAPI?.creator?.onInstallProgress(onInstallProgress);
     window.kaiAPI?.creator?.onInstallError(onInstallError);
     window.kaiAPI?.creator?.onConversionProgress(onConversionProgress);
     window.kaiAPI?.creator?.onConversionConsole(onConversionConsole);
     window.kaiAPI?.creator?.onConversionComplete(onConversionComplete);
     window.kaiAPI?.creator?.onConversionError(onConversionError);
+    window.kaiAPI?.events?.on?.('creator:job', onCreatorJob);
+
+    // Pull-on-mount: if a conversion is ALREADY running (started before this tab
+    // opened, possibly from the web admin), attach to it instead of showing a
+    // blank Create form. This is the "opened after it started" fix.
+    (async () => {
+      try {
+        const st = await window.kaiAPI?.creator?.getStatus();
+        if (st?.job?.status === 'running') {
+          onCreatorJob(null, st.job);
+          if (Array.isArray(st.job.consoleTail) && st.job.consoleTail.length) {
+            setConsoleLog(st.job.consoleTail);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to pull creator job status on mount:', err);
+      }
+    })();
 
     return () => {
       window.kaiAPI?.creator?.removeInstallProgressListener(onInstallProgress);
@@ -300,6 +347,7 @@ export function CreateTab({ bridge: _bridge }) {
       window.kaiAPI?.creator?.removeConversionConsoleListener(onConversionConsole);
       window.kaiAPI?.creator?.removeConversionCompleteListener(onConversionComplete);
       window.kaiAPI?.creator?.removeConversionErrorListener(onConversionError);
+      window.kaiAPI?.events?.removeListener?.('creator:job', onCreatorJob);
     };
   }, [checkComponents]);
 
@@ -410,6 +458,8 @@ export function CreateTab({ bridge: _bridge }) {
         whisperModel: whisperModel,
         language: options.language,
         enableCrepe: enableCrepe,
+        device: torchDevice,
+        transcriptionEngine: transcriptionEngine,
         referenceLyrics: options.referenceLyrics,
         outputDir,
         // Lyrics-only mode options
@@ -784,6 +834,16 @@ export function CreateTab({ bridge: _bridge }) {
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-2xl mx-auto">
+        {/* Cross-surface "already running" banner — shows when a conversion is
+            active, including one started from the web admin or another window. */}
+        {currentJob?.status === 'running' && (
+          <div className="mb-4 rounded-md bg-blue-50 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700 px-4 py-2 text-sm text-blue-800 dark:text-blue-200">
+            🎵 A conversion is already running
+            {currentJob.source === 'web' ? ' (started from the web admin)' : ''}
+            {currentJob.title ? `: ${currentJob.title}` : ''}
+            {typeof currentJob.progress === 'number' ? ` — ${currentJob.progress}%` : ''}
+          </div>
+        )}
         {/* Sub-tab navigation */}
         <div className="flex border-b border-gray-300 dark:border-gray-600 mb-6">
           <button
@@ -861,6 +921,55 @@ export function CreateTab({ bridge: _bridge }) {
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                 Larger models are more accurate but slower. Large V3 Turbo is recommended for most
                 users.
+              </p>
+            </div>
+
+            {/* Transcription Engine (timing accuracy) */}
+            <div className={STYLES.card}>
+              <h3 className={STYLES.sectionTitle}>Lyric Timing</h3>
+              <div className="w-64">
+                <PortalSelect
+                  value={transcriptionEngine}
+                  onChange={async (e) => {
+                    const value = e.target.value;
+                    setTranscriptionEngine(value);
+                    await window.kaiAPI?.settings?.set('creator.transcriptionEngine', value);
+                  }}
+                  options={[
+                    { value: 'whisper', label: 'Standard (faster)' },
+                    { value: 'whisperx', label: 'Precise alignment (recommended)' },
+                  ]}
+                />
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Precise alignment re-derives line and word timing from the audio (fixes lyrics
+                appearing early/late). Adds a short extra step.
+              </p>
+            </div>
+
+            {/* Processing Device (GPU backend) */}
+            <div className={STYLES.card}>
+              <h3 className={STYLES.sectionTitle}>Processing Device</h3>
+              <div className="w-64">
+                <PortalSelect
+                  value={torchDevice}
+                  onChange={async (e) => {
+                    const value = e.target.value;
+                    setTorchDevice(value);
+                    await window.kaiAPI?.settings?.set('creator.torchDevice', value);
+                  }}
+                  options={[
+                    { value: 'auto', label: 'Auto (recommended)' },
+                    { value: 'rocm', label: 'AMD GPU (ROCm)' },
+                    { value: 'cuda', label: 'NVIDIA GPU (CUDA)' },
+                    { value: 'mps', label: 'Apple GPU (Metal)' },
+                    { value: 'cpu', label: 'CPU (slowest, always works)' },
+                  ]}
+                />
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Auto picks the fastest available backend and falls back to CPU if a GPU isn&apos;t
+                usable. GPU is much faster, especially for stem separation.
               </p>
             </div>
 

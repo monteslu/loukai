@@ -24,7 +24,13 @@ import { SERVER_DEFAULTS, WAVEFORM_DEFAULTS, AUTOTUNE_DEFAULTS } from '../shared
 import { getSetting } from '../shared/services/settingsService.js';
 import * as serverSettingsService from '../shared/services/serverSettingsService.js';
 import * as creatorService from '../shared/services/creatorService.js';
-import { validateSongPath, validateBase64Path } from './utils/pathValidator.js';
+import {
+  validateSongPath,
+  validateBase64Path,
+  validatePathInRoots,
+} from './utils/pathValidator.js';
+import { getCacheDir } from './creator/systemChecker.js';
+import multer from 'multer';
 import { forwardViewerEvent } from './handlers/streamingHandlers.js';
 
 // ESM equivalent of __dirname
@@ -1867,6 +1873,74 @@ class WebServer {
       }
     });
 
+    // ---- Creator file upload (remote browser → server) ----
+    // Lets a remote admin upload a NEW audio/video file to convert, instead of
+    // only picking files already in the songs folder. Uploads land in a temp
+    // dir (NOT the songs folder); only the produced .stem.mp4 enters the library.
+    const uploadsDir = path.join(getCacheDir(), 'uploads');
+    try {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    } catch {
+      /* best-effort */
+    }
+    const UPLOAD_EXTS = [
+      '.mp3',
+      '.wav',
+      '.flac',
+      '.ogg',
+      '.m4a',
+      '.aac',
+      '.mp4',
+      '.mkv',
+      '.avi',
+      '.mov',
+      '.webm',
+    ];
+    const uploadHandler = multer({
+      storage: multer.diskStorage({
+        destination: (_req, _file, cb) => cb(null, uploadsDir),
+        filename: (_req, file, cb) => {
+          // Sanitize: keep extension, randomize name to avoid collisions/traversal.
+          const ext = path.extname(file.originalname).toLowerCase();
+          cb(null, `${crypto.randomBytes(8).toString('hex')}${ext}`);
+        },
+      }),
+      limits: { fileSize: 500 * 1024 * 1024, files: 1 }, // 500 MB cap
+      fileFilter: (_req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        cb(null, UPLOAD_EXTS.includes(ext));
+      },
+    }).single('file');
+
+    this.app.post('/admin/creator/upload', (req, res) => {
+      uploadHandler(req, res, async (err) => {
+        if (err) {
+          return res.status(400).json({ error: err.message || 'Upload failed' });
+        }
+        if (!req.file) {
+          return res.status(400).json({ error: 'No file uploaded (or unsupported type)' });
+        }
+        try {
+          const info = await creatorService.getFileInfo(req.file.path);
+          res.json({
+            success: true,
+            path: req.file.path, // absolute temp path, accepted by /convert (uploads root)
+            originalName: req.file.originalname,
+            size: req.file.size,
+            info,
+          });
+        } catch (e) {
+          // Clean up the temp file if we couldn't read it.
+          try {
+            fs.rmSync(req.file.path, { force: true });
+          } catch {
+            /* ignore */
+          }
+          res.status(500).json({ error: e.message || 'Failed to read uploaded file' });
+        }
+      });
+    });
+
     // Get file info (for library songs)
     this.app.post('/admin/creator/file-info', async (req, res) => {
       try {
@@ -1901,9 +1975,13 @@ class WebServer {
           return res.status(400).json({ error: 'Input path is required' });
         }
 
-        // Validate input path is within songs directory (prevent path traversal)
+        // Validate input path is within the songs directory OR the uploads dir
+        // (uploaded files live in the temp uploads dir, not the songs folder).
         const songsFolder = this.mainApp.settings?.getSongsFolder?.();
-        const validation = validateSongPath(options.inputPath, songsFolder);
+        const validation = validatePathInRoots(options.inputPath, [
+          songsFolder,
+          path.join(getCacheDir(), 'uploads'),
+        ]);
         if (!validation.valid) {
           console.error('🚫 Path validation failed:', validation.error, options.inputPath);
           return res.status(403).json({ error: validation.error });
@@ -1911,14 +1989,41 @@ class WebServer {
         // Use validated path
         options.inputPath = validation.resolvedPath;
 
+        // Single-job guard: if a conversion is already running (started from ANY
+        // surface), return 409 + the running job so this browser attaches to it
+        // instead of starting a duplicate.
+        const current = creatorService.getStatus();
+        if (current.converting) {
+          return res
+            .status(409)
+            .json({ error: 'Conversion already in progress', job: current.job });
+        }
+
+        // Tag the job so every surface knows where it came from.
+        options.source = 'web';
+        options.startedAt = Date.now();
+
         // Send immediate response that conversion started
-        res.json({ success: true, message: 'Conversion started' });
+        res.json({
+          success: true,
+          message: 'Conversion started',
+          job: creatorService.getStatus().job,
+        });
+
+        // Broadcast job state to BOTH transports so the Electron Creator tab and
+        // every web admin stay in sync regardless of who started the job.
+        const broadcastJob = () => {
+          const job = creatorService.getStatus().job;
+          this.io.to('admin-clients').emit('creator:job', job);
+          this.mainApp.sendToRenderer?.('creator:job', job);
+        };
 
         // Run conversion with Socket.IO progress updates
         const result = await creatorService.startConversion(
           options,
           (progress) => {
             this.io.to('admin-clients').emit('creator:conversion-progress', progress);
+            broadcastJob();
           },
           (consoleLine) => {
             this.io.to('admin-clients').emit('creator:conversion-console', { line: consoleLine });
@@ -1942,6 +2047,7 @@ class WebServer {
             error: result.error,
           });
         }
+        broadcastJob(); // final terminal state (complete/error/cancelled)
       } catch (error) {
         console.error('Error during conversion:', error);
         this.io.to('admin-clients').emit('creator:conversion-error', {

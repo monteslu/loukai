@@ -58,6 +58,34 @@ export function validateSongPath(filePath, songsFolder) {
 }
 
 /**
+ * Validates that a file path is within ANY of the allowed roots (e.g. the songs
+ * folder OR the creator uploads dir). Keeps traversal protection — the resolved
+ * path must sit inside one of the roots.
+ * @param {string} filePath - absolute or relative path to validate
+ * @param {string[]} roots - allowed base directories
+ * @returns {{ valid: boolean, resolvedPath?: string, error?: string }}
+ */
+export function validatePathInRoots(filePath, roots) {
+  if (!filePath || typeof filePath !== 'string') {
+    return { valid: false, error: 'File path is required' };
+  }
+  const validRoots = (roots || []).filter((r) => r && typeof r === 'string');
+  if (validRoots.length === 0) {
+    return { valid: false, error: 'No allowed directories configured' };
+  }
+  for (const root of validRoots) {
+    const resolvedRoot = path.resolve(root);
+    const resolved = path.isAbsolute(filePath)
+      ? path.resolve(filePath)
+      : path.resolve(root, filePath);
+    if (resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep)) {
+      return { valid: true, resolvedPath: resolved };
+    }
+  }
+  return { valid: false, error: 'Access denied: path is outside allowed directories' };
+}
+
+/**
  * Validates a base64-encoded path (used in editor audio endpoints)
  * @param {string} encodedPath - The base64url encoded path
  * @param {string} songsFolder - The allowed songs directory
@@ -111,6 +139,7 @@ export function isValidFile(filePath) {
 
 export default {
   validateSongPath,
+  validatePathInRoots,
   validateBase64Path,
   isValidFile,
 };

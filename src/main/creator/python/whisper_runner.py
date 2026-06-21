@@ -12,6 +12,10 @@ import json
 import sys
 import os
 
+# Allow importing device_utils from this script's own directory regardless of cwd.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from device_utils import resolve_device
+
 def progress(percent, message):
     """Send progress update to stderr"""
     print(f"PROGRESS:{percent}:{message}", file=sys.stderr, flush=True)
@@ -31,6 +35,7 @@ def main():
     model_name = args.get("model", "large-v3-turbo")
     initial_prompt = args.get("initial_prompt")
     language = args.get("language", "en")
+    requested_device = args.get("device", "auto")
 
     if not input_path:
         print(json.dumps({"error": "Missing input path"}))
@@ -41,16 +46,14 @@ def main():
         import whisper
         import numpy as np
 
-        # Detect device
-        if torch.cuda.is_available():
-            device = "cuda"
-            device_name = torch.cuda.get_device_name(0)
-        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-            device = "mps"
-            device_name = "Apple Silicon GPU"
-        else:
+        # Resolve requested backend with safe fallback. openai-whisper's load_model
+        # only accepts 'cuda'/'cpu' (and is unreliable on mps for DTW), and ROCm
+        # presents as 'cuda' — so collapse anything that isn't cuda to cpu here.
+        device, device_name = resolve_device(requested_device)
+        if device != "cuda":
+            if device != "cpu":
+                device_name = f"{device_name} -> CPU (Whisper backend limitation)"
             device = "cpu"
-            device_name = "CPU"
 
         progress(0, f"Loading Whisper {model_name} on {device_name}")
 

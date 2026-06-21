@@ -22,6 +22,7 @@ import {
   cancelConversion,
   isConversionInProgress,
 } from '../../main/creator/conversionService.js';
+import * as creatorJob from '../../main/creator/creatorJob.js';
 import { repairStemFile, repairStemFiles } from '../../main/creator/stemBuilder.js';
 import { basename } from 'path';
 import { Atoms as M4AAtoms } from 'm4a-stems';
@@ -61,6 +62,9 @@ export function getStatus() {
     converting: isConversionInProgress(),
     cacheDir: getCacheDir(),
     pythonPath: getPythonPath(),
+    // Rich, observable job descriptor so any admin surface (Electron + every web
+    // browser, incl. one opened/refreshed mid-job) can show "already running".
+    job: creatorJob.getJob(),
   };
 }
 
@@ -289,8 +293,24 @@ export async function startConversion(
   settingsManager = null
 ) {
   if (isConversionInProgress()) {
-    return { success: false, error: 'Conversion already in progress' };
+    // Structured busy result — callers (HTTP 409 / IPC) surface the running job
+    // so a second surface attaches to it instead of starting a duplicate.
+    return {
+      success: false,
+      busy: true,
+      error: 'Conversion already in progress',
+      job: creatorJob.getJob(),
+    };
   }
+
+  const startedAt = options?.startedAt ?? null;
+  creatorJob.startJob({
+    title: options?.title,
+    artist: options?.artist,
+    source: options?.source,
+    device: options?.device,
+    startedAt,
+  });
 
   try {
     onProgress?.({
@@ -298,23 +318,36 @@ export async function startConversion(
       message: 'Starting conversion...',
       progress: 0,
     });
+    creatorJob.updateProgress({ step: 'starting', progress: 0 });
 
     const result = await runConversion(
       options,
       (step, message, progress) => {
+        creatorJob.updateProgress({ step, progress });
         onProgress?.({
           step,
           message,
           progress,
         });
       },
-      onConsoleOutput,
+      (line) => {
+        creatorJob.appendConsole(line);
+        onConsoleOutput?.(line);
+      },
       settingsManager
     );
 
+    if (result?.success) {
+      creatorJob.finishJob('complete', { outputPath: result.outputPath });
+    } else if (result?.cancelled) {
+      creatorJob.finishJob('cancelled');
+    } else {
+      creatorJob.finishJob('error', { error: result?.error || 'Conversion failed' });
+    }
     return result;
   } catch (error) {
     console.error('Conversion failed:', error);
+    creatorJob.finishJob('error', { error: error.message });
     return { success: false, error: error.message };
   }
 }

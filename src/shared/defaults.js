@@ -66,6 +66,12 @@ export const CREATOR_DEFAULTS = {
   outputToSongsFolder: false,
   whisperModel: 'large-v3-turbo',
   enableCrepe: true,
+  // PyTorch backend for stem separation / transcription.
+  // 'auto' lets the runner detect+fall back; override: rocm | cuda | mps | cpu.
+  torchDevice: 'auto',
+  // Transcription engine. 'whisper' = Whisper with estimated word timing;
+  // 'whisperx' = Whisper + wav2vec2 forced alignment for precise line/word timing.
+  transcriptionEngine: 'whisper',
   llm: LLM_DEFAULTS,
 };
 

@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, rmSync, copyFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import { convertToWav, encodeToAAC, extractStemTrack } from './ffmpegService.js';
-import { runDemucs, runWhisper, runCrepe } from './pythonRunner.js';
+import { runDemucs, runWhisper, runCrepe, runAlign } from './pythonRunner.js';
 import { prepareWhisperContext } from './lrclibService.js';
 import { buildStemM4a, injectLyricsIntoStemFile } from './stemBuilder.js';
 import * as llmService from './llmService.js';
@@ -111,6 +111,8 @@ export async function runConversion(
     outputDir = dirname(inputPath),
     lyricsOnlyMode = false,
     vocalsTrackIndex = 4, // Default: vocals is typically track 4 in NI Stems format (0=master, 1=drums, 2=bass, 3=other, 4=vocals)
+    device = 'auto', // PyTorch backend: auto|rocm|cuda|mps|cpu (Python resolves + falls back)
+    transcriptionEngine = 'whisper', // 'whisper' (estimated word timing) | 'whisperx' (forced-alignment, precise line+word timing)
   } = options;
 
   if (conversionInProgress) {
@@ -201,7 +203,7 @@ export async function runConversion(
       demucsResult = await runDemucs(
         wavPath,
         stemsDir,
-        { numStems },
+        { numStems, device },
         (progress, message) => {
           onProgress('demucs', `[${STEPS.demucs}] ${message}`, 5 + Math.floor(progress * 0.45));
         },
@@ -268,6 +270,7 @@ export async function runConversion(
         model: whisperModel,
         language,
         initialPrompt,
+        device,
       },
       (progress, message) => {
         const whisperProgressRange = whisperEnd - whisperStart;
@@ -315,6 +318,40 @@ export async function runConversion(
 
     checkCancelled();
 
+    // Forced alignment (whisperx engine): re-derive line/word timing FROM THE
+    // AUDIO to fix Whisper's drifty segment timestamps. Runs on the final
+    // (post-LLM-correction) lines, so corrected lines get real timing too.
+    // Never fatal — if alignment fails or is imperfect it keeps existing timing.
+    if (transcriptionEngine === 'whisperx' && whisperResult?.lines?.length) {
+      try {
+        onProgress('whisper', `[${STEPS.whisper}] 🎯 Aligning word timing...`, whisperEnd - 1);
+        const alignResult = await runAlign(
+          vocalsWavPath,
+          whisperResult.lines,
+          { device },
+          null,
+          onConsoleOutput,
+          setCurrentProcess
+        );
+        if (alignResult?.aligned && alignResult.lines?.length) {
+          whisperResult = {
+            ...whisperResult,
+            lines: alignResult.lines,
+            words: alignResult.words || whisperResult.words,
+          };
+          log('🎯 Forced alignment applied (precise line/word timing)');
+        } else {
+          log(
+            `🎯 Alignment skipped (${alignResult?.reason || 'unavailable'}); using Whisper timing`
+          );
+        }
+      } catch (error) {
+        console.warn('⚠️ Forced alignment failed, using Whisper timing:', error.message);
+      }
+    }
+
+    checkCancelled();
+
     // Run CREPE (optional)
     let pitchData = null;
     if (enableCrepe) {
@@ -325,7 +362,7 @@ export async function runConversion(
       const crepeResult = await runCrepe(
         vocalsWavPath,
         null,
-        {},
+        { device },
         (progress, message) => {
           onProgress(
             'crepe',

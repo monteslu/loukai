@@ -10,8 +10,13 @@ tqdm progress bars are also output to stderr and parsed by Node.js
 """
 
 import json
+import os
 import sys
 from pathlib import Path
+
+# Allow importing device_utils from this script's own directory regardless of cwd.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from device_utils import resolve_device
 
 def progress(percent, message):
     """Send progress update to stderr"""
@@ -32,6 +37,7 @@ def main():
     output_dir = args.get("output_dir")
     model_name = args.get("model", "htdemucs_ft")
     num_stems = args.get("num_stems", 4)
+    requested_device = args.get("device", "auto")
 
     if not input_path or not output_dir:
         print(json.dumps({"error": "Missing input or output_dir"}))
@@ -44,16 +50,8 @@ def main():
         from demucs.apply import apply_model
         from demucs.audio import convert_audio
 
-        # Detect device
-        if torch.cuda.is_available():
-            device = "cuda"
-            device_name = torch.cuda.get_device_name(0)
-        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-            device = "mps"
-            device_name = "Apple Silicon GPU"
-        else:
-            device = "cpu"
-            device_name = "CPU"
+        # Resolve requested backend (auto/rocm/cuda/mps/cpu) with safe fallback.
+        device, device_name = resolve_device(requested_device)
 
         progress(0, f"Loading model on {device_name}")
 

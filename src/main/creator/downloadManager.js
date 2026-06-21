@@ -372,6 +372,7 @@ function pipInstall(packages, onProgress = null) {
 
 /**
  * Detect GPU type for PyTorch variant selection
+ * Returns one of: 'cuda' (NVIDIA), 'rocm' (AMD/Linux), 'mps' (Apple Silicon), 'cpu'
  */
 function detectGPU() {
   const platform = process.platform;
@@ -381,14 +382,27 @@ function detectGPU() {
     return process.arch === 'arm64' ? 'mps' : 'cpu';
   }
 
-  // Linux/Windows: Check for NVIDIA GPU
+  // Linux/Windows: NVIDIA takes priority (most mature PyTorch backend)
   try {
     execSync('nvidia-smi', { stdio: 'ignore' });
     return 'cuda';
   } catch {
-    return 'cpu';
+    // not NVIDIA
   }
+
+  // Linux: AMD GPU compute via ROCm. /dev/kfd is the AMD KFD compute node,
+  // present whenever the amdgpu kernel driver + KFD are loaded. The ROCm
+  // PyTorch wheels bundle their own ROCm runtime, so no system /opt/rocm is needed.
+  if (platform === 'linux' && existsSync('/dev/kfd')) {
+    return 'rocm';
+  }
+
+  return 'cpu';
 }
+
+// detectRocmGfxOverride lives in systemChecker.js (it owns the Python env);
+// re-export so callers can reach it from here too.
+export { detectRocmGfxOverride } from './systemChecker.js';
 
 /**
  * Download and install Python
@@ -482,25 +496,42 @@ export async function downloadPython(onProgress = null) {
 /**
  * Download and install PyTorch
  */
+// ROCm wheel index — pinned to a verified-working version (torch 2.9.1+rocm6.4
+// installs and runs Demucs + Whisper on RDNA3/gfx1102 with no gfx override).
+const ROCM_INDEX_URL = 'https://download.pytorch.org/whl/rocm6.4';
+const CUDA_INDEX_URL = 'https://download.pytorch.org/whl/cu118';
+const CPU_INDEX_URL = 'https://download.pytorch.org/whl/cpu';
+
 export async function downloadPyTorch(variant = 'auto', onProgress = null) {
   try {
     // Detect variant if auto
     if (variant === 'auto') {
       const gpu = detectGPU();
-      variant = gpu === 'cuda' ? 'cuda' : gpu === 'mps' ? 'default' : 'cpu';
+      // gpu is one of cuda/rocm/mps/cpu; map mps -> 'default' (PyPI wheels carry MPS)
+      variant = gpu === 'mps' ? 'default' : gpu;
     }
 
+    // Note: only torch + torchaudio are needed by the Creator (Demucs/Whisper/CREPE);
+    // torchvision is intentionally omitted to avoid a large unused download.
     let packageSpec;
     if (variant === 'cuda') {
-      packageSpec =
-        'torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118';
+      packageSpec = `torch torchaudio --index-url ${CUDA_INDEX_URL}`;
+    } else if (variant === 'rocm') {
+      // ROCm wheels bundle the ROCm runtime; no system /opt/rocm required.
+      packageSpec = `torch torchaudio pytorch-triton-rocm --index-url ${ROCM_INDEX_URL}`;
     } else if (variant === 'default' || process.platform === 'darwin') {
-      packageSpec = 'torch torchvision torchaudio';
+      packageSpec = 'torch torchaudio';
     } else {
-      packageSpec = 'torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu';
+      packageSpec = `torch torchaudio --index-url ${CPU_INDEX_URL}`;
     }
 
-    if (onProgress) onProgress('installing', 'Installing PyTorch...');
+    const label =
+      variant === 'rocm'
+        ? 'Installing PyTorch (AMD ROCm, ~4.5 GB)...'
+        : variant === 'cuda'
+          ? 'Installing PyTorch (NVIDIA CUDA)...'
+          : 'Installing PyTorch...';
+    if (onProgress) onProgress('installing', label);
     await pipInstall(packageSpec, (stage, msg) => {
       if (onProgress) onProgress(stage, msg);
     });

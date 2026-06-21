@@ -11,7 +11,7 @@
  * - Downloaded models
  */
 
-import { existsSync, statSync } from 'fs';
+import { existsSync, statSync, readdirSync, readFileSync } from 'fs';
 import { homedir, platform } from 'os';
 import { join } from 'path';
 import { execSync, spawn } from 'child_process';
@@ -46,6 +46,35 @@ export function getPythonPath() {
 }
 
 /**
+ * Detect whether AMD ROCm needs HSA_OVERRIDE_GFX_VERSION on this machine.
+ * RDNA2 (gfx1030..gfx1039, e.g. Steam Deck gfx1033) is not an official ROCm
+ * target and must be spoofed to gfx1030 via HSA_OVERRIDE_GFX_VERSION=10.3.0.
+ * RDNA3+ (e.g. RX 7600 gfx1102) works without an override.
+ * Reads the KFD topology; encoding is major*10000 + minor*100 + step
+ * (verified on hardware: gfx1102 -> 110002, gfx1150 -> 110500, gfx1033 -> 100303).
+ * @returns {string|null} override value (e.g. '10.3.0') or null if none needed
+ */
+export function detectRocmGfxOverride() {
+  if (platform() !== 'linux') return null;
+  try {
+    const base = '/sys/class/kfd/kfd/topology/nodes';
+    if (!existsSync(base)) return null;
+    for (const node of readdirSync(base)) {
+      const propsPath = join(base, node, 'properties');
+      if (!existsSync(propsPath)) continue;
+      const m = readFileSync(propsPath, 'utf8').match(/gfx_target_version\s+(\d+)/);
+      if (m) {
+        const v = parseInt(m[1], 10);
+        if (v >= 100300 && v < 100400) return '10.3.0'; // RDNA2 family
+      }
+    }
+  } catch {
+    // best-effort; if topology is unreadable, assume no override needed
+  }
+  return null;
+}
+
+/**
  * Get environment variables for Python processes
  * Includes cached FFmpeg in PATH so Python scripts can find it
  */
@@ -58,7 +87,7 @@ export function getPythonEnv() {
   const existingPath = process.env.PATH || process.env.Path || '';
   const newPath = `${binDir}${pathSep}${existingPath}`;
 
-  return {
+  const env = {
     ...process.env,
     PATH: newPath,
     Path: newPath, // Windows uses 'Path'
@@ -66,6 +95,15 @@ export function getPythonEnv() {
     HF_HOME: join(cacheDir, 'models', 'huggingface'),
     XDG_CACHE_HOME: cacheDir, // For whisper model cache
   };
+
+  // AMD RDNA2 (e.g. Steam Deck) needs this so ROCm accepts the GPU.
+  // Respect an explicit user-set value if present.
+  if (!env.HSA_OVERRIDE_GFX_VERSION) {
+    const gfxOverride = detectRocmGfxOverride();
+    if (gfxOverride) env.HSA_OVERRIDE_GFX_VERSION = gfxOverride;
+  }
+
+  return env;
 }
 
 /**
@@ -210,6 +248,126 @@ except ImportError as e:
 
     proc.on('error', (err) => {
       resolve({ installed: false, reason: 'spawn_failed', error: err.message });
+    });
+  });
+}
+
+// Python probe: enumerate available backends, then SMOKE-TEST each with a real
+// conv2d + matmul on-device (conv specifically — Demucs is conv-heavy and that's
+// where broken backends fail, e.g. Vulkan). Returns JSON: the best WORKING backend
+// by priority (cuda/rocm > mps > directml > cpu), plus per-candidate results.
+const BACKEND_PROBE_SCRIPT = `
+import json, sys
+result = {"candidates": [], "best": "cpu", "torch_version": None, "is_rocm": False}
+try:
+    import torch
+    result["torch_version"] = torch.__version__
+    result["is_rocm"] = bool(getattr(torch.version, "hip", None))
+except Exception as e:
+    print(json.dumps({"error": "import_failed", "detail": str(e)})); sys.exit(0)
+
+def smoke(dev):
+    # tiny real workload: conv2d + matmul, move result back to CPU
+    x = torch.randn(1, 3, 16, 16, device=dev)
+    w = torch.randn(4, 3, 3, 3, device=dev)
+    y = torch.nn.functional.conv2d(x, w)
+    a = torch.randn(64, 64, device=dev); b = torch.randn(64, 64, device=dev)
+    _ = (a @ b).sum().item()
+    _ = y.float().sum().item()
+
+# priority order; ROCm presents AS cuda (torch.version.hip set)
+candidates = []
+try:
+    if torch.cuda.is_available():
+        candidates.append(("rocm" if result["is_rocm"] else "cuda", "cuda"))
+except Exception:
+    pass
+try:
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        candidates.append(("mps", "mps"))
+except Exception:
+    pass
+try:
+    import torch_directml  # noqa: F401
+    candidates.append(("directml", torch_directml.device()))
+except Exception:
+    pass
+candidates.append(("cpu", "cpu"))
+
+best = None
+for name, dev in candidates:
+    entry = {"backend": name, "available": True}
+    if name == "cpu":
+        entry["smoke"] = "skipped"; result["candidates"].append(entry)
+        if best is None: best = name
+        continue
+    try:
+        smoke(dev)
+        entry["smoke"] = "pass"
+        if best is None: best = name
+    except Exception as e:
+        entry["smoke"] = "fail"; entry["error"] = str(e)[:200]
+    result["candidates"].append(entry)
+
+result["best"] = best or "cpu"
+print(json.dumps(result))
+`;
+
+/**
+ * Detect the best WORKING PyTorch backend on this machine (Tier-2: capability
+ * detection + on-device smoke test). Distinguishes ROCm from CUDA, rejects a
+ * backend that reports available but fails a real conv/matmul, and reports the
+ * gfx override if one is needed. Intended to be cached by the caller.
+ * @returns {Promise<{best: string, candidates: Array, torchVersion: string|null,
+ *   isRocm: boolean, gfxOverride: string|null, installed: boolean}>}
+ */
+export function detectBestBackend() {
+  const pythonPath = getPythonPath();
+  if (!existsSync(pythonPath)) {
+    return Promise.resolve({ installed: false, best: 'cpu', candidates: [] });
+  }
+  return new Promise((resolve) => {
+    const proc = spawn(pythonPath, ['-c', BACKEND_PROBE_SCRIPT], {
+      env: getPythonEnv(),
+      timeout: 60000, // smoke tests can JIT-compile kernels (MIOpen) on first run
+    });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (d) => (stdout += d.toString()));
+    proc.stderr.on('data', (d) => (stderr += d.toString()));
+    proc.on('close', () => {
+      try {
+        const r = JSON.parse(stdout.trim().split('\n').pop());
+        if (r.error) {
+          resolve({ installed: false, best: 'cpu', candidates: [], reason: r.error });
+          return;
+        }
+        resolve({
+          installed: true,
+          best: r.best,
+          candidates: r.candidates,
+          torchVersion: r.torch_version,
+          isRocm: r.is_rocm,
+          gfxOverride: detectRocmGfxOverride(),
+        });
+      } catch (e) {
+        resolve({
+          installed: false,
+          best: 'cpu',
+          candidates: [],
+          reason: 'probe_parse_failed',
+          error: `${e.message} | stderr: ${stderr.slice(-200)}`,
+        });
+      }
+    });
+    proc.on('error', (err) => {
+      resolve({
+        installed: false,
+        best: 'cpu',
+        candidates: [],
+        reason: 'spawn_failed',
+        error: err.message,
+      });
     });
   });
 }

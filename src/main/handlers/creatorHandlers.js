@@ -102,19 +102,44 @@ export function registerCreatorHandlers(mainApp) {
 
   // Start conversion
   ipcMain.handle(CREATOR_CHANNELS.START_CONVERSION, async (_event, options) => {
+    // Single-job guard: if a conversion is already running (started from ANY
+    // surface), return the running job so the renderer attaches instead of
+    // starting a duplicate.
+    const current = creatorService.getStatus();
+    if (current.converting) {
+      return {
+        success: false,
+        busy: true,
+        error: 'Conversion already in progress',
+        job: current.job,
+      };
+    }
+
     // Track if we're saving to songs folder (outputDir is set)
     const savedToSongsFolder = Boolean(options.outputDir);
+
+    // Tag the job + broadcast its state to BOTH transports so a renderer-started
+    // job is visible to (and blocks) every web admin too.
+    options.source = 'electron';
+    options.startedAt = Date.now();
+    const broadcastJob = () => {
+      const job = creatorService.getStatus().job;
+      mainApp.sendToRenderer('creator:job', job);
+      mainApp.webServer?.io?.to('admin-clients').emit('creator:job', job);
+    };
 
     const result = await creatorService.startConversion(
       options,
       (progress) => {
         mainApp.sendToRenderer(CREATOR_CHANNELS.CONVERSION_PROGRESS, progress);
+        broadcastJob();
       },
       (consoleLine) => {
         mainApp.sendToRenderer(CREATOR_CHANNELS.CONVERSION_CONSOLE, { line: consoleLine });
       },
       mainApp.settings // Pass settings manager for LLM
     );
+    broadcastJob(); // terminal state
 
     if (result.success) {
       mainApp.sendToRenderer(CREATOR_CHANNELS.CONVERSION_COMPLETE, {

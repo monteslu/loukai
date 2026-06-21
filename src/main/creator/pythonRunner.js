@@ -185,6 +185,7 @@ export function runDemucs(
       output_dir: outputDir,
       model: options.model || 'htdemucs_ft',
       num_stems: options.numStems || 4,
+      device: options.device || 'auto',
     },
     onProgress,
     onConsoleOutput,
@@ -219,6 +220,39 @@ export function runWhisper(
       model: options.model || 'large-v3-turbo',
       initial_prompt: options.initialPrompt || null,
       language: options.language || 'en',
+      device: options.device || 'auto',
+    },
+    onProgress,
+    onConsoleOutput,
+    onProcess
+  );
+}
+
+/**
+ * Run wav2vec2 forced alignment to fix line/word timing.
+ *
+ * @param {string} inputPath - Path to the vocals WAV
+ * @param {Array} lines - Whisper lines [{text,start,end,words}]
+ * @param {Object} options - { device }
+ * @param {Function} onProgress
+ * @param {Function} onConsoleOutput
+ * @param {Function} onProcess
+ * @returns {Promise<Object>} { lines, words, aligned } — aligned:false means timing unchanged
+ */
+export function runAlign(
+  inputPath,
+  lines,
+  options = {},
+  onProgress = null,
+  onConsoleOutput = null,
+  onProcess = null
+) {
+  return runPythonScript(
+    'align_runner.py',
+    {
+      input: inputPath,
+      lines,
+      device: options.device || 'auto',
     },
     onProgress,
     onConsoleOutput,
@@ -254,6 +288,7 @@ export function runCrepe(
       output: outputPath,
       model: options.model || 'tiny',
       hop_length: options.hopLength || 512,
+      device: options.device || 'auto',
     },
     onProgress,
     onConsoleOutput,

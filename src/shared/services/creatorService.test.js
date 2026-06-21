@@ -358,13 +358,25 @@ describe('creatorService', () => {
       expect(result.error).toBe('Conversion failed');
     });
 
-    it('should pass console output callback', async () => {
+    it('should forward console output through to the caller', async () => {
       const onConsoleOutput = vi.fn();
-      runConversion.mockResolvedValue({ success: true });
+      // startConversion now WRAPS the console callback (to also feed the shared
+      // job descriptor's console tail), so a wrapper Function is passed through.
+      runConversion.mockImplementation(async (_opts, _onProgress, onConsole) => {
+        onConsole('hello from pipeline');
+        return { success: true };
+      });
 
       await creatorService.startConversion({}, vi.fn(), onConsoleOutput);
 
-      expect(runConversion).toHaveBeenCalledWith({}, expect.any(Function), onConsoleOutput, null);
+      expect(runConversion).toHaveBeenCalledWith(
+        {},
+        expect.any(Function),
+        expect.any(Function),
+        null
+      );
+      // The wrapper must still forward lines to the original callback.
+      expect(onConsoleOutput).toHaveBeenCalledWith('hello from pipeline');
     });
 
     it('should pass settings manager', async () => {
@@ -373,7 +385,13 @@ describe('creatorService', () => {
 
       await creatorService.startConversion({}, vi.fn(), null, settingsManager);
 
-      expect(runConversion).toHaveBeenCalledWith({}, expect.any(Function), null, settingsManager);
+      // Console arg is now an internal wrapper Function (not null).
+      expect(runConversion).toHaveBeenCalledWith(
+        {},
+        expect.any(Function),
+        expect.any(Function),
+        settingsManager
+      );
     });
   });
 
