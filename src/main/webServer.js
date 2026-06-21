@@ -226,6 +226,13 @@ class WebServer {
     // Serve static files (shared between main app and web interface)
     this.app.use('/static', express.static(path.join(__dirname, '../../static')));
 
+    // Serve the Electron renderer over http://localhost/app so the main window
+    // loads from an http origin (not file://). This is REQUIRED for the WebGPU
+    // Creator: dynamic import() of the same-origin libs, cross-origin isolation,
+    // and WASM threads (SharedArrayBuffer) only work on an http origin. index.html
+    // uses relative dist/ + lib/ paths, so serving the whole renderer dir works.
+    this.app.use('/app', express.static(path.join(__dirname, '../renderer')));
+
     // Serve Butterchurn libraries for the screenshot generator (both root and admin paths)
     this.app.use('/lib', express.static(path.join(__dirname, '../renderer/lib')));
     this.app.use('/admin/lib', express.static(path.join(__dirname, '../renderer/lib')));

@@ -196,11 +196,15 @@ class KaiPlayerApp {
     // Load persisted state (queue, mixer, effects)
     await this.statePersistence.load();
 
-    this.createMainWindow();
-    this.createApplicationMenu();
+    // Start the web server BEFORE the window so the renderer can be loaded over
+    // http://localhost (required for the in-browser WebGPU Creator: dynamic
+    // import + cross-origin isolation + WASM threads only work on an http origin,
+    // not file://). IPC handlers are set up first so the preload has them.
     this.setupIPC();
     this.initializeAudioEngine();
     await this.initializeWebServer();
+    this.createMainWindow();
+    this.createApplicationMenu();
 
     // Start periodic state persistence
     this.statePersistence.startPeriodicSave();
@@ -258,8 +262,16 @@ class KaiPlayerApp {
       });
     });
 
-    const rendererPath = path.join(__dirname, '../renderer/index.html');
-    this.mainWindow.loadFile(rendererPath);
+    // Load the renderer over http://localhost so it runs on an http origin
+    // (required for the WebGPU Creator — see the session header note above).
+    // Fall back to file:// if the web server didn't start (player still works).
+    const port = this.webServer?.getPort?.();
+    if (port) {
+      this.mainWindow.loadURL(`http://localhost:${port}/app/index.html`);
+    } else {
+      console.warn('⚠️ Web server not running; loading renderer from file:// (WebGPU disabled)');
+      this.mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    }
 
     // DevTools: Use Ctrl+Shift+I (or Cmd+Option+I on Mac) to open manually
 
