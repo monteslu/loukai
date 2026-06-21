@@ -19,6 +19,7 @@ import { ServerTab } from './ServerTab.jsx';
 import { VisualizationSettings } from '../../shared/components/VisualizationSettings.jsx';
 import { toggleCanvasFullscreen } from '../hooks/useKeyboardShortcuts.js';
 import { CreateTab } from './creator/CreateTab.jsx';
+import WebGpuCreatorPanel from './creator/WebGpuCreatorPanel.jsx';
 
 export function App({ bridge }) {
   const [requests, setRequests] = useState([]);
@@ -291,6 +292,11 @@ export function App({ bridge }) {
             {/* Create Tab */}
             <div id="create-tab" className="hidden h-full overflow-auto">
               <CreateTab bridge={bridge} />
+            </div>
+
+            {/* WebGPU Create Tab (experimental, in-browser, no Python) */}
+            <div id="webgpu-tab" className="hidden h-full overflow-auto">
+              <WebGpuCreatorPanel />
             </div>
           </div>
         </div>

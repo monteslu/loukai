@@ -17,6 +17,7 @@ export function TabNavigation({ requestsCount = 0 }) {
     { id: 'requests', label: '🎤 Requests', badge: requestsCount },
     { id: 'server', label: '🌐 Server' },
     { id: 'create', label: '⚡ Create' },
+    { id: 'webgpu', label: '🧪 Create (WebGPU)' },
     { id: 'editor', label: '✏️ Edit' },
   ];
 
