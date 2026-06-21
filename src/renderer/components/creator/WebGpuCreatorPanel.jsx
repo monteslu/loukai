@@ -12,9 +12,14 @@ import { useEffect, useRef, useState } from 'react';
  * standalone experiment; the browser caches the models after first run.
  */
 
+// CDN module URLs — match the combination proven by the JIG bench. transformers.js
+// loads from jsdelivr's bundled dist file (esm.sh's package mis-resolves its deps);
+// onnxruntime-web's WASM artifacts are pointed at jsdelivr explicitly.
 const ORT_URL = 'https://esm.sh/onnxruntime-web@1.27.0/webgpu';
+const ORT_WASM_PATH = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/';
 const DEMUCS_URL = 'https://esm.sh/demucs-web@1.0.2';
-const TRANSFORMERS_URL = 'https://esm.sh/@huggingface/transformers@3.8.1';
+const TRANSFORMERS_URL =
+  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js';
 
 const WHISPER_MODELS = [
   { id: 'Xenova/whisper-tiny.en', label: 'tiny.en · fast' },
@@ -72,17 +77,19 @@ export default function WebGpuCreatorPanel() {
         import(/* @vite-ignore */ DEMUCS_URL),
         import(/* @vite-ignore */ TRANSFORMERS_URL),
       ]);
+      // ONNX Runtime Web needs an explicit path to its .wasm artifacts.
+      try {
+        if (ort.env?.wasm) ort.env.wasm.wasmPaths = ORT_WASM_PATH;
+        if (ort.env?.webgpu) ort.env.webgpu.powerPreference = 'high-performance';
+      } catch {
+        /* ignore */
+      }
       libs.current = {
         ort,
         DemucsProcessor: demucs.DemucsProcessor,
         CONSTANTS: demucs.CONSTANTS,
         pipeline: tf.pipeline,
       };
-      try {
-        if (ort.env?.webgpu) ort.env.webgpu.powerPreference = 'high-performance';
-      } catch {
-        /* ignore */
-      }
     }
     return libs.current;
   }
