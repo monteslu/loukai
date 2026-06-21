@@ -39,6 +39,19 @@ const WHISPER_MODELS = [
   },
 ];
 
+// Demucs separation models (in-browser WebGPU). 'kind' selects the runner:
+//   'single' = one htdemucs ONNX (demucs-web) — fast (~8× realtime on a good GPU).
+//   'ft'     = htdemucs_ft 4-model fine-tuned ensemble — PyTorch-grade, ~2-3×
+//              realtime (4× the compute). Default to the fast single model.
+const DEMUCS_MODELS = [
+  { id: 'htdemucs', kind: 'single', label: 'htdemucs · fast (~8× realtime, default)' },
+  {
+    id: 'htdemucs_ft',
+    kind: 'ft',
+    label: 'htdemucs_ft · best quality, 4-model (~2-3× realtime)',
+  },
+];
+
 // Group word-level timestamps into lyric lines. Breaks on sentence punctuation,
 // long pauses between words, or a max line length — each line's start/end is taken
 // from its first/last word so line timing is accurate.
@@ -78,10 +91,8 @@ export default function WebGpuCreatorPanel() {
   const [asrModel, setAsrModel] = useState('onnx-community/whisper-large-v3-turbo_timestamped');
   const [status, setStatus] = useState('idle'); // idle | separating | transcribing | done | error
   const [stemProgress, setStemProgress] = useState({}); // per-stem 0..1 (ft ensemble)
-  // Separation quality/speed: 'fast' = single htdemucs (~8× realtime on a good GPU),
-  // 'best' = htdemucs_ft 4-model ensemble (PyTorch-grade, ~2-3× realtime, 4× heavier).
-  // Default fast so the GPU path is genuinely fast; opt into best for top quality.
-  const [sepMode, setSepMode] = useState('fast');
+  // Demucs separation model — default to the fast single htdemucs.
+  const [demucsModel, setDemucsModel] = useState('htdemucs');
   const [logLines, setLogLines] = useState([]);
   const [lyrics, setLyrics] = useState([]);
   const [rtf, setRtf] = useState(null);
@@ -251,16 +262,17 @@ export default function WebGpuCreatorPanel() {
       const audio = await decodeAudio(file);
 
       // --- Demucs stem separation (in-browser, WebGPU) ---
-      // Two modes (speed vs quality — see sepMode):
-      //   fast: single htdemucs (demucs-web) — ~8× realtime on a good GPU.
-      //   best: htdemucs_ft 4-model fine-tuned ensemble — PyTorch-grade, ~2-3×
-      //         realtime (4× the compute); fp16 with the variance prologue pinned to
-      //         CPU (forceCpuNodeNames) so fp16 doesn't NaN.
+      // The selected DEMUCS_MODELS entry's `kind` picks the runner:
+      //   'single' = one htdemucs (demucs-web) — fast (~8× realtime).
+      //   'ft'     = htdemucs_ft 4-model fine-tuned ensemble — PyTorch-grade, ~2-3×
+      //              realtime (4× the compute); fp16 with the variance prologue pinned
+      //              to CPU (forceCpuNodeNames) so fp16 doesn't NaN.
+      const modelDef = DEMUCS_MODELS.find((m) => m.id === demucsModel) || DEMUCS_MODELS[0];
       setStemProgress({});
       const t0 = performance.now();
       let result;
       let modeLabel;
-      if (sepMode === 'best') {
+      if (modelDef.kind === 'ft') {
         modeLabel = 'htdemucs_ft (best)';
         log('loading htdemucs_ft ensemble (4 models) from loukai …');
         const cpuNodes = await fetch('/webgpu-models/ft_cpu_nodes.json')
@@ -377,15 +389,18 @@ export default function WebGpuCreatorPanel() {
             disabled={busy}
           />
           <label className="text-sm text-gray-700 dark:text-gray-300">
-            Separation:
+            Demucs model:
             <select
               className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
-              value={sepMode}
-              onChange={(e) => setSepMode(e.target.value)}
+              value={demucsModel}
+              onChange={(e) => setDemucsModel(e.target.value)}
               disabled={busy}
             >
-              <option value="fast">Fast · htdemucs (~8× realtime)</option>
-              <option value="best">Best · htdemucs_ft 4-model (PyTorch-grade, ~2-3×)</option>
+              {DEMUCS_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
             </select>
           </label>
           <label className="text-sm text-gray-700 dark:text-gray-300">
@@ -419,8 +434,8 @@ export default function WebGpuCreatorPanel() {
         {status === 'separating' && (
           <div>
             <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-              Separating stems · {sepMode === 'best' ? 'htdemucs_ft (4 models)' : 'htdemucs'} on
-              GPU…
+              Separating stems ·{' '}
+              {demucsModel === 'htdemucs_ft' ? 'htdemucs_ft (4 models)' : 'htdemucs'} on GPU…
             </div>
             <div className="flex flex-col gap-1.5">
               {['drums', 'bass', 'other', 'vocals'].map((stem) => {
