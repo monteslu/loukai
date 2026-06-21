@@ -17,18 +17,35 @@ import { useEffect, useRef, useState } from 'react';
 // CORS/COEP in the web admin; works offline once the backend has cached them).
 // The backend (webgpuAssets.js) downloads + caches them on first request.
 //
-// Resolve the asset base: in the web admin the server is same-origin (relative
-// path); in the Electron renderer (file://) we use the local web server's URL.
+// Resolve the asset base. In the web admin the server is same-origin (relative
+// path works). In the Electron renderer the page is file://, which has no server
+// — so we MUST use an absolute http URL. Prefer the port → http://localhost:PORT
+// (canonical loopback; getServerUrl returns a LAN IP that may be cross-origin or
+// null before the server is up).
 async function resolveAssetBase() {
-  if (window.kaiAPI?.webServer?.getUrl) {
+  // Web admin: served over http by Express → relative is same-origin.
+  if (typeof location !== 'undefined' && location.protocol.startsWith('http')) {
+    return '/webgpu-assets';
+  }
+  // Electron renderer (file://): need the absolute local server URL.
+  const api = window.kaiAPI?.webServer;
+  if (api?.getPort) {
     try {
-      const url = await window.kaiAPI.webServer.getUrl();
-      if (url) return url.replace(/\/$/, '') + '/webgpu-assets';
+      const port = await api.getPort();
+      if (port) return `http://localhost:${port}/webgpu-assets`;
     } catch {
-      /* fall through to relative */
+      /* fall through */
     }
   }
-  return '/webgpu-assets';
+  if (api?.getUrl) {
+    try {
+      const url = await api.getUrl();
+      if (url) return url.replace(/\/$/, '') + '/webgpu-assets';
+    } catch {
+      /* fall through */
+    }
+  }
+  throw new Error('cannot resolve loukai server URL for WebGPU assets');
 }
 
 const WHISPER_MODELS = [

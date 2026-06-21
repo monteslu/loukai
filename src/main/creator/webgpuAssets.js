@@ -34,8 +34,12 @@ const DEMUCS_VER = '1.0.2';
 const TF_VER = '3.8.1';
 
 const ASSETS = {
-  // onnxruntime-web — self-contained WebGPU ESM bundle + its jsep WASM/loader.
+  // onnxruntime-web — self-contained WebGPU ESM bundle. NOTE the bundle/standalone
+  // build fetches the ASYNCIFY wasm; transformers.js's OWN bundled ORT fetches the
+  // JSEP wasm. We serve BOTH pairs so whichever loads, its wasm is present.
   'ort.webgpu.bundle.min.mjs': `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort.webgpu.bundle.min.mjs`,
+  'ort-wasm-simd-threaded.asyncify.wasm': `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort-wasm-simd-threaded.asyncify.wasm`,
+  'ort-wasm-simd-threaded.asyncify.mjs': `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort-wasm-simd-threaded.asyncify.mjs`,
   'ort-wasm-simd-threaded.jsep.wasm': `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort-wasm-simd-threaded.jsep.wasm`,
   'ort-wasm-simd-threaded.jsep.mjs': `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort-wasm-simd-threaded.jsep.mjs`,
   // demucs-web — plain ESM source, zero deps, takes ort as a param.
@@ -141,7 +145,7 @@ export function registerWebGpuAssets(app) {
       res.setHeader('Content-Type', mimeFor(key));
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       // Same-origin already, but mark cross-origin-readable for the isolated context.
-      res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // allow file:// renderer under COEP
       createReadStream(file).pipe(res);
     } catch (e) {
       console.error('webgpu-asset fetch failed:', key, e.message);
@@ -168,7 +172,7 @@ export function registerWebGpuAssets(app) {
       }
       res.setHeader('Content-Type', mimeFor(rel));
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // allow file:// renderer under COEP
       createReadStream(dest).pipe(res);
     } catch (e) {
       console.error('webgpu-model fetch failed:', rel, e.message);
