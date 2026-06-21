@@ -163,12 +163,20 @@ export default function WebGpuCreatorPanel() {
     // All from /webgpu-assets/* — never a CDN. Self-contained ESM bundles
     // (ort.webgpu.bundle.min.mjs has no sub-imports), so dynamic import works.
     // transformers.js is imported with Node globals hidden (see importTransformers).
-    const [ort, demucs, tf, ftEnsemble] = await Promise.all([
-      import(/* @vite-ignore */ `${base}/ort.webgpu.bundle.min.mjs`),
-      import(/* @vite-ignore */ `${base}/demucs/index.js`),
-      importTransformers(`${base}/transformers.min.js`),
-      import(/* @vite-ignore */ `${base}/ft-ensemble.js`),
-    ]);
+    let ort, demucs, tf, ftEnsemble;
+    try {
+      [ort, demucs, tf, ftEnsemble] = await Promise.all([
+        import(/* @vite-ignore */ `${base}/ort.webgpu.bundle.min.mjs`),
+        import(/* @vite-ignore */ `${base}/demucs/index.js`),
+        importTransformers(`${base}/transformers.min.js`),
+        import(/* @vite-ignore */ `${base}/ft-ensemble.js`),
+      ]);
+    } catch (e) {
+      throw new Error(
+        `failed to load WebGPU libraries from loukai (${String(e.message).slice(0, 100)}). ` +
+          `If the app was reloading, just try again.`
+      );
+    }
     try {
       // WASM artifacts also served by us.
       if (ort.env?.wasm) {
@@ -326,8 +334,31 @@ export default function WebGpuCreatorPanel() {
       // backend ('wasm' is rejected). With the Node-globals fix above, the
       // timestamped models run on webgpu. Use GPU when available.
       const device = gpu === 'available' ? 'webgpu' : 'cpu';
-      log(`transcribing vocals · ${want} · ${device} …`);
-      const asr = await pipeline('automatic-speech-recognition', want, { device });
+      log(`loading Whisper model · ${want} · ${device} (first run downloads it) …`);
+      // Surface model-download progress (v3-turbo is large) + fail loudly, so a
+      // slow/large download or an OOM doesn't look like a frozen UI.
+      const seenFiles = new Set();
+      let asr;
+      try {
+        asr = await pipeline('automatic-speech-recognition', want, {
+          device,
+          progress_callback: (p) => {
+            if (p.status === 'progress' && p.file && p.total) {
+              const pct = Math.round((p.loaded / p.total) * 100);
+              if (pct % 25 === 0 && !seenFiles.has(p.file + pct)) {
+                seenFiles.add(p.file + pct);
+                log(`  ↓ ${p.file} ${pct}%`);
+              }
+            }
+          },
+        });
+      } catch (e) {
+        throw new Error(
+          `Whisper model "${want}" failed to load (${String(e.message).slice(0, 100)}). ` +
+            `If it's large-v3-turbo, your GPU may be out of memory — try a smaller model.`
+        );
+      }
+      log(`transcribing vocals · ${device} …`);
       const mono = toMono16k(result.vocals.left, result.vocals.right, audio.sampleRate);
       // Always get WORD-level timestamps, then group into lyric lines ourselves.
       const out = await asr(mono, {
