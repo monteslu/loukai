@@ -91,9 +91,27 @@ function encodeWav(left, right, sampleRate = 44100) {
 // Group word-level timestamps into lyric lines. Breaks on sentence punctuation,
 // long pauses between words, or a max line length — each line's start/end is taken
 // from its first/last word so line timing is accurate.
-function groupWordsIntoLines(words, { maxGap = 1.0, maxWords = 10, maxDur = 8 } = {}) {
+// `duration` (audio length) clamps the final line so a stretched trailing Whisper
+// timestamp can't run a line 20+s past the song end. `maxLineDur` caps any single
+// line's displayed length (the actual sung phrase is short even if Whisper's
+// timestamp drifts).
+function groupWordsIntoLines(
+  words,
+  { maxGap = 1.0, maxWords = 10, maxDur = 8, duration = Infinity, maxLineDur = 10 } = {}
+) {
   const lines = [];
   let cur = null;
+  // A "word" with no letters/digits (e.g. ".." or "♪") is punctuation/noise, not a
+  // lyric — Whisper emits these as hallucinations over fades/instrumental. Drop them.
+  const hasContent = (s) => /[\p{L}\p{N}]/u.test(s);
+  const push = (c) => {
+    const text = c.text.trim();
+    if (!hasContent(text)) return; // skip punctuation/symbol-only lines
+    let end = Math.min(c.end, duration); // never past the song end
+    if (end - c.start > maxLineDur) end = c.start + maxLineDur; // cap runaway length
+    if (end <= c.start) end = c.start + 0.5;
+    lines.push({ text, start: c.start, end });
+  };
   for (const w of words) {
     const text = (w.text || '').trim();
     if (!text) continue;
@@ -106,7 +124,7 @@ function groupWordsIntoLines(words, { maxGap = 1.0, maxWords = 10, maxDur = 8 } 
       const tooLong = cur.n >= maxWords || end - cur.start > maxDur;
       const endsSentence = /[.!?]$/.test(cur.text);
       if (gap > maxGap || tooLong || endsSentence) {
-        lines.push({ text: cur.text.trim(), start: cur.start, end: cur.end });
+        push(cur);
         cur = { text, start, end, n: 1 };
       } else {
         // join (no space before clitics/punctuation)
@@ -116,7 +134,7 @@ function groupWordsIntoLines(words, { maxGap = 1.0, maxWords = 10, maxDur = 8 } 
       }
     }
   }
-  if (cur) lines.push({ text: cur.text.trim(), start: cur.start, end: cur.end });
+  if (cur) push(cur);
   return lines;
 }
 
@@ -695,7 +713,7 @@ export default function WebGpuCreatorPanel() {
         }
       }
       let lines = words.length
-        ? groupWordsIntoLines(words)
+        ? groupWordsIntoLines(words, { duration: audio.duration })
         : [{ text: (out.text || '').trim(), start: 0, end: audio.duration }];
       setLyrics(lines);
       log(
