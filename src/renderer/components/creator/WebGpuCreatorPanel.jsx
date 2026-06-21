@@ -29,13 +29,15 @@ function assetBase() {
 // karaoke needs — we group the words into lyric LINES (groupWordsIntoLines), which
 // also fixes line-timing drift since each line's start/end come from real word
 // timings, not Whisper's coarse segment timestamps. Larger = more accurate, more VRAM.
+// All run via q4f16 on WebGPU (4-bit weights + fp16 compute) — fast even for
+// large-v3-turbo (~13× realtime; fp32 was unusable). Bigger = more accurate.
 const WHISPER_MODELS = [
   { id: 'onnx-community/whisper-tiny_timestamped', label: 'tiny · fastest' },
-  { id: 'onnx-community/whisper-base_timestamped', label: 'base · fast (default)' },
-  { id: 'onnx-community/whisper-small_timestamped', label: 'small · more accurate, slower' },
+  { id: 'onnx-community/whisper-base_timestamped', label: 'base · fast' },
+  { id: 'onnx-community/whisper-small_timestamped', label: 'small · more accurate' },
   {
     id: 'onnx-community/whisper-large-v3-turbo_timestamped',
-    label: 'large-v3-turbo · most accurate but VERY slow on WebGPU',
+    label: 'large-v3-turbo · best (q4f16, ~13× realtime)',
   },
 ];
 
@@ -119,11 +121,10 @@ function groupWordsIntoLines(words, { maxGap = 1.0, maxWords = 10, maxDur = 8 } 
 
 export default function WebGpuCreatorPanel() {
   const [gpu, setGpu] = useState('checking'); // checking | available | unavailable
-  // Default to base — fast on WebGPU and gives word-level timing for line grouping.
-  // large-v3-turbo is the most accurate but is VERY slow on the WebGPU EP (688MB
-  // decoder, fp32, CPU-fallback nodes) — offered but not default. Measured: it did
-  // not finish 30s of audio in 4 min on an RX 7600.
-  const [asrModel, setAsrModel] = useState('onnx-community/whisper-base_timestamped');
+  // Default to large-v3-turbo — most accurate AND fast via q4f16 on WebGPU
+  // (~13× realtime). The earlier slowness was a dtype bug: WebGPU defaulted to the
+  // 2.5GB fp32 ONNX; q4f16 fixes it. Smaller models stay available for low-VRAM.
+  const [asrModel, setAsrModel] = useState('onnx-community/whisper-large-v3-turbo_timestamped');
   const [status, setStatus] = useState('idle'); // idle | separating | transcribing | done | error
   const [stemProgress, setStemProgress] = useState({}); // per-stem 0..1 (ft ensemble)
   // Demucs separation model — default to the fast single htdemucs.
@@ -367,18 +368,19 @@ export default function WebGpuCreatorPanel() {
       // --- Whisper transcription of the vocals stem (in-browser) ---
       setStatus('transcribing');
       const want = asrModel;
-      // Device naming in transformers.js: 'webgpu' = GPU, 'cpu' = the WASM/CPU
-      // backend ('wasm' is rejected). With the Node-globals fix above, the
-      // timestamped models run on webgpu. Use GPU when available.
-      const device = gpu === 'available' ? 'webgpu' : 'cpu';
-      log(`loading Whisper model · ${want} · ${device} (first run downloads it) …`);
-      // Surface model-download progress (v3-turbo is large) + fail loudly, so a
-      // slow/large download or an OOM doesn't look like a frozen UI.
+      const device = gpu === 'available' ? 'webgpu' : 'wasm';
+      // CRITICAL dtype: transformers.js DEFAULTS WebGPU to fp32, which loads the
+      // huge fp32 ONNX (v3-turbo's decoder is 2.5GB) → unusably slow / OOM. q4f16
+      // is 4-bit weights + fp16 compute: tiny (v3-turbo ~564MB) and FAST on WebGPU
+      // (measured ~13× realtime vs fp32 not finishing in 4 min). On wasm, q8.
+      const dtype = device === 'webgpu' ? 'q4f16' : 'q8';
+      log(`loading Whisper model · ${want} · ${device}/${dtype} (first run downloads it) …`);
       const seenFiles = new Set();
       let asr;
       try {
         asr = await pipeline('automatic-speech-recognition', want, {
           device,
+          dtype,
           progress_callback: (p) => {
             if (p.status === 'progress' && p.file && p.total) {
               const pct = Math.round((p.loaded / p.total) * 100);
