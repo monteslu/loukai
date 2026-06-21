@@ -134,7 +134,8 @@ async function ensureAsset(key) {
  * Serves cached JS/WASM same-origin; downloads on first miss.
  */
 export function registerWebGpuAssets(app) {
-  app.get('/webgpu-assets/*', async (req, res) => {
+  app.get('/webgpu-assets/*splat', async (req, res) => {
+    // Express 5 (path-to-regexp v8) requires a named splat, not a bare '*'.
     // Strip the prefix; reject traversal.
     const key = decodeURIComponent(req.path.replace(/^\/webgpu-assets\//, ''));
     if (key.includes('..') || !Object.prototype.hasOwnProperty.call(ASSETS, key)) {
@@ -156,7 +157,7 @@ export function registerWebGpuAssets(app) {
   // Model proxy+cache. /webgpu-models/htdemucs.onnx → the demucs ONNX; any other
   // /webgpu-models/<path> → huggingface.co/<path> (transformers.js model trees).
   // Cached to disk on first request; served same-origin thereafter.
-  app.get('/webgpu-models/*', async (req, res) => {
+  app.get('/webgpu-models/*splat', async (req, res) => {
     const rel = decodeURIComponent(req.path.replace(/^\/webgpu-models\//, ''));
     if (!rel || rel.includes('..')) return res.status(400).json({ error: 'bad path' });
 

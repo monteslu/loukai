@@ -17,35 +17,12 @@ import { useEffect, useRef, useState } from 'react';
 // CORS/COEP in the web admin; works offline once the backend has cached them).
 // The backend (webgpuAssets.js) downloads + caches them on first request.
 //
-// Resolve the asset base. In the web admin the server is same-origin (relative
-// path works). In the Electron renderer the page is file://, which has no server
-// — so we MUST use an absolute http URL. Prefer the port → http://localhost:PORT
-// (canonical loopback; getServerUrl returns a LAN IP that may be cross-origin or
-// null before the server is up).
-async function resolveAssetBase() {
-  // Web admin: served over http by Express → relative is same-origin.
-  if (typeof location !== 'undefined' && location.protocol.startsWith('http')) {
-    return '/webgpu-assets';
-  }
-  // Electron renderer (file://): need the absolute local server URL.
-  const api = window.kaiAPI?.webServer;
-  if (api?.getPort) {
-    try {
-      const port = await api.getPort();
-      if (port) return `http://localhost:${port}/webgpu-assets`;
-    } catch {
-      /* fall through */
-    }
-  }
-  if (api?.getUrl) {
-    try {
-      const url = await api.getUrl();
-      if (url) return url.replace(/\/$/, '') + '/webgpu-assets';
-    } catch {
-      /* fall through */
-    }
-  }
-  throw new Error('cannot resolve loukai server URL for WebGPU assets');
+// The renderer (and the web admin) are BOTH served over http by loukai's own
+// server, so assets are same-origin: just use relative paths. (If we ever end up
+// on a file:// origin the fetch will fail loudly, which is the correct signal
+// that the renderer wasn't served over http.)
+function assetBase() {
+  return '/webgpu-assets';
 }
 
 const WHISPER_MODELS = [
@@ -98,7 +75,7 @@ export default function WebGpuCreatorPanel() {
 
   async function loadLibs() {
     if (libs.current.ort) return libs.current;
-    const base = await resolveAssetBase();
+    const base = assetBase();
     log('loading libraries from loukai (same-origin, backend-cached) …');
     // All from /webgpu-assets/* — never a CDN. Self-contained ESM bundles
     // (ort.webgpu.bundle.min.mjs has no sub-imports), so dynamic import works.
@@ -125,10 +102,12 @@ export default function WebGpuCreatorPanel() {
       if (ort.env?.webgpu) ort.env.webgpu.powerPreference = 'high-performance';
       // transformers.js: pull models through loukai too (no HuggingFace from UI).
       if (tf.env) {
-        tf.env.allowLocalModels = true;
         tf.env.allowRemoteModels = true;
-        tf.env.remoteHost = base.replace(/\/webgpu-assets$/, '/webgpu-models');
-        tf.env.remotePathTemplate = '{model}';
+        // transformers.js requests {remoteHost}{model}/resolve/{revision}/{file};
+        // our /webgpu-models/* proxy passes that whole path through to HuggingFace.
+        tf.env.remoteHost = '/webgpu-models/';
+        tf.env.remotePathTemplate = '{model}/resolve/{revision}/';
+        // transformers.js bundles its OWN onnxruntime-web → point its wasm at us too.
         if (tf.env.backends?.onnx?.wasm) tf.env.backends.onnx.wasm.wasmPaths = `${base}/`;
       }
     } catch {
@@ -195,7 +174,7 @@ export default function WebGpuCreatorPanel() {
         onLog: (phase, m) => log(`[${phase}] ${m}`),
       });
       // Demucs ONNX weights via loukai's backend (cached), not the CDN/HF.
-      const modelUrl = `${libs.current.base.replace(/\/webgpu-assets$/, '/webgpu-models')}/htdemucs.onnx`;
+      const modelUrl = '/webgpu-models/htdemucs.onnx';
       log('fetching htdemucs model from loukai (cached) …');
       const modelBuf = await fetch(modelUrl).then((r) => {
         if (!r.ok) throw new Error(`model fetch ${r.status}`);
