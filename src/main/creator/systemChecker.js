@@ -32,12 +32,18 @@ export function getCacheDir() {
 }
 
 /**
- * Get the Python executable path
+ * Get the Python executable path.
+ * Inside a Flatpak, the interpreter is provided as extra-data at /app/creator
+ * (python-build-standalone extracts to /app/creator/python), so prefer that and
+ * avoid a runtime download.
  */
 export function getPythonPath() {
-  const cacheDir = getCacheDir();
   const plat = platform();
-
+  if (process.env.FLATPAK_ID) {
+    const flatpakPy = join('/app', 'creator', 'python', 'bin', 'python3');
+    if (existsSync(flatpakPy)) return flatpakPy;
+  }
+  const cacheDir = getCacheDir();
   if (plat === 'win32') {
     return join(cacheDir, 'python', 'python.exe');
   } else {
