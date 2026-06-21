@@ -52,6 +52,39 @@ const DEMUCS_MODELS = [
   },
 ];
 
+// Encode stereo Float32 channels → a 16-bit PCM WAV Blob (for upload to the
+// backend, which transcodes to AAC + muxes the .stem.mp4).
+function encodeWav(left, right, sampleRate = 44100) {
+  const n = left.length;
+  const buf = new ArrayBuffer(44 + n * 4); // 16-bit stereo
+  const v = new DataView(buf);
+  const ws = (off, s) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i));
+  };
+  ws(0, 'RIFF');
+  v.setUint32(4, 36 + n * 4, true);
+  ws(8, 'WAVE');
+  ws(12, 'fmt ');
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); // PCM
+  v.setUint16(22, 2, true); // stereo
+  v.setUint32(24, sampleRate, true);
+  v.setUint32(28, sampleRate * 4, true); // byte rate
+  v.setUint16(32, 4, true); // block align
+  v.setUint16(34, 16, true); // bits
+  ws(36, 'data');
+  v.setUint32(40, n * 4, true);
+  let off = 44;
+  for (let i = 0; i < n; i++) {
+    const l = Math.max(-1, Math.min(1, left[i]));
+    const r = Math.max(-1, Math.min(1, right[i]));
+    v.setInt16(off, l < 0 ? l * 0x8000 : l * 0x7fff, true);
+    v.setInt16(off + 2, r < 0 ? r * 0x8000 : r * 0x7fff, true);
+    off += 4;
+  }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
 // Group word-level timestamps into lyric lines. Breaks on sentence punctuation,
 // long pauses between words, or a max line length — each line's start/end is taken
 // from its first/last word so line timing is accurate.
@@ -417,12 +450,50 @@ export default function WebGpuCreatorPanel() {
         ? groupWordsIntoLines(words)
         : [{ text: (out.text || '').trim(), start: 0, end: audio.duration }];
       setLyrics(lines);
-      setStatus('done');
       log(
         `transcription done in ${tSec.toFixed(1)}s ` +
           `(${((parseFloat(audioMin) * 60) / tSec).toFixed(2)}× realtime) — ` +
           `${words.length} words → ${lines.length} lyric lines`
       );
+
+      // --- Save as .stem.mp4 (encode 4 stems → POST → backend muxes via ffmpeg) ---
+      setStatus('saving');
+      log('encoding stems + saving .stem.mp4 …');
+      // Title/artist from "Artist - Title.ext" filename (best-effort).
+      const baseName = file.name.replace(/\.[^.]+$/, '');
+      const dash = baseName.match(/^(.+?)\s*-\s*(.+)$/);
+      const artist = dash ? dash[1].trim() : '';
+      const title = dash ? dash[2].trim() : baseName;
+      // Normalize Whisper word objects → {start,end,text} for the kara atom.
+      const wordObjs = words
+        .map((w) => ({
+          text: (w.text || '').trim(),
+          start: w.timestamp?.[0] ?? w.start ?? null,
+          end: w.timestamp?.[1] ?? w.end ?? null,
+        }))
+        .filter((w) => w.text && w.start != null);
+
+      const fd = new FormData();
+      fd.append('title', title);
+      fd.append('artist', artist);
+      fd.append('duration', String(audio.duration));
+      fd.append('lyrics', JSON.stringify({ lines, words: wordObjs }));
+      const sr = audio.sampleRate;
+      // NI Stems needs a MASTER track (the original mix) as track 0 — send the
+      // original decoded audio so it doesn't have to be reconstructed from stems.
+      fd.append('master', encodeWav(audio.left, audio.right, sr), 'master.wav');
+      for (const stem of STEMS) {
+        const s = result[stem];
+        fd.append(stem, encodeWav(s.left, s.right, sr), `${stem}.wav`);
+      }
+      const saveRes = await fetch('/admin/webgpu-creator/save', { method: 'POST', body: fd });
+      if (!saveRes.ok) {
+        const err = await saveRes.json().catch(() => ({}));
+        throw new Error(`save failed (${saveRes.status}): ${err.error || ''}`);
+      }
+      const saved = await saveRes.json();
+      setStatus('done');
+      log(`✅ saved to library: ${saved.fileName}`);
     } catch (e) {
       console.error(e);
       log(`ERROR: ${e.message}`);
@@ -430,7 +501,7 @@ export default function WebGpuCreatorPanel() {
     }
   }
 
-  const busy = status === 'separating' || status === 'transcribing';
+  const busy = status === 'separating' || status === 'transcribing' || status === 'saving';
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -545,6 +616,11 @@ export default function WebGpuCreatorPanel() {
           <div className="text-sm text-gray-600 dark:text-gray-400">
             <span className="inline-block animate-pulse">●</span>{' '}
             {transcribeInfo || 'Transcribing vocals…'}
+          </div>
+        )}
+        {status === 'saving' && (
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            <span className="inline-block animate-pulse">●</span> Encoding stems + saving .stem.mp4…
           </div>
         )}
         {rtf !== null && (

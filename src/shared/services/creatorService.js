@@ -411,12 +411,16 @@ export async function saveWebGpuStems({ stems, metadata, lyrics, songsFolder }) 
   const safeFileName = (artist ? `${artist} - ${title}` : title).replace(/[<>:"/\\|?*]/g, '_');
   const outputPath = join(songsFolder, `${safeFileName}.stem.mp4`);
 
-  // Encode each stem WAV → AAC into a temp dir (buildStemM4a uses `-c copy`).
+  // Encode each WAV → AAC into a temp dir (buildStemM4a uses `-c copy`). NI Stems
+  // order is master, drums, bass, other, vocals — the master (original mix) is
+  // track 0 and is REQUIRED, so include it if provided.
   const tmpDir = join(dirname(stems.vocals), `mux_${Date.now()}`);
   mkdirSync(tmpDir, { recursive: true });
   const aacStems = {};
   try {
-    for (const name of ['drums', 'bass', 'other', 'vocals']) {
+    const names = ['drums', 'bass', 'other', 'vocals'];
+    if (stems.master) names.unshift('master');
+    for (const name of names) {
       const aac = join(tmpDir, `${name}.m4a`);
       await encodeToAAC(stems[name], aac, { bitrate: '256k' });
       aacStems[name] = aac;

@@ -2002,10 +2002,11 @@ class WebServer {
         filename: (_req, file, cb) =>
           cb(null, `${crypto.randomBytes(8).toString('hex')}_${file.fieldname}.wav`),
       }),
-      limits: { fileSize: 200 * 1024 * 1024, files: 4 },
+      limits: { fileSize: 200 * 1024 * 1024, files: 5 },
       fileFilter: (_req, file, cb) =>
-        cb(null, ['drums', 'bass', 'other', 'vocals'].includes(file.fieldname)),
+        cb(null, ['master', 'drums', 'bass', 'other', 'vocals'].includes(file.fieldname)),
     }).fields([
+      { name: 'master', maxCount: 1 },
       { name: 'drums', maxCount: 1 },
       { name: 'bass', maxCount: 1 },
       { name: 'other', maxCount: 1 },
@@ -2015,7 +2016,7 @@ class WebServer {
     this.app.post('/admin/webgpu-creator/save', (req, res) => {
       wsSaveHandler(req, res, async (err) => {
         const cleanup = () => {
-          for (const fld of ['drums', 'bass', 'other', 'vocals']) {
+          for (const fld of ['master', 'drums', 'bass', 'other', 'vocals']) {
             const f = req.files?.[fld]?.[0]?.path;
             if (f) {
               try {
@@ -2029,7 +2030,7 @@ class WebServer {
         try {
           if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
           const stems = {};
-          for (const fld of ['drums', 'bass', 'other', 'vocals']) {
+          for (const fld of ['master', 'drums', 'bass', 'other', 'vocals']) {
             const f = req.files?.[fld]?.[0]?.path;
             if (!f) return res.status(400).json({ error: `missing stem: ${fld}` });
             stems[fld] = f;
