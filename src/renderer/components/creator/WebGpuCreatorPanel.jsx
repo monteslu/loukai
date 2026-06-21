@@ -77,16 +77,48 @@ export default function WebGpuCreatorPanel() {
   // ['webgpu'] makes a real failure throw, so we KNOW. We retry on wasm in run().
   const eps = () => (gpu === 'available' ? ['webgpu'] : ['wasm']);
 
+  // transformers.js keys its environment detection off `typeof process`. In the
+  // Electron renderer (nodeIntegration: true) `process` exists, so it WRONGLY
+  // thinks it's Node.js → tries onnxruntime-node (not bundled) → its
+  // InferenceSession is undefined → 'cannot read create' / 'Unsupported device'.
+  // Fix: hide the Node globals for the duration of the import so it detects a
+  // browser env (verified: enables the webgpu/wasm device branch + real inference).
+  async function importTransformers(url) {
+    const saved = {
+      process: globalThis.process,
+      module: globalThis.module,
+      require: globalThis.require,
+      global: globalThis.global,
+    };
+    try {
+      delete globalThis.process;
+      delete globalThis.module;
+      delete globalThis.require;
+      delete globalThis.global;
+    } catch {
+      /* ignore */
+    }
+    try {
+      return await import(/* @vite-ignore */ url);
+    } finally {
+      globalThis.process = saved.process;
+      globalThis.module = saved.module;
+      globalThis.require = saved.require;
+      globalThis.global = saved.global;
+    }
+  }
+
   async function loadLibs() {
     if (libs.current.ort) return libs.current;
     const base = assetBase();
     log('loading libraries from loukai (same-origin, backend-cached) …');
     // All from /webgpu-assets/* — never a CDN. Self-contained ESM bundles
     // (ort.webgpu.bundle.min.mjs has no sub-imports), so dynamic import works.
+    // transformers.js is imported with Node globals hidden (see importTransformers).
     const [ort, demucs, tf] = await Promise.all([
       import(/* @vite-ignore */ `${base}/ort.webgpu.bundle.min.mjs`),
       import(/* @vite-ignore */ `${base}/demucs/index.js`),
-      import(/* @vite-ignore */ `${base}/transformers.min.js`),
+      importTransformers(`${base}/transformers.min.js`),
     ]);
     try {
       // WASM artifacts also served by us.
@@ -224,11 +256,11 @@ export default function WebGpuCreatorPanel() {
       // --- Whisper transcription of the vocals stem (in-browser) ---
       setStatus('transcribing');
       const want = wordMode ? 'onnx-community/whisper-base_timestamped' : asrModel;
-      // Device naming in transformers.js: 'webgpu' runs on the GPU; 'cpu' is the
-      // WASM/CPU backend (NOT 'wasm' — that's rejected). The whisper_timestamped
-      // model only offers cuda/cpu variants → use 'cpu'. Regular Xenova/whisper-*
-      // support 'webgpu'.
-      const device = wordMode ? 'cpu' : gpu === 'available' ? 'webgpu' : 'cpu';
+      // Device naming in transformers.js: 'webgpu' = GPU, 'cpu' = the WASM/CPU
+      // backend ('wasm' is rejected). With the Node-globals fix above, the
+      // timestamped model runs on webgpu too (the earlier 'cuda/cpu only' was the
+      // Node-misdetection, not a real model limit). Use GPU when available.
+      const device = gpu === 'available' ? 'webgpu' : 'cpu';
       log(`transcribing vocals · ${want} · ${device} …`);
       const asr = await pipeline('automatic-speech-recognition', want, { device });
       const mono = toMono16k(result.vocals.left, result.vocals.right, audio.sampleRate);

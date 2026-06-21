@@ -38,6 +38,11 @@ const ASSETS = {
   // build fetches the ASYNCIFY wasm; transformers.js's OWN bundled ORT fetches the
   // JSEP wasm. We serve BOTH pairs so whichever loads, its wasm is present.
   'ort.webgpu.bundle.min.mjs': `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort.webgpu.bundle.min.mjs`,
+  // transformers.js's OWN bundled ORT dynamically imports ort.bundle.min.mjs
+  // (the generic build, not the webgpu one) relative to transformers.min.js's
+  // location — which is this same dir. Without it, transformers' InferenceSession
+  // is undefined → '.create()' crashes. Serve it here.
+  'ort.bundle.min.mjs': `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort.bundle.min.mjs`,
   'ort-wasm-simd-threaded.asyncify.wasm': `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort-wasm-simd-threaded.asyncify.wasm`,
   'ort-wasm-simd-threaded.asyncify.mjs': `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort-wasm-simd-threaded.asyncify.mjs`,
   'ort-wasm-simd-threaded.jsep.wasm': `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort-wasm-simd-threaded.jsep.wasm`,
