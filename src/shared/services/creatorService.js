@@ -16,17 +16,16 @@ import {
 } from '../../main/creator/systemChecker.js';
 import { installAllComponents } from '../../main/creator/downloadManager.js';
 import { searchLyrics, prepareWhisperContext } from '../../main/creator/lrclibService.js';
-import { getAudioInfo, isVideoFile, encodeToAAC } from '../../main/creator/ffmpegService.js';
+import { getAudioInfo, isVideoFile } from '../../main/creator/ffmpegService.js';
 import {
   runConversion,
   cancelConversion,
   isConversionInProgress,
 } from '../../main/creator/conversionService.js';
 import * as creatorJob from '../../main/creator/creatorJob.js';
-import { repairStemFile, repairStemFiles, buildStemM4a } from '../../main/creator/stemBuilder.js';
-import { basename, join, dirname } from 'path';
-import { mkdirSync, rmSync } from 'fs';
-import { Atoms as M4AAtoms } from 'm4a-stems';
+import { repairStemFile, repairStemFiles } from '../../main/creator/stemBuilder.js';
+import { basename, join } from 'path';
+import { Atoms as M4AAtoms, StemMp4Writer } from 'stem-mp4';
 
 // Track installation state
 let installationInProgress = false;
@@ -393,13 +392,14 @@ export async function repairStems(filePaths) {
 }
 
 /**
- * Save a WebGPU-Creator result (4 stem WAVs separated + transcribed in-browser)
- * as a NI-Stems .stem.mp4 in the songs library. Encodes each WAV→AAC, then muxes
- * with the kara (lyrics) atom via buildStemM4a — same output format as the native
- * creator, just fed from the browser instead of Python.
+ * Save a WebGPU-Creator result (separated + transcribed in-browser) as a NI-Stems
+ * .stem.mp4 in the songs library, using the stem-mp4 lib's StemMp4Writer — it takes
+ * WAV files directly and does AAC encode + 5-track mux + kara atom internally
+ * (master + 4 stems). No Python; same format as the native creator.
  *
  * @param {Object} opts
- *   stems: { drums, bass, other, vocals } → WAV file paths
+ *   stems: { master, drums, bass, other, vocals } → WAV file paths
+ *     (master = the RAW original mix, NOT a sum of stems)
  *   metadata: { title, artist, duration }
  *   lyrics: { lines:[{start,end,text}], words:[{start,end,text}] }
  *   songsFolder: output directory (the library)
@@ -407,39 +407,26 @@ export async function repairStems(filePaths) {
  */
 export async function saveWebGpuStems({ stems, metadata, lyrics, songsFolder }) {
   if (!songsFolder) throw new Error('songs folder is not set');
-  const { title = 'Untitled', artist = 'Unknown', duration = 0 } = metadata || {};
+  const { title = 'Untitled', artist = 'Unknown' } = metadata || {};
   const safeFileName = (artist ? `${artist} - ${title}` : title).replace(/[<>:"/\\|?*]/g, '_');
   const outputPath = join(songsFolder, `${safeFileName}.stem.mp4`);
 
-  // Encode each WAV → AAC into a temp dir (buildStemM4a uses `-c copy`). NI Stems
-  // order is master, drums, bass, other, vocals — the master (original mix) is
-  // track 0 and is REQUIRED, so include it if provided.
-  const tmpDir = join(dirname(stems.vocals), `mux_${Date.now()}`);
-  mkdirSync(tmpDir, { recursive: true });
-  const aacStems = {};
-  try {
-    const names = ['drums', 'bass', 'other', 'vocals'];
-    if (stems.master) names.unshift('master');
-    for (const name of names) {
-      const aac = join(tmpDir, `${name}.m4a`);
-      await encodeToAAC(stems[name], aac, { bitrate: '256k' });
-      aacStems[name] = aac;
-    }
-    await buildStemM4a({
-      outputPath,
-      stems: aacStems,
-      metadata: { title, artist, duration },
-      lyrics,
-      tags: ['webgpu'],
-    });
-    return { outputPath, fileName: basename(outputPath) };
-  } finally {
-    try {
-      rmSync(tmpDir, { recursive: true, force: true });
-    } catch {
-      /* best-effort temp cleanup */
-    }
-  }
+  // stem-mp4 StemMp4Writer.write encodes the WAVs to AAC, muxes the 5-track NI-Stems
+  // container (master + 4 stems), and writes the kara (lyrics) atom — all in one call.
+  await StemMp4Writer.write({
+    outputPath,
+    stemsWavFiles: {
+      drums: stems.drums,
+      bass: stems.bass,
+      other: stems.other,
+      vocals: stems.vocals,
+    },
+    mixdownWav: stems.master, // the raw original mix = NI-Stems master track
+    metadata: { title, artist },
+    lyricsData: lyrics && lyrics.lines ? { lines: lyrics.lines } : undefined,
+    codec: 'aac',
+  });
+  return { outputPath, fileName: basename(outputPath) };
 }
 
 export default {

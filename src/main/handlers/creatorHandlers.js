@@ -10,6 +10,10 @@ import { ipcMain, dialog } from 'electron';
 import { CREATOR_CHANNELS } from '../../shared/ipcContracts.js';
 import * as creatorService from '../../shared/services/creatorService.js';
 import * as llmService from '../creator/llmService.js';
+import { getCacheDir } from '../creator/systemChecker.js';
+import { mkdirSync, writeFileSync, rmSync } from 'fs';
+import { join } from 'path';
+import crypto from 'crypto';
 
 /**
  * Register all creator-related IPC handlers
@@ -181,6 +185,39 @@ export function registerCreatorHandlers(mainApp) {
   ipcMain.handle(CREATOR_CHANNELS.TEST_LLM_CONNECTION, (_event, settings) => {
     const resolved = llmService.resolveRuntimeSettings(mainApp.settings, settings);
     return llmService.testLLMConnection(resolved);
+  });
+
+  // Save a WebGPU-Creator result (separated + transcribed in-browser) as a
+  // .stem.mp4. The renderer (player window) uses THIS IPC path — it has no admin
+  // HTTP session (the web admin uses POST /admin/webgpu-creator/save instead).
+  // stems = { master, drums, bass, other, vocals } as WAV Uint8Array/ArrayBuffer.
+  ipcMain.handle('creator:saveWebGpuStems', async (_event, { stems, metadata, lyrics }) => {
+    const tmpDir = join(getCacheDir(), 'webgpu-creator', crypto.randomBytes(8).toString('hex'));
+    mkdirSync(tmpDir, { recursive: true });
+    const paths = {};
+    try {
+      for (const name of ['master', 'drums', 'bass', 'other', 'vocals']) {
+        if (!stems?.[name]) throw new Error(`missing stem: ${name}`);
+        const p = join(tmpDir, `${name}.wav`);
+        writeFileSync(p, Buffer.from(stems[name]));
+        paths[name] = p;
+      }
+      const result = await creatorService.saveWebGpuStems({
+        stems: paths,
+        metadata,
+        lyrics,
+        songsFolder: mainApp.settings?.getSongsFolder?.(),
+      });
+      return { success: true, ...result };
+    } catch (e) {
+      return { success: false, error: e.message };
+    } finally {
+      try {
+        rmSync(tmpDir, { recursive: true, force: true });
+      } catch {
+        /* best-effort */
+      }
+    }
   });
 
   log('✅ Creator handlers registered');

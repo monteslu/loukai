@@ -475,25 +475,50 @@ export default function WebGpuCreatorPanel() {
         }))
         .filter((w) => w.text && w.start != null);
 
-      const fd = new FormData();
-      fd.append('title', title);
-      fd.append('artist', artist);
-      fd.append('duration', String(audio.duration));
-      fd.append('lyrics', JSON.stringify({ lines, words: wordObjs }));
       const sr = audio.sampleRate;
-      // NI Stems needs a MASTER track (the original mix) as track 0 — send the
-      // original decoded audio so it doesn't have to be reconstructed from stems.
-      fd.append('master', encodeWav(audio.left, audio.right, sr), 'master.wav');
-      for (const stem of STEMS) {
-        const s = result[stem];
-        fd.append(stem, encodeWav(s.left, s.right, sr), `${stem}.wav`);
+      const lyricsPayload = { lines, words: wordObjs };
+      // master = the RAW original mix (NI-Stems track 0), not a sum of stems.
+      const wavBlobs = {
+        master: encodeWav(audio.left, audio.right, sr),
+        drums: encodeWav(result.drums.left, result.drums.right, sr),
+        bass: encodeWav(result.bass.left, result.bass.right, sr),
+        other: encodeWav(result.other.left, result.other.right, sr),
+        vocals: encodeWav(result.vocals.left, result.vocals.right, sr),
+      };
+
+      let saved;
+      if (window.kaiAPI?.creator?.saveWebGpuStems) {
+        // Electron player: IPC (no admin HTTP session here). Send WAVs as bytes.
+        const stems = {};
+        for (const k of Object.keys(wavBlobs)) {
+          stems[k] = new Uint8Array(await wavBlobs[k].arrayBuffer());
+        }
+        const r = await window.kaiAPI.creator.saveWebGpuStems({
+          stems,
+          metadata: { title, artist, duration: audio.duration },
+          lyrics: lyricsPayload,
+        });
+        if (!r?.success) throw new Error(`save failed: ${r?.error || 'unknown'}`);
+        saved = r;
+      } else {
+        // Web admin (browser): authed HTTP. credentials:'include' sends the session.
+        const fd = new FormData();
+        fd.append('title', title);
+        fd.append('artist', artist);
+        fd.append('duration', String(audio.duration));
+        fd.append('lyrics', JSON.stringify(lyricsPayload));
+        for (const [k, blob] of Object.entries(wavBlobs)) fd.append(k, blob, `${k}.wav`);
+        const saveRes = await fetch('/admin/webgpu-creator/save', {
+          method: 'POST',
+          body: fd,
+          credentials: 'include',
+        });
+        if (!saveRes.ok) {
+          const err = await saveRes.json().catch(() => ({}));
+          throw new Error(`save failed (${saveRes.status}): ${err.error || ''}`);
+        }
+        saved = await saveRes.json();
       }
-      const saveRes = await fetch('/admin/webgpu-creator/save', { method: 'POST', body: fd });
-      if (!saveRes.ok) {
-        const err = await saveRes.json().catch(() => ({}));
-        throw new Error(`save failed (${saveRes.status}): ${err.error || ''}`);
-      }
-      const saved = await saveRes.json();
       setStatus('done');
       log(`✅ saved to library: ${saved.fileName}`);
     } catch (e) {

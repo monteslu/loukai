@@ -252,6 +252,7 @@ const api = {
     selectFile: () => ipcRenderer.invoke('creator:selectFile'),
     startConversion: (options) => ipcRenderer.invoke('creator:startConversion', options),
     cancelConversion: () => ipcRenderer.invoke('creator:cancelConversion'),
+    saveWebGpuStems: (payload) => ipcRenderer.invoke('creator:saveWebGpuStems', payload),
 
     // LLM settings
     getLLMSettings: () => ipcRenderer.invoke('creator:getLLMSettings'),
