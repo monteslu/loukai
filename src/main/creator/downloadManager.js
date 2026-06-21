@@ -17,7 +17,13 @@ import http from 'http';
 import { createWriteStream, existsSync, mkdirSync, rmSync, chmodSync } from 'fs';
 import { join, dirname } from 'path';
 import { execSync, spawn } from 'child_process';
-import { getCacheDir, getPythonPath, getPythonEnv } from './systemChecker.js';
+import {
+  getCacheDir,
+  getPythonPath,
+  getPythonEnv,
+  isReadOnlyPython,
+  getPyDepsDir,
+} from './systemChecker.js';
 import yauzl from 'yauzl';
 
 /**
@@ -253,6 +259,14 @@ function pipInstall(packages, onProgress = null) {
     const packageArgs = packages.split(/\s+/).filter((p) => p);
     // Use --progress-bar on to ensure we get progress output
     const args = ['-m', 'pip', 'install', ...packageArgs, '--no-cache-dir', '--progress-bar', 'on'];
+
+    // When the interpreter is read-only (Flatpak /app), install into a writable
+    // target dir (added to PYTHONPATH by getPythonEnv) instead of site-packages.
+    if (isReadOnlyPython()) {
+      const depsDir = getPyDepsDir();
+      mkdirSync(depsDir, { recursive: true });
+      args.push('--target', depsDir, '--upgrade');
+    }
 
     const proc = spawn(pythonPath, args, {
       env: {

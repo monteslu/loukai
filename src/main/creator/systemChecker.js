@@ -52,6 +52,23 @@ export function getPythonPath() {
 }
 
 /**
+ * Whether the Python interpreter is the read-only Flatpak-bundled one at /app.
+ * When true, pip cannot install into the interpreter's own site-packages, so
+ * deps go to a writable --target dir (getPyDepsDir) added to PYTHONPATH.
+ */
+export function isReadOnlyPython() {
+  return Boolean(process.env.FLATPAK_ID) && getPythonPath().startsWith('/app/');
+}
+
+/**
+ * Writable directory for pip-installed Creator deps when the interpreter itself
+ * is read-only (Flatpak). Lives under the persistent cache dir.
+ */
+export function getPyDepsDir() {
+  return join(getCacheDir(), 'pydeps');
+}
+
+/**
  * Detect whether AMD ROCm needs HSA_OVERRIDE_GFX_VERSION on this machine.
  * RDNA2 (gfx1030..gfx1039, e.g. Steam Deck gfx1033) is not an official ROCm
  * target and must be spoofed to gfx1030 via HSA_OVERRIDE_GFX_VERSION=10.3.0.
@@ -101,6 +118,13 @@ export function getPythonEnv() {
     HF_HOME: join(cacheDir, 'models', 'huggingface'),
     XDG_CACHE_HOME: cacheDir, // For whisper model cache
   };
+
+  // When the interpreter is read-only (Flatpak /app), Creator deps are pip
+  // --target'd into a writable dir; make Python import them.
+  if (isReadOnlyPython()) {
+    const depsDir = getPyDepsDir();
+    env.PYTHONPATH = env.PYTHONPATH ? `${depsDir}${pathSep}${env.PYTHONPATH}` : depsDir;
+  }
 
   // AMD RDNA2 (e.g. Steam Deck) needs this so ROCm accepts the GPU.
   // Respect an explicit user-set value if present.
