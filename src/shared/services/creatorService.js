@@ -405,9 +405,9 @@ export async function repairStems(filePaths) {
  *   songsFolder: output directory (the library)
  * @returns {Promise<{outputPath, fileName}>}
  */
-export async function saveWebGpuStems({ stems, metadata, lyrics, songsFolder }) {
+export async function saveWebGpuStems({ stems, metadata, lyrics, pitch, songsFolder }) {
   if (!songsFolder) throw new Error('songs folder is not set');
-  const { title = 'Untitled', artist = 'Unknown' } = metadata || {};
+  const { title = 'Untitled', artist = 'Unknown', key } = metadata || {};
   const safeFileName = (artist ? `${artist} - ${title}` : title).replace(/[<>:"/\\|?*]/g, '_');
   const outputPath = join(songsFolder, `${safeFileName}.stem.mp4`);
 
@@ -426,6 +426,23 @@ export async function saveWebGpuStems({ stems, metadata, lyrics, songsFolder }) 
     lyricsData: lyrics && lyrics.lines ? { lines: lyrics.lines } : undefined,
     codec: 'aac',
   });
+
+  // CREPE-derived musical key + pitch track (parity with the native creator). Both
+  // best-effort — a failure here must not lose the otherwise-good file.
+  if (key) {
+    try {
+      await M4AAtoms.addMusicalKey(outputPath, key);
+    } catch (e) {
+      console.warn('addMusicalKey failed:', e.message);
+    }
+  }
+  if (pitch && pitch.data?.length) {
+    try {
+      await M4AAtoms.writeVpchAtom(outputPath, pitch);
+    } catch (e) {
+      console.warn('writeVpchAtom failed:', e.message);
+    }
+  }
   return { outputPath, fileName: basename(outputPath) };
 }
 

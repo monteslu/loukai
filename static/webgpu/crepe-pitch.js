@@ -86,3 +86,59 @@ export async function detectPitch(ort, session, mono, opts = {}) {
   }
   return { times, frequency, confidence, hopSec: HOP / SR };
 }
+
+// Krumhansl-Schmuckler key profiles.
+const KS_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const KS_MINOR = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+function corr(a, b) {
+  const n = a.length;
+  let ma = 0;
+  let mb = 0;
+  for (let i = 0; i < n; i++) {
+    ma += a[i];
+    mb += b[i];
+  }
+  ma /= n;
+  mb /= n;
+  let num = 0;
+  let da = 0;
+  let db = 0;
+  for (let i = 0; i < n; i++) {
+    const x = a[i] - ma;
+    const y = b[i] - mb;
+    num += x * y;
+    da += x * x;
+    db += y * y;
+  }
+  return num / (Math.sqrt(da * db) || 1);
+}
+
+/**
+ * Estimate musical key from a pitch result (the parity feature the native creator
+ * actually uses CREPE for). Builds a confidence-weighted pitch-class histogram and
+ * correlates against Krumhansl-Schmuckler major/minor profiles.
+ * @returns { key: 'Am'|'C'|…, mode: 'major'|'minor', confidence }
+ */
+export function detectKey({ frequency, confidence }, confThreshold = 0.5) {
+  const chroma = new Float32Array(12);
+  for (let i = 0; i < frequency.length; i++) {
+    const f = frequency[i];
+    const c = confidence[i];
+    if (!(f > 0) || c < confThreshold) continue;
+    const midi = 69 + 12 * Math.log2(f / 440);
+    const pc = ((Math.round(midi) % 12) + 12) % 12;
+    chroma[pc] += c;
+  }
+  let best = { score: -Infinity, key: 'C', mode: 'major' };
+  for (let root = 0; root < 12; root++) {
+    const rotM = KS_MAJOR.map((_, i) => KS_MAJOR[(i - root + 12) % 12]);
+    const rotm = KS_MINOR.map((_, i) => KS_MINOR[(i - root + 12) % 12]);
+    const sM = corr(chroma, rotM);
+    const sm = corr(chroma, rotm);
+    if (sM > best.score) best = { score: sM, key: NOTE_NAMES[root], mode: 'major' };
+    if (sm > best.score) best = { score: sm, key: `${NOTE_NAMES[root]}m`, mode: 'minor' };
+  }
+  return { key: best.key, mode: best.mode, confidence: best.score };
+}

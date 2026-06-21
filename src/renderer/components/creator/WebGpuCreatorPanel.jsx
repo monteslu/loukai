@@ -228,14 +228,15 @@ export default function WebGpuCreatorPanel() {
     // All from /webgpu-assets/* — never a CDN. Self-contained ESM bundles
     // (ort.webgpu.bundle.min.mjs has no sub-imports), so dynamic import works.
     // transformers.js is imported with Node globals hidden (see importTransformers).
-    let ort, demucs, tf, ftEnsemble, vadMod;
+    let ort, demucs, tf, ftEnsemble, vadMod, crepeMod;
     try {
-      [ort, demucs, tf, ftEnsemble, vadMod] = await Promise.all([
+      [ort, demucs, tf, ftEnsemble, vadMod, crepeMod] = await Promise.all([
         import(/* @vite-ignore */ `${base}/ort.webgpu.bundle.min.mjs`),
         import(/* @vite-ignore */ `${base}/demucs/index.js`),
         importTransformers(`${base}/transformers.min.js`),
         import(/* @vite-ignore */ `${base}/ft-ensemble.js`),
         import(/* @vite-ignore */ `${base}/vad-gate.js`),
+        import(/* @vite-ignore */ `${base}/crepe-pitch.js`),
       ]);
     } catch (e) {
       throw new Error(
@@ -290,6 +291,7 @@ export default function WebGpuCreatorPanel() {
       tf, // full transformers.js module (for WhisperTextStreamer)
       ftEnsemble,
       vadMod,
+      crepeMod,
     };
     return libs.current;
   }
@@ -439,7 +441,8 @@ export default function WebGpuCreatorPanel() {
     setStemProgress({});
     setRtf(null);
     try {
-      const { ort, demucs, ftEnsemble, pipeline, tf, vadMod, DemucsProcessor } = await loadLibs();
+      const { ort, demucs, ftEnsemble, pipeline, tf, vadMod, crepeMod, DemucsProcessor } =
+        await loadLibs();
       const { STEMS, createEnsembleSessions, runEnsemble } = ftEnsemble;
 
       log(`decoding ${file.name} …`);
@@ -682,6 +685,43 @@ export default function WebGpuCreatorPanel() {
         }
       }
 
+      // --- CREPE pitch → musical key (parity: native uses CREPE for key detection;
+      // pitch track stored best-effort). Reuses the 16k mono vocals. Best-effort. ---
+      let detectedKey = null;
+      let pitchData = null;
+      try {
+        const { detectPitch, detectKey } = crepeMod;
+        if (!libs.current.crepeSession) {
+          log('loading CREPE (pitch) …');
+          const cbuf = await fetch('/webgpu-models/crepe_tiny.onnx').then((r) =>
+            r.ok ? r.arrayBuffer() : Promise.reject(new Error(`crepe ${r.status}`))
+          );
+          libs.current.crepeSession = await ort.InferenceSession.create(new Uint8Array(cbuf), {
+            executionProviders: gpu === 'available' ? ['webgpu'] : ['wasm'],
+            graphOptimizationLevel: 'all',
+          });
+        }
+        setStatus('pitch');
+        log('detecting pitch + key (CREPE) …');
+        const pitch = await detectPitch(ort, libs.current.crepeSession, mono, {
+          onProgress: (f) => setTranscribeInfo(`pitch ${Math.round(f * 100)}%`),
+        });
+        setTranscribeInfo('');
+        const k = detectKey(pitch);
+        detectedKey = k.key;
+        pitchData = {
+          sampleRate: Math.round(1 / pitch.hopSec),
+          data: Array.from(pitch.frequency, (f, i) => ({
+            time: pitch.times[i],
+            frequency: f,
+            confidence: pitch.confidence[i],
+          })),
+        };
+        log(`detected key: ${detectedKey} (confidence ${k.confidence.toFixed(2)})`);
+      } catch (e) {
+        log(`pitch/key detection skipped (${e.message})`);
+      }
+
       // --- Save as .stem.mp4 (encode 4 stems → POST → backend muxes via ffmpeg) ---
       setStatus('saving');
       log('encoding stems + saving .stem.mp4 …');
@@ -719,8 +759,9 @@ export default function WebGpuCreatorPanel() {
         }
         const r = await window.kaiAPI.creator.saveWebGpuStems({
           stems,
-          metadata: { title, artist, duration: audio.duration },
+          metadata: { title, artist, duration: audio.duration, key: detectedKey },
           lyrics: lyricsPayload,
+          pitch: pitchData,
         });
         if (!r?.success) throw new Error(`save failed: ${r?.error || 'unknown'}`);
         saved = r;
@@ -731,6 +772,8 @@ export default function WebGpuCreatorPanel() {
         fd.append('artist', artist);
         fd.append('duration', String(audio.duration));
         fd.append('lyrics', JSON.stringify(lyricsPayload));
+        if (detectedKey) fd.append('key', detectedKey);
+        if (pitchData) fd.append('pitch', JSON.stringify(pitchData));
         for (const [k, blob] of Object.entries(wavBlobs)) fd.append(k, blob, `${k}.wav`);
         const saveRes = await fetch('/admin/webgpu-creator/save', {
           method: 'POST',
@@ -756,6 +799,7 @@ export default function WebGpuCreatorPanel() {
     status === 'separating' ||
     status === 'transcribing' ||
     status === 'correcting' ||
+    status === 'pitch' ||
     status === 'saving';
 
   return (
@@ -1019,6 +1063,11 @@ export default function WebGpuCreatorPanel() {
         {status === 'correcting' && (
           <div className="text-sm text-gray-600 dark:text-gray-400">
             <span className="inline-block animate-pulse">●</span> Correcting lyrics with LLM…
+          </div>
+        )}
+        {status === 'pitch' && (
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            <span className="inline-block animate-pulse">●</span> Detecting pitch + key (CREPE)…
           </div>
         )}
         {status === 'saving' && (

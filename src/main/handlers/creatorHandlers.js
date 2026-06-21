@@ -191,7 +191,7 @@ export function registerCreatorHandlers(mainApp) {
   // .stem.mp4. The renderer (player window) uses THIS IPC path — it has no admin
   // HTTP session (the web admin uses POST /admin/webgpu-creator/save instead).
   // stems = { master, drums, bass, other, vocals } as WAV Uint8Array/ArrayBuffer.
-  ipcMain.handle('creator:saveWebGpuStems', async (_event, { stems, metadata, lyrics }) => {
+  ipcMain.handle('creator:saveWebGpuStems', async (_event, { stems, metadata, lyrics, pitch }) => {
     const tmpDir = join(getCacheDir(), 'webgpu-creator', crypto.randomBytes(8).toString('hex'));
     mkdirSync(tmpDir, { recursive: true });
     const paths = {};
@@ -206,6 +206,7 @@ export function registerCreatorHandlers(mainApp) {
         stems: paths,
         metadata,
         lyrics,
+        pitch,
         songsFolder: mainApp.settings?.getSongsFolder?.(),
       });
       return { success: true, ...result };

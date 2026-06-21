@@ -2070,16 +2070,24 @@ class WebServer {
           const title = (req.body.title || 'Untitled').toString().slice(0, 200);
           const artist = (req.body.artist || 'Unknown').toString().slice(0, 200);
           const duration = parseFloat(req.body.duration) || 0;
+          const key = req.body.key ? req.body.key.toString().slice(0, 16) : undefined;
           let lyrics = {};
           try {
             lyrics = req.body.lyrics ? JSON.parse(req.body.lyrics) : {};
           } catch {
             /* ignore malformed lyrics */
           }
+          let pitch;
+          try {
+            pitch = req.body.pitch ? JSON.parse(req.body.pitch) : undefined;
+          } catch {
+            /* ignore malformed pitch */
+          }
           const result = await creatorService.saveWebGpuStems({
             stems,
-            metadata: { title, artist, duration },
+            metadata: { title, artist, duration, key },
             lyrics,
+            pitch,
             songsFolder: this.mainApp.settings?.getSongsFolder?.(),
           });
           cleanup();
