@@ -93,6 +93,7 @@ export default function WebGpuCreatorPanel() {
   const [stemProgress, setStemProgress] = useState({}); // per-stem 0..1 (ft ensemble)
   // Demucs separation model — default to the fast single htdemucs.
   const [demucsModel, setDemucsModel] = useState('htdemucs');
+  const [transcribeInfo, setTranscribeInfo] = useState(''); // live transcription status
   const [logLines, setLogLines] = useState([]);
   const [lyrics, setLyrics] = useState([]);
   const [rtf, setRtf] = useState(null);
@@ -358,14 +359,36 @@ export default function WebGpuCreatorPanel() {
             `If it's large-v3-turbo, your GPU may be out of memory — try a smaller model.`
         );
       }
-      log(`transcribing vocals · ${device} …`);
       const mono = toMono16k(result.vocals.left, result.vocals.right, audio.sampleRate);
-      // Always get WORD-level timestamps, then group into lyric lines ourselves.
-      const out = await asr(mono, {
-        chunk_length_s: 30,
-        stride_length_s: 5,
-        return_timestamps: 'word',
-      });
+      const audioMin = (mono.length / 16000 / 60).toFixed(1);
+      log(`transcribing ${audioMin} min of vocals on ${device} …`);
+      // Feedback so it doesn't look frozen (transcription is one long call). Whisper
+      // processes in 30s chunks; report each chunk + a periodic heartbeat with elapsed
+      // time and running word count, like the native creator's step updates.
+      const tStart = performance.now();
+      let chunkN = 0;
+      const totalChunks = Math.max(1, Math.ceil(mono.length / 16000 / 30));
+      const hb = setInterval(() => {
+        const el = ((performance.now() - tStart) / 1000).toFixed(0);
+        setTranscribeInfo(`transcribing… ${el}s elapsed`);
+      }, 1000);
+      let out;
+      try {
+        out = await asr(mono, {
+          chunk_length_s: 30,
+          stride_length_s: 5,
+          return_timestamps: 'word',
+          chunk_callback: () => {
+            chunkN += 1;
+            const el = ((performance.now() - tStart) / 1000).toFixed(0);
+            log(`  …chunk ${chunkN}/${totalChunks} (${el}s)`);
+            setTranscribeInfo(`transcribing chunk ${chunkN}/${totalChunks} · ${el}s`);
+          },
+        });
+      } finally {
+        clearInterval(hb);
+        setTranscribeInfo('');
+      }
 
       const words = out.chunks || [];
       const lines = words.length
@@ -493,7 +516,10 @@ export default function WebGpuCreatorPanel() {
           </div>
         )}
         {status === 'transcribing' && (
-          <div className="text-sm text-gray-600 dark:text-gray-400">Transcribing vocals…</div>
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            <span className="inline-block animate-pulse">●</span>{' '}
+            {transcribeInfo || 'Transcribing vocals…'}
+          </div>
         )}
         {rtf !== null && (
           <div className="text-xs text-gray-500 dark:text-gray-400">
