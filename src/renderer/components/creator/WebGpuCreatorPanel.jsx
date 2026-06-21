@@ -224,9 +224,11 @@ export default function WebGpuCreatorPanel() {
       // --- Whisper transcription of the vocals stem (in-browser) ---
       setStatus('transcribing');
       const want = wordMode ? 'onnx-community/whisper-base_timestamped' : asrModel;
-      // The whisper_timestamped model has no WebGPU ONNX variant (only cuda/cpu),
-      // so it must run on wasm. Regular Xenova/whisper-* models support webgpu.
-      const device = wordMode ? 'wasm' : gpu === 'available' ? 'webgpu' : 'wasm';
+      // Device naming in transformers.js: 'webgpu' runs on the GPU; 'cpu' is the
+      // WASM/CPU backend (NOT 'wasm' — that's rejected). The whisper_timestamped
+      // model only offers cuda/cpu variants → use 'cpu'. Regular Xenova/whisper-*
+      // support 'webgpu'.
+      const device = wordMode ? 'cpu' : gpu === 'available' ? 'webgpu' : 'cpu';
       log(`transcribing vocals · ${want} · ${device} …`);
       const asr = await pipeline('automatic-speech-recognition', want, { device });
       const mono = toMono16k(result.vocals.left, result.vocals.right, audio.sampleRate);
