@@ -21,14 +21,20 @@ const WINDOW = 512; // Silero v5 frame size @16k (32ms)
  * @param ort onnxruntime-web module
  * @param session a loaded Silero VAD InferenceSession
  * @param mono Float32Array @16k
- * @param opts { threshold=0.5, minSpeechMs=250, minSilenceMs=500, padMs=150 }
+ * Defaults are tuned for SINGING, not speech: Silero is a speech VAD, and singing
+ * (sustained vowels, breathy/quiet passages, melisma, held notes) readily scores
+ * below a speech threshold — so we use a LOWER threshold, MORE padding around each
+ * region, and merge across breaths, to avoid clipping sung phrases. The goal is to
+ * cut only the clearly-instrumental sections (where Whisper hallucinates), erring
+ * toward keeping audio rather than dropping it.
+ * @param opts { threshold=0.35, minSpeechMs=150, minSilenceMs=700, padMs=300 }
  * @returns Array<{start, end}> in SECONDS (merged, padded)
  */
 export async function detectSpeechRegions(ort, session, mono, opts = {}) {
-  const threshold = opts.threshold ?? 0.5;
-  const minSpeech = ((opts.minSpeechMs ?? 250) / 1000) * SR;
-  const minSilence = ((opts.minSilenceMs ?? 500) / 1000) * SR;
-  const pad = ((opts.padMs ?? 150) / 1000) * SR;
+  const threshold = opts.threshold ?? 0.35;
+  const minSpeech = ((opts.minSpeechMs ?? 150) / 1000) * SR;
+  const minSilence = ((opts.minSilenceMs ?? 700) / 1000) * SR;
+  const pad = ((opts.padMs ?? 300) / 1000) * SR;
   const onProgress = opts.onProgress;
 
   let state = new ort.Tensor('float32', new Float32Array(2 * 1 * 128), [2, 1, 128]);

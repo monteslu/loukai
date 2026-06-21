@@ -684,7 +684,7 @@ export default function WebGpuCreatorPanel() {
       if (speechRegions && speechRegions.length) {
         const before = words.length;
         const inSpeech = (t) =>
-          t == null || speechRegions.some((r) => t >= r.start - 0.3 && t <= r.end + 0.3);
+          t == null || speechRegions.some((r) => t >= r.start - 0.5 && t <= r.end + 0.5);
         words = words.filter((w) => {
           const ts = w.timestamp || [w.start, w.end];
           const mid = ts[0] != null && ts[1] != null ? (ts[0] + ts[1]) / 2 : ts[0];
