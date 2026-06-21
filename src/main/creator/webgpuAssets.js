@@ -23,9 +23,14 @@ import {
   statSync,
   renameSync,
 } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import https from 'https';
 import { getCacheDir } from './systemChecker.js';
+
+// loukai's bundled static/webgpu dir (ships ft-ensemble.js + ft_cpu_nodes.json,
+// and — once vendored — the libs). Served same-origin under /webgpu-assets.
+const STATIC_WEBGPU = join(dirname(fileURLToPath(import.meta.url)), '../../../static/webgpu');
 
 // Allowlisted upstream sources, keyed by the path we serve them at.
 // Keep versions in lockstep with WebGpuCreatorPanel.jsx.
@@ -144,7 +149,17 @@ export function registerWebGpuAssets(app) {
     // Express 5 (path-to-regexp v8) requires a named splat, not a bare '*'.
     // Strip the prefix; reject traversal.
     const key = decodeURIComponent(req.path.replace(/^\/webgpu-assets\//, ''));
-    if (key.includes('..') || !Object.prototype.hasOwnProperty.call(ASSETS, key)) {
+    if (key.includes('..')) return res.status(400).json({ error: 'bad path' });
+    // Locally-bundled assets in static/webgpu (ft-ensemble.js, ft_cpu_nodes.json,
+    // and any vendored libs) take precedence; otherwise fall to the CDN cache map.
+    const localFile = join(STATIC_WEBGPU, key);
+    if (existsSync(localFile) && statSync(localFile).isFile()) {
+      res.setHeader('Content-Type', mimeFor(key));
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      return createReadStream(localFile).pipe(res);
+    }
+    if (!Object.prototype.hasOwnProperty.call(ASSETS, key)) {
       return res.status(404).json({ error: 'unknown asset' });
     }
     try {
@@ -167,14 +182,16 @@ export function registerWebGpuAssets(app) {
     const rel = decodeURIComponent(req.path.replace(/^\/webgpu-models\//, ''));
     if (!rel || rel.includes('..')) return res.status(400).json({ error: 'bad path' });
 
-    const upstream = rel === 'htdemucs.onnx' ? HTDEMUCS_URL : `${HF_BASE}/${rel}`;
-    // Only allow our HF host (no open proxy).
-    if (!upstream.startsWith('https://huggingface.co/')) {
-      return res.status(403).json({ error: 'forbidden upstream' });
-    }
     const dest = join(modelsDir(), rel);
     try {
+      // Serve a locally-present model directly (e.g. the htdemucs_ft_*.onnx ensemble
+      // placed/bundled into the cache dir) — no upstream needed. Otherwise fall back
+      // to the HF reverse-proxy (htdemucs.onnx alias + transformers.js model trees).
       if (!(existsSync(dest) && statSync(dest).size > 0)) {
+        const upstream = rel === 'htdemucs.onnx' ? HTDEMUCS_URL : `${HF_BASE}/${rel}`;
+        if (!upstream.startsWith('https://huggingface.co/')) {
+          return res.status(404).json({ error: 'model not found locally and no upstream' });
+        }
         await download(upstream, dest);
       }
       res.setHeader('Content-Type', mimeFor(rel));

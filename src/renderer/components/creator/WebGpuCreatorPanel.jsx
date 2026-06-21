@@ -77,7 +77,7 @@ export default function WebGpuCreatorPanel() {
   // model only if the user picks one (e.g. low-VRAM machines).
   const [asrModel, setAsrModel] = useState('onnx-community/whisper-large-v3-turbo_timestamped');
   const [status, setStatus] = useState('idle'); // idle | separating | transcribing | done | error
-  const [sepProgress, setSepProgress] = useState(0);
+  const [stemProgress, setStemProgress] = useState({}); // per-stem 0..1 (ft ensemble)
   const [logLines, setLogLines] = useState([]);
   const [lyrics, setLyrics] = useState([]);
   const [rtf, setRtf] = useState(null);
@@ -109,13 +109,6 @@ export default function WebGpuCreatorPanel() {
   useEffect(() => {
     logEnd.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logLines]);
-
-  const backend = () => (gpu === 'available' ? 'webgpu' : 'wasm');
-  // When the GPU is available, request WebGPU ONLY (no wasm fallback in the list).
-  // ORT-web silently drops to wasm if 'webgpu','wasm' are both listed and webgpu
-  // init fails — which hides whether the GPU was actually used. Forcing
-  // ['webgpu'] makes a real failure throw, so we KNOW. We retry on wasm in run().
-  const eps = () => (gpu === 'available' ? ['webgpu'] : ['wasm']);
 
   // transformers.js keys its environment detection off `typeof process`. In the
   // Electron renderer (nodeIntegration: true) `process` exists, so it WRONGLY
@@ -155,10 +148,11 @@ export default function WebGpuCreatorPanel() {
     // All from /webgpu-assets/* — never a CDN. Self-contained ESM bundles
     // (ort.webgpu.bundle.min.mjs has no sub-imports), so dynamic import works.
     // transformers.js is imported with Node globals hidden (see importTransformers).
-    const [ort, demucs, tf] = await Promise.all([
+    const [ort, demucs, tf, ftEnsemble] = await Promise.all([
       import(/* @vite-ignore */ `${base}/ort.webgpu.bundle.min.mjs`),
       import(/* @vite-ignore */ `${base}/demucs/index.js`),
       importTransformers(`${base}/transformers.min.js`),
+      import(/* @vite-ignore */ `${base}/ft-ensemble.js`),
     ]);
     try {
       // WASM artifacts also served by us.
@@ -200,9 +194,11 @@ export default function WebGpuCreatorPanel() {
     libs.current = {
       ort,
       base,
+      demucs, // full module (prepareModelInput / standaloneMask / standaloneIspec)
       DemucsProcessor: demucs.DemucsProcessor,
       CONSTANTS: demucs.CONSTANTS,
       pipeline: tf.pipeline,
+      ftEnsemble,
     };
     return libs.current;
   }
@@ -241,57 +237,48 @@ export default function WebGpuCreatorPanel() {
     if (!file) return;
     setStatus('separating');
     setLyrics([]);
-    setSepProgress(0);
+    setStemProgress({});
     setRtf(null);
     try {
-      const { ort, DemucsProcessor, pipeline } = await loadLibs();
+      const { ort, demucs, ftEnsemble, pipeline } = await loadLibs();
+      const { STEMS, createEnsembleSessions, runEnsemble } = ftEnsemble;
 
       log(`decoding ${file.name} …`);
       const audio = await decodeAudio(file);
 
-      // Demucs ONNX weights via loukai's backend (cached), not the CDN/HF.
-      log('fetching htdemucs model from loukai (cached) …');
-      const modelBuf = await fetch('/webgpu-models/htdemucs.onnx').then((r) => {
-        if (!r.ok) throw new Error(`model fetch ${r.status}`);
-        return r.arrayBuffer();
+      // --- Demucs stem separation: htdemucs_ft 4-model ENSEMBLE (PyTorch-quality) ---
+      // 4 fine-tuned fp16 specialists on WebGPU; the variance prologue is pinned to
+      // CPU (forceCpuNodeNames) so fp16 doesn't NaN. Models + cpu-node lists from
+      // loukai's backend. Per-stem progress like the native creator.
+      log('loading htdemucs_ft ensemble (4 models) from loukai …');
+      const cpuNodes = await fetch('/webgpu-models/ft_cpu_nodes.json')
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+      setStemProgress({});
+      const sessions = await createEnsembleSessions({
+        ort,
+        modelUrl: (stem) => `/webgpu-models/htdemucs_ft_${stem}_safe16.onnx`,
+        cpuNodes,
+        onLog: (m) => log(m),
       });
-
-      // --- Demucs stem separation (in-browser) ---
-      // Try WebGPU first with NO wasm fallback in the EP list, so a GPU failure
-      // throws here (instead of ORT silently running on CPU and us claiming GPU).
-      // Only if that throws do we fall back to wasm, and we SAY so.
-      let usedBackend = backend();
-      const makeProc = (executionProviders) =>
-        new DemucsProcessor({
-          ort,
-          sessionOptions: { executionProviders },
-          onProgress: ({ progress }) => setSepProgress(progress || 0),
-          onLog: (phase, m) => log(`[${phase}] ${m}`),
-        });
-      let proc;
-      try {
-        log(`separating on ${usedBackend} (verifying EP) …`);
-        proc = makeProc(eps());
-        await proc.loadModel(modelBuf);
-      } catch (e) {
-        if (usedBackend === 'webgpu') {
-          log(`⚠️ WebGPU EP failed (${String(e.message).slice(0, 80)}) — falling back to WASM/CPU`);
-          usedBackend = 'wasm';
-          setSepProgress(0);
-          proc = makeProc(['wasm']);
-          await proc.loadModel(modelBuf);
-        } else {
-          throw e;
-        }
-      }
+      log(`separating on webgpu — htdemucs_ft ensemble (${STEMS.length} stems) …`);
       const t0 = performance.now();
-      const result = await proc.separate(audio.left, audio.right);
+      const { stems, realtime } = await runEnsemble({
+        ort,
+        sessions,
+        proc: demucs,
+        left: audio.left,
+        right: audio.right,
+        onStemProgress: (idx, frac) => setStemProgress((p) => ({ ...p, [STEMS[idx]]: frac })),
+      });
       const sec = (performance.now() - t0) / 1000;
-      setRtf(audio.duration / sec);
+      setRtf(realtime);
       log(
-        `separation done in ${sec.toFixed(1)}s — ${(audio.duration / sec).toFixed(2)}× realtime` +
-          ` [ran on: ${usedBackend.toUpperCase()}]`
+        `separation done in ${sec.toFixed(1)}s — ${realtime.toFixed(2)}× realtime ` +
+          `[htdemucs_ft on WEBGPU]`
       );
+      // Map ensemble output to the shape the rest of the pipeline expects.
+      const result = stems;
 
       // --- Whisper transcription of the vocals stem (in-browser) ---
       setStatus('transcribing');
@@ -392,12 +379,30 @@ export default function WebGpuCreatorPanel() {
 
         {status === 'separating' && (
           <div>
-            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Separating stems…</div>
-            <div className="h-2 rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
-              <div
-                className="h-full bg-blue-600 transition-all"
-                style={{ width: `${(sepProgress * 100).toFixed(1)}%` }}
-              />
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+              Separating stems (htdemucs_ft · 4 models on GPU)…
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {['drums', 'bass', 'other', 'vocals'].map((stem) => {
+                const frac = stemProgress[stem] || 0;
+                const emoji = { drums: '🥁', bass: '🎸', other: '🎹', vocals: '🎤' }[stem];
+                return (
+                  <div key={stem} className="flex items-center gap-2">
+                    <span className="w-20 text-xs text-gray-600 dark:text-gray-400">
+                      {emoji} {stem}
+                    </span>
+                    <div className="flex-1 h-2 rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                      <div
+                        className="h-full bg-blue-600 transition-all"
+                        style={{ width: `${(frac * 100).toFixed(1)}%` }}
+                      />
+                    </div>
+                    <span className="w-9 text-right text-xs text-gray-500">
+                      {Math.round(frac * 100)}%
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -406,7 +411,7 @@ export default function WebGpuCreatorPanel() {
         )}
         {rtf !== null && (
           <div className="text-xs text-gray-500 dark:text-gray-400">
-            separation: {rtf.toFixed(2)}× realtime ({backend()})
+            separation: {rtf.toFixed(2)}× realtime · htdemucs_ft on WebGPU
           </div>
         )}
 
