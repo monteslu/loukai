@@ -140,6 +140,17 @@ export default function WebGpuCreatorPanel() {
   const [referenceLyrics, setReferenceLyrics] = useState('');
   const [lookingUp, setLookingUp] = useState(false);
   const [llmStats, setLlmStats] = useState(null);
+  // LLM settings (powers correction). Loaded from backend on mount; saved/tested
+  // via the same dual-path (IPC in Electron, REST in web admin).
+  const [llmSettings, setLlmSettings] = useState({
+    enabled: true,
+    provider: 'lmstudio',
+    model: '',
+    apiKey: '',
+    baseUrl: 'http://localhost:1234/v1',
+  });
+  const [showLlm, setShowLlm] = useState(false);
+  const [llmTest, setLlmTest] = useState(null);
   const fileRef = useRef(null);
   const libs = useRef({}); // cached dynamic imports
   const logEnd = useRef(null);
@@ -317,6 +328,65 @@ export default function WebGpuCreatorPanel() {
       log(`lyric lookup failed: ${e.message}`);
     } finally {
       setLookingUp(false);
+    }
+  }
+
+  // Load LLM settings on mount (IPC or REST GET).
+  useEffect(() => {
+    (async () => {
+      try {
+        const api = window.kaiAPI?.creator;
+        let s;
+        if (api?.getLLMSettings) s = await api.getLLMSettings();
+        else {
+          const r = await fetch('/admin/creator/llm-settings', { credentials: 'include' });
+          if (r.ok) s = await r.json();
+        }
+        if (s) setLlmSettings((prev) => ({ ...prev, ...s }));
+      } catch {
+        /* keep defaults */
+      }
+    })();
+  }, []);
+
+  async function saveLlmSettings() {
+    try {
+      const api = window.kaiAPI?.creator;
+      if (api?.saveLLMSettings) await api.saveLLMSettings(llmSettings);
+      else {
+        await fetch('/admin/creator/llm-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(llmSettings),
+          credentials: 'include',
+        });
+      }
+      log('LLM settings saved');
+    } catch (e) {
+      log(`failed to save LLM settings: ${e.message}`);
+    }
+  }
+
+  async function testLlm() {
+    setLlmTest({ testing: true });
+    try {
+      const api = window.kaiAPI?.creator;
+      let r;
+      if (api?.testLLMConnection) r = await api.testLLMConnection(llmSettings);
+      else {
+        const res = await fetch('/admin/creator/llm-test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(llmSettings),
+          credentials: 'include',
+        });
+        r = await res.json();
+      }
+      setLlmTest(r);
+      log(r?.success ? '✓ LLM connection OK' : `✗ LLM test failed: ${r?.error || ''}`);
+    } catch (e) {
+      setLlmTest({ success: false, error: e.message });
+      log(`LLM test failed: ${e.message}`);
     }
   }
 
@@ -739,6 +809,98 @@ export default function WebGpuCreatorPanel() {
               ))}
             </select>
           </label>
+
+          {/* LLM settings (powers lyric correction). Collapsible — only needed to
+              configure the provider/key once. */}
+          <div className="text-sm">
+            <button
+              type="button"
+              onClick={() => setShowLlm((v) => !v)}
+              className="text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              {showLlm ? '▾' : '▸'} LLM correction settings
+            </button>
+            {showLlm && (
+              <div className="mt-2 flex flex-col gap-2 rounded border border-gray-200 dark:border-gray-700 p-3">
+                <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={llmSettings.enabled}
+                    onChange={(e) => setLlmSettings((p) => ({ ...p, enabled: e.target.checked }))}
+                  />
+                  Enable LLM correction (uses reference lyrics)
+                </label>
+                <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">
+                  Provider
+                  <select
+                    value={llmSettings.provider}
+                    onChange={(e) => setLlmSettings((p) => ({ ...p, provider: e.target.value }))}
+                    className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1"
+                  >
+                    <option value="lmstudio">Local LLM Server (LM Studio / Ollama)</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="google">Google Gemini</option>
+                  </select>
+                </label>
+                <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">
+                  Base URL (local server)
+                  <input
+                    type="text"
+                    value={llmSettings.baseUrl}
+                    onChange={(e) => setLlmSettings((p) => ({ ...p, baseUrl: e.target.value }))}
+                    className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 font-mono"
+                  />
+                </label>
+                <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">
+                  Model
+                  <input
+                    type="text"
+                    value={llmSettings.model}
+                    onChange={(e) => setLlmSettings((p) => ({ ...p, model: e.target.value }))}
+                    placeholder="e.g. gpt-4o-mini, claude-…, or local model name"
+                    className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 font-mono"
+                  />
+                </label>
+                {llmSettings.provider !== 'lmstudio' && (
+                  <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">
+                    API key
+                    <input
+                      type="password"
+                      value={llmSettings.apiKey}
+                      onChange={(e) => setLlmSettings((p) => ({ ...p, apiKey: e.target.value }))}
+                      className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 font-mono"
+                    />
+                  </label>
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={saveLlmSettings}
+                    className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-xs hover:bg-gray-300 dark:hover:bg-gray-600"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={testLlm}
+                    disabled={llmTest?.testing}
+                    className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-xs hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
+                  >
+                    {llmTest?.testing ? 'Testing…' : 'Test connection'}
+                  </button>
+                  {llmTest && !llmTest.testing && (
+                    <span
+                      className={`text-xs ${llmTest.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}
+                    >
+                      {llmTest.success ? '✓ OK' : `✗ ${llmTest.error || 'failed'}`}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={run}
             disabled={busy}
