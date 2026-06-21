@@ -220,5 +220,21 @@ export function registerCreatorHandlers(mainApp) {
     }
   });
 
+  // LLM lyric correction (used by the WebGPU creator after transcription). Sends
+  // the Whisper output + reference lyrics to the configured LLM to fix mis-heard
+  // words. Resolves the stored (real) LLM settings server-side.
+  ipcMain.handle('creator:correctLyrics', async (_event, { whisperOutput, referenceLyrics }) => {
+    try {
+      const settings = llmService.resolveRuntimeSettings(
+        mainApp.settings,
+        llmService.getLLMSettingsRaw(mainApp.settings)
+      );
+      const result = await llmService.correctLyrics(whisperOutput, referenceLyrics, settings);
+      return { success: true, ...result };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
   log('✅ Creator handlers registered');
 }

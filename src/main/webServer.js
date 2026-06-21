@@ -25,6 +25,7 @@ import { STEM_MP4_FORMAT, isStemMp4Format } from '../shared/formatUtils.js';
 import { getSetting } from '../shared/services/settingsService.js';
 import * as serverSettingsService from '../shared/services/serverSettingsService.js';
 import * as creatorService from '../shared/services/creatorService.js';
+import * as llmService from './creator/llmService.js';
 import {
   validateSongPath,
   validateBase64Path,
@@ -1916,6 +1917,37 @@ class WebServer {
         console.error('Error searching lyrics:', error);
         res.status(500).json({ error: 'Failed to search lyrics' });
       }
+    });
+
+    // LLM lyric correction (web admin path; the Electron player uses the
+    // creator:correctLyrics IPC). Resolves stored LLM settings server-side.
+    this.app.post('/admin/creator/correct', async (req, res) => {
+      try {
+        const { whisperOutput, referenceLyrics } = req.body;
+        if (!whisperOutput) return res.status(400).json({ error: 'whisperOutput is required' });
+        const settings = llmService.resolveRuntimeSettings(
+          this.mainApp.settings,
+          llmService.getLLMSettingsRaw(this.mainApp.settings)
+        );
+        const result = await llmService.correctLyrics(whisperOutput, referenceLyrics, settings);
+        res.json({ success: true, ...result });
+      } catch (error) {
+        console.error('Error correcting lyrics:', error);
+        res.status(500).json({ error: error.message || 'Failed to correct lyrics' });
+      }
+    });
+
+    // LLM settings (web admin path; Electron uses creator:getLLMSettings etc).
+    this.app.get('/admin/creator/llm-settings', (req, res) => {
+      res.json(llmService.getLLMSettings(this.mainApp.settings));
+    });
+    this.app.post('/admin/creator/llm-settings', (req, res) => {
+      llmService.saveLLMSettings(this.mainApp.settings, req.body || {});
+      res.json({ success: true });
+    });
+    this.app.post('/admin/creator/llm-test', async (req, res) => {
+      const resolved = llmService.resolveRuntimeSettings(this.mainApp.settings, req.body || {});
+      res.json(await llmService.testLLMConnection(resolved));
     });
 
     // ---- Creator file upload (remote browser → server) ----
