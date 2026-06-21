@@ -176,6 +176,36 @@ class WebServer {
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
       })
     );
+    // Security headers. Cross-origin isolation (COOP + COEP) enables
+    // SharedArrayBuffer / WASM threads, which onnxruntime-web + transformers.js
+    // use for the in-browser WebGPU/WASM Creator. COEP=credentialless (vs
+    // require-corp) keeps isolation while still allowing the cross-origin CDN /
+    // HuggingFace model fetches the WebGPU pipeline needs.
+    this.app.use((req, res, next) => {
+      res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+      res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      res.setHeader(
+        'Content-Security-Policy',
+        [
+          "default-src 'self'",
+          // Vite-built bundles + transformers.js need inline/eval + wasm; CDN libs.
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://esm.sh https://cdn.jsdelivr.net",
+          "style-src 'self' 'unsafe-inline'",
+          // Models/wheels fetched from HuggingFace + CDNs; sockets; blobs.
+          "connect-src 'self' ws: wss: https://esm.sh https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co https://*.huggingface.co https://cdn-lfs.huggingface.co",
+          "img-src 'self' data: blob: https:",
+          "media-src 'self' blob: data:",
+          "worker-src 'self' blob:",
+          "font-src 'self' data:",
+          "object-src 'none'",
+          "base-uri 'self'",
+        ].join('; ')
+      );
+      next();
+    });
     this.app.use(express.json());
     this.app.use(express.urlencoded({ extended: true }));
 

@@ -43,6 +43,22 @@ const __dirname = dirname(__filename);
 // - Wait for Electron to fix Wayland popup positioning
 // - Let users manually set --ozone-platform=x11 if they prefer working dropdowns over WebGL
 
+// --- WebGPU enablement (for the in-browser Creator: Demucs/Whisper via WebGPU) ---
+// Electron on Linux does NOT expose navigator.gpu without these switches, even
+// though the same machine runs WebGPU fine in Chrome (electron#41763). BOTH are
+// required: enable-unsafe-webgpu makes navigator.gpu appear, and Vulkan provides
+// the actual Dawn backend (without it WebGPU is "super slow" or absent).
+// On macOS → Metal, Windows → D3D12, Linux → Vulkan, all under the hood.
+app.commandLine.appendSwitch('enable-unsafe-webgpu');
+app.commandLine.appendSwitch('enable-features', 'Vulkan');
+// On Linux the Vulkan backend is incompatible with the Wayland ozone backend
+// (vkAcquireNextImageKHR hangs / GPU process crash), so WebGPU needs X11 ozone.
+// Gated behind LOUKAI_WEBGPU=1 because X11 mode has the dropdown popup bug noted
+// above; default Wayland users fall back to WASM until Electron fixes Wayland.
+if (process.platform === 'linux' && process.env.LOUKAI_WEBGPU === '1') {
+  app.commandLine.appendSwitch('ozone-platform', 'x11');
+}
+
 class KaiPlayerApp {
   constructor() {
     this.mainWindow = null;
