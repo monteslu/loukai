@@ -11,7 +11,7 @@
  * - Downloaded models
  */
 
-import { existsSync, statSync, readdirSync, readFileSync } from 'fs';
+import { existsSync, statSync, readdirSync, readFileSync, mkdirSync } from 'fs';
 import { homedir, platform } from 'os';
 import { join } from 'path';
 import { execSync, spawn } from 'child_process';
@@ -32,22 +32,40 @@ export function getCacheDir() {
 }
 
 /**
- * Get the Python executable path.
- * Inside a Flatpak, the interpreter is provided as extra-data at /app/creator
- * (python-build-standalone extracts to /app/creator/python), so prefer that and
- * avoid a runtime download.
+ * Get the Python executable path (always under the writable cache dir).
+ * In Flatpak the interpreter ships as extra-data at /app/extra and is extracted
+ * here on first run by ensureFlatpakPython(); on desktop it's downloaded here.
  */
 export function getPythonPath() {
-  const plat = platform();
-  if (process.env.FLATPAK_ID) {
-    const flatpakPy = join('/app', 'creator', 'python', 'bin', 'python3');
-    if (existsSync(flatpakPy)) return flatpakPy;
-  }
   const cacheDir = getCacheDir();
-  if (plat === 'win32') {
+  if (platform() === 'win32') {
     return join(cacheDir, 'python', 'python.exe');
-  } else {
-    return join(cacheDir, 'python', 'bin', 'python3');
+  }
+  return join(cacheDir, 'python', 'bin', 'python3');
+}
+
+/**
+ * In Flatpak, the bundled Python ships as read-only extra-data at
+ * /app/extra/python-standalone.tar.gz. Extract it once into the writable cache
+ * dir so it's usable (and pip can install deps via --target). No-op on desktop
+ * or if Python is already present. Returns true if Python is available after.
+ */
+export function ensureFlatpakPython() {
+  if (existsSync(getPythonPath())) return true;
+  if (!process.env.FLATPAK_ID) return false;
+  const tarball = '/app/extra/python-standalone.tar.gz';
+  if (!existsSync(tarball)) return false;
+  const cacheDir = getCacheDir();
+  const pythonDir = join(cacheDir, 'python');
+  try {
+    mkdirSync(pythonDir, { recursive: true });
+    // python-build-standalone tars to a top-level "python/" dir → strip it.
+    execSync(`tar -xzf "${tarball}" -C "${pythonDir}" --strip-components=1`, {
+      stdio: 'ignore',
+    });
+    return existsSync(getPythonPath());
+  } catch {
+    return false;
   }
 }
 
@@ -64,10 +82,6 @@ export function isReadOnlyPython() {
  * Writable directory for pip-installed Creator deps when the interpreter itself
  * is read-only (Flatpak). Lives under the persistent cache dir.
  */
-export function getPyDepsDir() {
-  return join(getCacheDir(), 'pydeps');
-}
-
 /**
  * Detect whether AMD ROCm needs HSA_OVERRIDE_GFX_VERSION on this machine.
  * RDNA2 (gfx1030..gfx1039, e.g. Steam Deck gfx1033) is not an official ROCm
@@ -118,13 +132,6 @@ export function getPythonEnv() {
     HF_HOME: join(cacheDir, 'models', 'huggingface'),
     XDG_CACHE_HOME: cacheDir, // For whisper model cache
   };
-
-  // When the interpreter is read-only (Flatpak /app), Creator deps are pip
-  // --target'd into a writable dir; make Python import them.
-  if (isReadOnlyPython()) {
-    const depsDir = getPyDepsDir();
-    env.PYTHONPATH = env.PYTHONPATH ? `${depsDir}${pathSep}${env.PYTHONPATH}` : depsDir;
-  }
 
   // AMD RDNA2 (e.g. Steam Deck) needs this so ROCm accepts the GPU.
   // Respect an explicit user-set value if present.

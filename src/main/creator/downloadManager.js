@@ -17,13 +17,7 @@ import http from 'http';
 import { createWriteStream, existsSync, mkdirSync, rmSync, chmodSync } from 'fs';
 import { join, dirname } from 'path';
 import { execSync, spawn } from 'child_process';
-import {
-  getCacheDir,
-  getPythonPath,
-  getPythonEnv,
-  isReadOnlyPython,
-  getPyDepsDir,
-} from './systemChecker.js';
+import { getCacheDir, getPythonPath, getPythonEnv, ensureFlatpakPython } from './systemChecker.js';
 import yauzl from 'yauzl';
 
 /**
@@ -260,14 +254,6 @@ function pipInstall(packages, onProgress = null) {
     // Use --progress-bar on to ensure we get progress output
     const args = ['-m', 'pip', 'install', ...packageArgs, '--no-cache-dir', '--progress-bar', 'on'];
 
-    // When the interpreter is read-only (Flatpak /app), install into a writable
-    // target dir (added to PYTHONPATH by getPythonEnv) instead of site-packages.
-    if (isReadOnlyPython()) {
-      const depsDir = getPyDepsDir();
-      mkdirSync(depsDir, { recursive: true });
-      args.push('--target', depsDir, '--upgrade');
-    }
-
     const proc = spawn(pythonPath, args, {
       env: {
         ...getPythonEnv(),
@@ -427,6 +413,14 @@ export async function downloadPython(onProgress = null) {
   const pythonDir = join(cacheDir, 'python');
   log(`   Cache dir: ${cacheDir}`);
   log(`   Python dir: ${pythonDir}`);
+
+  // In Flatpak, the interpreter ships as extra-data — extract it instead of
+  // downloading. No-op on desktop / if already present.
+  if (ensureFlatpakPython()) {
+    log('✅ Python provided via Flatpak extra-data');
+    if (onProgress) onProgress('complete', 'Python ready');
+    return { success: true, path: getPythonPath() };
+  }
 
   // Check if already installed
   const pythonPath = getPythonPath();

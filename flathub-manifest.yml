@@ -69,10 +69,10 @@ modules:
       - install -Dm644 com.loukai.app.desktop /app/share/applications/com.loukai.app.desktop
       - install -Dm644 static/images/logo-512.png /app/share/icons/hicolor/512x512/apps/com.loukai.app.png
       - install -Dm644 com.loukai.app.metainfo.xml /app/share/metainfo/com.loukai.app.metainfo.xml
-      # Stage the Creator's bundled Python interpreter (extra-data, fetched at
-      # install time) into the app so downloadManager doesn't pull it at runtime.
-      - mkdir -p /app/creator
-      - tar -xzf python-standalone.tar.gz -C /app/creator
+      # NOTE: the Python interpreter ships as extra-data (below). Extra-data is
+      # downloaded at INSTALL time and placed read-only at /app/extra/, so it is
+      # NOT available here at build time. The app extracts it from /app/extra to
+      # its writable data dir on first run (see systemChecker.ensureFlatpakPython).
     sources:
       - type: git
         url: https://github.com/monteslu/loukai.git
