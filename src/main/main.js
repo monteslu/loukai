@@ -245,6 +245,19 @@ class KaiPlayerApp {
 
     this.mainWindow = new BrowserWindow(windowOptions);
 
+    // Make the renderer cross-origin-isolated so the WebGPU Creator's WASM
+    // fallback can use multi-threading (SharedArrayBuffer needs COOP+COEP).
+    // loadFile() serves file:// with no headers, so inject them here.
+    this.mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Cross-Origin-Opener-Policy': ['same-origin'],
+          'Cross-Origin-Embedder-Policy': ['credentialless'],
+        },
+      });
+    });
+
     const rendererPath = path.join(__dirname, '../renderer/index.html');
     this.mainWindow.loadFile(rendererPath);
 

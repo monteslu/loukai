@@ -92,7 +92,19 @@ export default function WebGpuCreatorPanel() {
     ]);
     try {
       // WASM artifacts also served by us.
-      if (ort.env?.wasm) ort.env.wasm.wasmPaths = `${base}/`;
+      if (ort.env?.wasm) {
+        ort.env.wasm.wasmPaths = `${base}/`;
+        // SIMD is built into the artifact we serve (ort-wasm-simd-threaded). THREADS
+        // additionally require cross-origin isolation (COOP+COEP → SharedArrayBuffer);
+        // otherwise fall back to a single thread. Mirror the JIG bench.
+        const isolated = self.crossOriginIsolated === true;
+        const threads = isolated ? navigator.hardwareConcurrency || 4 : 1;
+        ort.env.wasm.numThreads = threads;
+        log(
+          `WASM: SIMD on, ${threads} thread${threads === 1 ? '' : 's'}` +
+            (isolated ? '' : ' (not cross-origin-isolated → single-threaded)')
+        );
+      }
       if (ort.env?.webgpu) ort.env.webgpu.powerPreference = 'high-performance';
       // transformers.js: pull models through loukai too (no HuggingFace from UI).
       if (tf.env) {
