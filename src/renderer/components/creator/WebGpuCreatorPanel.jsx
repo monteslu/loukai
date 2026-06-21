@@ -71,7 +71,11 @@ export default function WebGpuCreatorPanel() {
   }, [logLines]);
 
   const backend = () => (gpu === 'available' ? 'webgpu' : 'wasm');
-  const eps = () => (gpu === 'available' ? ['webgpu', 'wasm'] : ['wasm']);
+  // When the GPU is available, request WebGPU ONLY (no wasm fallback in the list).
+  // ORT-web silently drops to wasm if 'webgpu','wasm' are both listed and webgpu
+  // init fails — which hides whether the GPU was actually used. Forcing
+  // ['webgpu'] makes a real failure throw, so we KNOW. We retry on wasm in run().
+  const eps = () => (gpu === 'available' ? ['webgpu'] : ['wasm']);
 
   async function loadLibs() {
     if (libs.current.ort) return libs.current;
@@ -100,6 +104,14 @@ export default function WebGpuCreatorPanel() {
         );
       }
       if (ort.env?.webgpu) ort.env.webgpu.powerPreference = 'high-performance';
+      // Verbose ORT logging so the devtools console shows the real EP/device init
+      // (e.g. "[WebGPU] ..."), confirming whether the GPU was actually used.
+      try {
+        ort.env.logLevel = 'info';
+        if (ort.env.webgpu) ort.env.webgpu.profiling = { mode: 'off' };
+      } catch {
+        /* ignore */
+      }
       // transformers.js: pull models through loukai too (no HuggingFace from UI).
       if (tf.env) {
         tf.env.allowRemoteModels = true;
@@ -165,32 +177,56 @@ export default function WebGpuCreatorPanel() {
       log(`decoding ${file.name} …`);
       const audio = await decodeAudio(file);
 
-      // --- Demucs stem separation (in-browser) ---
-      log(`separating on ${backend()} …`);
-      const proc = new DemucsProcessor({
-        ort,
-        sessionOptions: { executionProviders: eps() },
-        onProgress: ({ progress }) => setSepProgress(progress || 0),
-        onLog: (phase, m) => log(`[${phase}] ${m}`),
-      });
       // Demucs ONNX weights via loukai's backend (cached), not the CDN/HF.
-      const modelUrl = '/webgpu-models/htdemucs.onnx';
       log('fetching htdemucs model from loukai (cached) …');
-      const modelBuf = await fetch(modelUrl).then((r) => {
+      const modelBuf = await fetch('/webgpu-models/htdemucs.onnx').then((r) => {
         if (!r.ok) throw new Error(`model fetch ${r.status}`);
         return r.arrayBuffer();
       });
-      await proc.loadModel(modelBuf);
+
+      // --- Demucs stem separation (in-browser) ---
+      // Try WebGPU first with NO wasm fallback in the EP list, so a GPU failure
+      // throws here (instead of ORT silently running on CPU and us claiming GPU).
+      // Only if that throws do we fall back to wasm, and we SAY so.
+      let usedBackend = backend();
+      const makeProc = (executionProviders) =>
+        new DemucsProcessor({
+          ort,
+          sessionOptions: { executionProviders },
+          onProgress: ({ progress }) => setSepProgress(progress || 0),
+          onLog: (phase, m) => log(`[${phase}] ${m}`),
+        });
+      let proc;
+      try {
+        log(`separating on ${usedBackend} (verifying EP) …`);
+        proc = makeProc(eps());
+        await proc.loadModel(modelBuf);
+      } catch (e) {
+        if (usedBackend === 'webgpu') {
+          log(`⚠️ WebGPU EP failed (${String(e.message).slice(0, 80)}) — falling back to WASM/CPU`);
+          usedBackend = 'wasm';
+          setSepProgress(0);
+          proc = makeProc(['wasm']);
+          await proc.loadModel(modelBuf);
+        } else {
+          throw e;
+        }
+      }
       const t0 = performance.now();
       const result = await proc.separate(audio.left, audio.right);
       const sec = (performance.now() - t0) / 1000;
       setRtf(audio.duration / sec);
-      log(`separation done in ${sec.toFixed(1)}s — ${(audio.duration / sec).toFixed(2)}× realtime`);
+      log(
+        `separation done in ${sec.toFixed(1)}s — ${(audio.duration / sec).toFixed(2)}× realtime` +
+          ` [ran on: ${usedBackend.toUpperCase()}]`
+      );
 
       // --- Whisper transcription of the vocals stem (in-browser) ---
       setStatus('transcribing');
       const want = wordMode ? 'onnx-community/whisper-base_timestamped' : asrModel;
-      const device = gpu === 'available' ? 'webgpu' : 'wasm';
+      // The whisper_timestamped model has no WebGPU ONNX variant (only cuda/cpu),
+      // so it must run on wasm. Regular Xenova/whisper-* models support webgpu.
+      const device = wordMode ? 'wasm' : gpu === 'available' ? 'webgpu' : 'wasm';
       log(`transcribing vocals · ${want} · ${device} …`);
       const asr = await pipeline('automatic-speech-recognition', want, { device });
       const mono = toMono16k(result.vocals.left, result.vocals.right, audio.sampleRate);
