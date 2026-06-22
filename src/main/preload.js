@@ -246,9 +246,20 @@ const api = {
     installComponents: () => ipcRenderer.invoke('creator:installComponents'),
     getStatus: () => ipcRenderer.invoke('creator:getStatus'),
     cancelInstall: () => ipcRenderer.invoke('creator:cancelInstall'),
-    searchLyrics: (title, artist) => ipcRenderer.invoke('creator:searchLyrics', title, artist),
-    prepareWhisperContext: (title, artist, existingLyrics) =>
-      ipcRenderer.invoke('creator:prepareWhisperContext', title, artist, existingLyrics),
+    // Accept EITHER an object payload ({ title, artist[, existingLyrics] }) from the
+    // WebGPU creator OR positional args from the legacy CreateTab. Normalize to an
+    // object so the IPC handler gets a consistent shape (a positional object had been
+    // landing in `title`, producing "[object Object]" lyric queries).
+    searchLyrics: (a, b) =>
+      ipcRenderer.invoke(
+        'creator:searchLyrics',
+        a && typeof a === 'object' ? a : { title: a, artist: b }
+      ),
+    prepareWhisperContext: (a, b, c) =>
+      ipcRenderer.invoke(
+        'creator:prepareWhisperContext',
+        a && typeof a === 'object' ? a : { title: a, artist: b, existingLyrics: c }
+      ),
     selectFile: () => ipcRenderer.invoke('creator:selectFile'),
     startConversion: (options) => ipcRenderer.invoke('creator:startConversion', options),
     cancelConversion: () => ipcRenderer.invoke('creator:cancelConversion'),

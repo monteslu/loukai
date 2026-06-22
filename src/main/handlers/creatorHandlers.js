@@ -50,18 +50,20 @@ export function registerCreatorHandlers(mainApp) {
     return creatorService.cancelInstall();
   });
 
-  // Search lyrics from LRCLIB
-  ipcMain.handle(CREATOR_CHANNELS.SEARCH_LYRICS, (_event, title, artist) => {
+  // Search lyrics from LRCLIB. Accept EITHER a single { title, artist } object (WebGPU
+  // creator) OR positional (title, artist) (legacy CreateTab) — the two creators call
+  // it differently, and a shape mismatch silently passed the whole object as `title`.
+  ipcMain.handle(CREATOR_CHANNELS.SEARCH_LYRICS, (_event, a, b) => {
+    const { title, artist } = a && typeof a === 'object' ? a : { title: a, artist: b };
     return creatorService.findLyrics(title, artist);
   });
 
-  // Prepare Whisper context with vocabulary hints
-  ipcMain.handle(
-    CREATOR_CHANNELS.PREPARE_WHISPER_CONTEXT,
-    (_event, title, artist, existingLyrics) => {
-      return creatorService.getWhisperContext(title, artist, existingLyrics);
-    }
-  );
+  // Prepare Whisper context with vocabulary hints (same dual-shape handling).
+  ipcMain.handle(CREATOR_CHANNELS.PREPARE_WHISPER_CONTEXT, (_event, a, b, c) => {
+    const { title, artist, existingLyrics } =
+      a && typeof a === 'object' ? a : { title: a, artist: b, existingLyrics: c };
+    return creatorService.getWhisperContext(title, artist, existingLyrics);
+  });
 
   // Select audio/video file (Electron-only - uses native dialog)
   ipcMain.handle(CREATOR_CHANNELS.SELECT_FILE, async () => {
