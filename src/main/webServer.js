@@ -1919,6 +1919,20 @@ class WebServer {
       }
     });
 
+    // Whisper context (vocab hints) — web admin path; the Electron player uses the
+    // creator:prepareWhisperContext IPC. Returns the SAME initialPrompt the native
+    // creator builds, so the web transcription can be prompted identically.
+    this.app.post('/admin/creator/whisper-context', async (req, res) => {
+      try {
+        const { title, artist, existingLyrics } = req.body;
+        const result = await creatorService.getWhisperContext(title, artist, existingLyrics);
+        res.json(result);
+      } catch (error) {
+        console.error('Error preparing whisper context:', error);
+        res.status(500).json({ error: error.message || 'Failed to prepare context' });
+      }
+    });
+
     // LLM lyric correction (web admin path; the Electron player uses the
     // creator:correctLyrics IPC). Resolves stored LLM settings server-side.
     this.app.post('/admin/creator/correct', async (req, res) => {

@@ -750,6 +750,30 @@ export default function WebGpuCreatorPanel() {
         `vocals energy profile: peak=${peakRms.toFixed(4)}, silence threshold=${silentThresh.toFixed(4)} (${Math.round(SILENT_FRAC * 100)}% of peak)`
       );
 
+      // Whisper context (vocab hints) — build the SAME initialPrompt the native
+      // creator does (title + distinctive lyric words), via the shared backend
+      // prepareWhisperContext, so the web transcription is prompted IDENTICALLY to
+      // Python (for a fair comparison). Best-effort.
+      let whisperPrompt = null;
+      {
+        const bn = file.name.replace(/\.[^.]+$/, '');
+        const dm = bn.match(/^(.+?)\s*-\s*(.+)$/);
+        const ctxArtist = songArtist.trim() || (dm ? dm[1].trim() : '');
+        const ctxTitle = songTitle.trim() || (dm ? dm[2].trim() : bn);
+        try {
+          const ctx = await creatorCall('prepareWhisperContext', '/admin/creator/whisper-context', {
+            title: ctxTitle,
+            artist: ctxArtist,
+            existingLyrics: referenceLyrics.trim() || null,
+          });
+          whisperPrompt = ctx?.initialPrompt || null;
+          if (whisperPrompt)
+            log(`whisper prompt (matches native): "${whisperPrompt.slice(0, 80)}…"`);
+        } catch (e) {
+          log(`whisper context skipped (${e.message})`);
+        }
+      }
+
       const tStart = performance.now();
       log(`transcribing ${audioMin} min of vocals on ${device} …`);
       // Live feedback (the native tab streams whisper progress; we do the same via
@@ -790,15 +814,32 @@ export default function WebGpuCreatorPanel() {
       // the prompt and drop real lyrics mid-song. The reference lyrics still help via
       // the post-transcription LLM correction. (If we want true prompting later, do
       // it with tokenizer-produced prompt_ids.)
-      const promptText = null;
+      const promptText = whisperPrompt;
       const useWordTs = timestampMode === 'word';
-      // chunk_length_s=30 (Whisper's max), stride_length_s=8 (was 5). Larger overlap
-      // → a bigger "trusted" center per chunk and more redundancy at the 20s-spaced
-      // chunk seams, so a clear lyric line landing near a boundary (e.g. ~65s) isn't
-      // dropped by the chunk-merge. Segment timestamps (return_timestamps:true) also
-      // stitch boundaries far less lossily than per-word DTW, which can silently drop
-      // a whole audible line — so that's the default; 'word' is opt-in.
-      log(`timestamp mode: ${timestampMode}, chunk 30s / stride 8s`);
+      // Prompt parity with the native creator: tokenize the SAME initialPrompt and pass
+      // it as Whisper prompt_ids (the correct transformers.js mechanism — a raw string
+      // is mishandled by the chunked decode). If tokenizing isn't supported we skip it
+      // rather than risk destabilizing the decode.
+      let promptIds = null;
+      if (promptText) {
+        try {
+          if (typeof asr.tokenizer?.get_prompt_ids === 'function') {
+            promptIds = asr.tokenizer.get_prompt_ids(promptText);
+          } else if (typeof asr.tokenizer?._build_translation === 'undefined') {
+            // No prompt tokenizer API — pass the string; transformers.js will tokenize
+            // it internally if it supports `prompt`. (Logged so we can see the path.)
+            promptIds = null;
+          }
+        } catch (e) {
+          log(`prompt tokenize failed (${e.message}) — transcribing without prompt`);
+        }
+      }
+      // chunk_length_s=30 (Whisper's max), stride_length_s=8. Larger overlap → bigger
+      // trusted center per chunk + more seam redundancy. Segment timestamps stitch
+      // boundaries far less lossily than per-word DTW (default; 'word' opt-in).
+      log(
+        `timestamp mode: ${timestampMode}, chunk 30s / stride 8s${promptText ? ', prompt ON' : ''}`
+      );
       let out;
       try {
         out = await asr(mono, {
@@ -806,6 +847,7 @@ export default function WebGpuCreatorPanel() {
           stride_length_s: 8,
           // 'word' → per-word DTW timing; true → per-segment (line) timing.
           return_timestamps: useWordTs ? 'word' : true,
+          ...(promptIds ? { prompt_ids: promptIds } : promptText ? { prompt: promptText } : {}),
           ...(streamer ? { streamer } : {}),
         });
       } finally {
