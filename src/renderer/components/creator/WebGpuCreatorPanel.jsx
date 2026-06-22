@@ -156,9 +156,11 @@ export default function WebGpuCreatorPanel() {
   // audible lines). Default to segment for completeness; we re-derive per-word timing
   // by spreading each segment's words across its span, which is plenty for karaoke.
   const [timestampMode, setTimestampMode] = useState('segment');
-  // Whisper weight precision on WebGPU. fp16 (default) matches PyTorch quality
-  // (fp16==fp32 measured); q4f16 is 4-bit — smaller/faster but lower text accuracy.
-  const [whisperDtype, setWhisperDtype] = useState('fp16');
+  // Whisper weight precision on WebGPU. MEASURED: q4f16 == fp16 == fp32 in text
+  // accuracy on large-v3-turbo (quantization is NOT the quality lever — the engine/
+  // chunking is). So default to q4f16 (smallest + fastest, ~13× realtime). Dropdown
+  // kept for experimentation.
+  const [whisperDtype, setWhisperDtype] = useState('q4f16');
   const [status, setStatus] = useState('idle'); // idle | separating | transcribing | done | error
   const [stemProgress, setStemProgress] = useState({}); // per-stem 0..1 (ft ensemble)
   // Demucs separation model — default to the fast single htdemucs.
@@ -1479,8 +1481,10 @@ export default function WebGpuCreatorPanel() {
               onChange={(e) => setWhisperDtype(e.target.value)}
               disabled={busy}
             >
-              <option value="fp16">fp16 — best accuracy (matches PyTorch), larger/slower</option>
-              <option value="q4f16">q4f16 — 4-bit, fastest/smallest, lower accuracy</option>
+              <option value="q4f16">
+                q4f16 — 4-bit, fastest/smallest (same accuracy — default)
+              </option>
+              <option value="fp16">fp16 — larger/slower, no measured accuracy gain</option>
               <option value="fp32">fp32 — full precision (largest, slow)</option>
             </select>
           </label>
