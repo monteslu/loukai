@@ -157,6 +157,7 @@ export default function WebGpuCreatorPanel() {
   // reference lyrics (Whisper prompt + LLM correction source), correction stats.
   const [songTitle, setSongTitle] = useState('');
   const [songArtist, setSongArtist] = useState('');
+  const [songAlbum, setSongAlbum] = useState('');
   const [referenceLyrics, setReferenceLyrics] = useState('');
   const [lookingUp, setLookingUp] = useState(false);
   const [llmStats, setLlmStats] = useState(null);
@@ -360,17 +361,17 @@ export default function WebGpuCreatorPanel() {
 
   // Look up reference lyrics from LRCLIB (title/artist) — fills the reference field,
   // which sharpens transcription (Whisper prompt) and powers LLM correction.
-  async function lookupLyrics() {
-    if (!songTitle) {
+  async function lookupLyrics(title = songTitle, artist = songArtist) {
+    if (!title) {
       log('enter a title (and artist) to look up lyrics');
       return;
     }
     setLookingUp(true);
     try {
-      log(`looking up lyrics: ${songArtist ? songArtist + ' - ' : ''}${songTitle} …`);
+      log(`looking up lyrics: ${artist ? artist + ' - ' : ''}${title} …`);
       const r = await creatorCall('searchLyrics', '/admin/creator/search-lyrics', {
-        title: songTitle,
-        artist: songArtist,
+        title,
+        artist,
       });
       const plain = r?.plainLyrics || r?.lyrics?.plainLyrics || '';
       if (plain) {
@@ -386,6 +387,46 @@ export default function WebGpuCreatorPanel() {
     } finally {
       setLookingUp(false);
     }
+  }
+
+  // On file select: read ID3/metadata tags in-browser (music-metadata parseBlob),
+  // prefill title/artist/album, then AUTO-search LRCLIB — matching the native
+  // creator's getFileInfo behaviour (ID3 → fields → auto lyric lookup). Falls back
+  // to "Artist - Title.ext" filename parsing when there are no tags.
+  async function onFileSelect() {
+    const file = fileRef.current?.files?.[0];
+    if (!file) return;
+    let title = '';
+    let artist = '';
+    let album = '';
+    try {
+      const mm = await import(/* @vite-ignore */ 'music-metadata');
+      const { common } = await mm.parseBlob(file);
+      title = common?.title || '';
+      artist = common?.artist || '';
+      album = common?.album || '';
+      if (title || artist) {
+        log(`ID3 tags: ${artist || '?'} — ${title || '?'}${album ? ` (${album})` : ''}`);
+      }
+    } catch {
+      /* no/unreadable tags → filename fallback below */
+    }
+    if (!title) {
+      // "Artist - Title.ext" filename fallback (skip for already-made stem files).
+      const base = file.name.replace(/\.[^.]+$/, '');
+      const dash = base.match(/^(.+?)\s*-\s*(.+)$/);
+      if (dash) {
+        artist = artist || dash[1].trim();
+        title = dash[2].trim();
+      } else {
+        title = base;
+      }
+    }
+    setSongTitle(title);
+    setSongArtist(artist);
+    setSongAlbum(album);
+    // Auto lyric lookup (don't auto-lookup for a .stem.mp4 re-transcribe unless empty).
+    if (title) await lookupLyrics(title, artist);
   }
 
   // Load LLM settings on mount (IPC or REST GET).
@@ -832,6 +873,7 @@ export default function WebGpuCreatorPanel() {
       const dash = baseName.match(/^(.+?)\s*-\s*(.+)$/);
       const artist = songArtist.trim() || (dash ? dash[1].trim() : '');
       const title = songTitle.trim() || (dash ? dash[2].trim() : baseName);
+      const album = songAlbum.trim();
       // Normalize Whisper word objects → {start,end,text} for the kara atom.
       const wordObjs = correctedWords
         .map((w) => ({
@@ -897,7 +939,7 @@ export default function WebGpuCreatorPanel() {
         }
         const r = await window.kaiAPI.creator.saveWebGpuStems({
           stems,
-          metadata: { title, artist, duration: audio.duration, key: detectedKey },
+          metadata: { title, artist, album, duration: audio.duration, key: detectedKey },
           lyrics: lyricsPayload,
           pitch: pitchData,
         });
@@ -908,6 +950,7 @@ export default function WebGpuCreatorPanel() {
         const fd = new FormData();
         fd.append('title', title);
         fd.append('artist', artist);
+        if (album) fd.append('album', album);
         fd.append('duration', String(audio.duration));
         fd.append('lyrics', JSON.stringify(lyricsPayload));
         if (detectedKey) fd.append('key', detectedKey);
@@ -975,6 +1018,7 @@ export default function WebGpuCreatorPanel() {
             accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,.mp4,.stem.mp4"
             className="text-sm"
             disabled={busy}
+            onChange={onFileSelect}
           />
 
           {/* Lyric assist: title/artist → LRCLIB lookup → reference lyrics, which
@@ -1002,9 +1046,20 @@ export default function WebGpuCreatorPanel() {
                 className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
               />
             </label>
+            <label className="text-xs text-gray-600 dark:text-gray-400 flex flex-col">
+              Album
+              <input
+                type="text"
+                value={songAlbum}
+                onChange={(e) => setSongAlbum(e.target.value)}
+                disabled={busy}
+                placeholder="Album (optional)"
+                className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
+              />
+            </label>
             <button
               type="button"
-              onClick={lookupLyrics}
+              onClick={() => lookupLyrics()}
               disabled={busy || lookingUp || !songTitle}
               className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-sm hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
             >

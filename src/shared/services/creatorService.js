@@ -408,7 +408,7 @@ export async function repairStems(filePaths) {
  */
 export async function saveWebGpuStems({ stems, metadata, lyrics, pitch, songsFolder }) {
   if (!songsFolder) throw new Error('songs folder is not set');
-  const { title = 'Untitled', artist = 'Unknown', key } = metadata || {};
+  const { title = 'Untitled', artist = 'Unknown', album, key } = metadata || {};
   const safeFileName = (artist ? `${artist} - ${title}` : title).replace(/[<>:"/\\|?*]/g, '_');
   const outputPath = join(songsFolder, `${safeFileName}.stem.mp4`);
 
@@ -423,7 +423,7 @@ export async function saveWebGpuStems({ stems, metadata, lyrics, pitch, songsFol
       vocals: stems.vocals,
     },
     mixdownWav: stems.master, // the raw original mix = NI-Stems master track
-    metadata: { title, artist },
+    metadata: { title, artist, ...(album ? { album } : {}) },
     lyricsData: lyrics && lyrics.lines ? { lines: lyrics.lines } : undefined,
     codec: 'aac',
   });
