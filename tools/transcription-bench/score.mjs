@@ -108,19 +108,32 @@ function timingMAE(gold, cand) {
     const gt = tok(g);
     if (!gt.size) continue;
     let best = null;
-    let bestJ = 0;
+    let bestScore = 0;
     for (const c of cand) {
       const ct = tok(c);
       if (!ct.size) continue;
       let inter = 0;
       for (const w of gt) if (ct.has(w)) inter++;
       const jac = inter / (gt.size + ct.size - inter);
-      if (jac > bestJ) {
-        bestJ = jac;
+      // Penalize matches far away in time so a repeated lyric ("no no no no", "buy me
+      // love") matches the time-LOCAL instance, not a distant repeat. Within ~5s: no
+      // penalty; beyond that, decay. Needs both to have a start time.
+      let score = jac;
+      if (g.start != null && c.start != null) {
+        const dt = Math.abs(g.start - c.start);
+        score = jac * (1 / (1 + Math.max(0, dt - 5) / 10));
+      }
+      if (score > bestScore) {
+        bestScore = score;
         best = c;
       }
     }
-    if (best && bestJ >= 0.4 && g.start != null && best.start != null) {
+    if (best && tok(best).size && g.start != null && best.start != null) {
+      // require real token overlap (jaccard >= 0.4) regardless of the time weighting
+      let inter = 0;
+      for (const w of gt) if (tok(best).has(w)) inter++;
+      const jac = inter / (gt.size + tok(best).size - inter);
+      if (jac < 0.4) continue;
       sumStart += Math.abs(g.start - best.start);
       if (g.end != null && best.end != null) sumEnd += Math.abs(g.end - best.end);
       matched++;
