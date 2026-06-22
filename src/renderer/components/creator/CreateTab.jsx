@@ -456,6 +456,10 @@ export function CreateTab({ bridge: _bridge }) {
         tags: selectedFile.tags || {}, // Preserve all original ID3 tags
         numStems: options.numStems,
         whisperModel: whisperModel,
+        // Demucs model: 'htdemucs' (fast single) | 'htdemucs_ft' (4-model ensemble,
+        // higher quality, ~4× compute). Default to the fast single model to match the
+        // WebGPU creator's default.
+        demucsModel: options.demucsModel || 'htdemucs',
         language: options.language,
         enableCrepe: enableCrepe,
         device: torchDevice,

@@ -104,6 +104,7 @@ export async function runConversion(
     artist,
     tags = {},
     numStems = 4,
+    demucsModel = 'htdemucs_ft', // 'htdemucs' (fast single) | 'htdemucs_ft' (4-model ensemble)
     whisperModel = 'large-v3-turbo',
     language = 'en',
     enableCrepe = true,
@@ -211,7 +212,7 @@ export async function runConversion(
       demucsResult = await runDemucs(
         wavPath,
         stemsDir,
-        { numStems, device },
+        { numStems, device, model: demucsModel },
         (progress, message) => {
           onProgress('demucs', `[${STEPS.demucs}] ${message}`, 5 + Math.floor(progress * 0.45));
         },
@@ -527,7 +528,7 @@ export async function runConversion(
     log(`    audio length:   ${audioSec ? audioSec.toFixed(1) + 's' : '?'}`);
     if (timings.separation != null)
       log(
-        `    separation:     ${timings.separation.toFixed(1)}s  (${x(timings.separation)})  [demucs]`
+        `    separation:     ${timings.separation.toFixed(1)}s  (${x(timings.separation)})  [${demucsModel}]`
       );
     if (timings.transcription != null)
       log(
