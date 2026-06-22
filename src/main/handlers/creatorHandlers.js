@@ -21,39 +21,15 @@ import crypto from 'crypto';
  * @param {Object} mainApp - Main application instance
  */
 export function registerCreatorHandlers(mainApp) {
-  // Check all components
-  ipcMain.handle(CREATOR_CHANNELS.CHECK_COMPONENTS, () => {
-    return creatorService.checkComponents();
-  });
-
-  // Get installation status
+  // Creator status (cache dir + current save job). No native install step — the creator
+  // runs entirely in-browser (WebGPU).
   ipcMain.handle(CREATOR_CHANNELS.GET_STATUS, () => {
     return creatorService.getStatus();
   });
 
-  // Install components
-  ipcMain.handle(CREATOR_CHANNELS.INSTALL_COMPONENTS, async () => {
-    const result = await creatorService.installComponents((progress) => {
-      mainApp.sendToRenderer(CREATOR_CHANNELS.INSTALL_PROGRESS, progress);
-    });
-
-    if (!result.success) {
-      mainApp.sendToRenderer(CREATOR_CHANNELS.INSTALL_ERROR, {
-        error: result.error,
-      });
-    }
-
-    return result;
-  });
-
-  // Cancel installation
-  ipcMain.handle(CREATOR_CHANNELS.CANCEL_INSTALL, () => {
-    return creatorService.cancelInstall();
-  });
-
   // Search lyrics from LRCLIB. Accept EITHER a single { title, artist } object (WebGPU
-  // creator) OR positional (title, artist) (legacy CreateTab) — the two creators call
-  // it differently, and a shape mismatch silently passed the whole object as `title`.
+  // creator) OR positional (title, artist) — normalize either shape (a positional
+  // object had been landing in `title`, producing "[object Object]" queries).
   ipcMain.handle(CREATOR_CHANNELS.SEARCH_LYRICS, (_event, a, b) => {
     const { title, artist } = a && typeof a === 'object' ? a : { title: a, artist: b };
     return creatorService.findLyrics(title, artist);
@@ -105,71 +81,6 @@ export function registerCreatorHandlers(mainApp) {
       console.error('File selection failed:', error);
       return { success: false, error: error.message };
     }
-  });
-
-  // Start conversion
-  ipcMain.handle(CREATOR_CHANNELS.START_CONVERSION, async (_event, options) => {
-    // Single-job guard: if a conversion is already running (started from ANY
-    // surface), return the running job so the renderer attaches instead of
-    // starting a duplicate.
-    const current = creatorService.getStatus();
-    if (current.converting) {
-      return {
-        success: false,
-        busy: true,
-        error: 'Conversion already in progress',
-        job: current.job,
-      };
-    }
-
-    // Track if we're saving to songs folder (outputDir is set)
-    const savedToSongsFolder = Boolean(options.outputDir);
-
-    // Tag the job + broadcast its state to BOTH transports so a renderer-started
-    // job is visible to (and blocks) every web admin too.
-    options.source = 'electron';
-    options.startedAt = Date.now();
-    const broadcastJob = () => {
-      const job = creatorService.getStatus().job;
-      mainApp.sendToRenderer('creator:job', job);
-      mainApp.webServer?.io?.to('admin-clients').emit('creator:job', job);
-    };
-
-    const result = await creatorService.startConversion(
-      options,
-      (progress) => {
-        mainApp.sendToRenderer(CREATOR_CHANNELS.CONVERSION_PROGRESS, progress);
-        broadcastJob();
-      },
-      (consoleLine) => {
-        mainApp.sendToRenderer(CREATOR_CHANNELS.CONVERSION_CONSOLE, { line: consoleLine });
-      },
-      mainApp.settings // Pass settings manager for LLM
-    );
-    broadcastJob(); // terminal state
-
-    if (result.success) {
-      mainApp.sendToRenderer(CREATOR_CHANNELS.CONVERSION_COMPLETE, {
-        outputPath: result.outputPath,
-        duration: result.duration,
-        stems: result.stems,
-        hasLyrics: result.hasLyrics,
-        hasPitch: result.hasPitch,
-        llmStats: result.llmStats,
-        savedToSongsFolder,
-      });
-    } else if (!result.cancelled) {
-      mainApp.sendToRenderer(CREATOR_CHANNELS.CONVERSION_ERROR, {
-        error: result.error,
-      });
-    }
-
-    return result;
-  });
-
-  // Cancel conversion
-  ipcMain.handle(CREATOR_CHANNELS.CANCEL_CONVERSION, () => {
-    return creatorService.stopConversion();
   });
 
   // Get LLM settings

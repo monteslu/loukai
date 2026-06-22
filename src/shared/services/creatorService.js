@@ -9,126 +9,29 @@
  * Socket.IO (io.emit) for real-time updates.
  */
 
-import {
-  checkAllComponents,
-  getCacheDir,
-  getPythonPath,
-} from '../../main/creator/systemChecker.js';
-import { installAllComponents } from '../../main/creator/downloadManager.js';
+import { getCacheDir } from '../../main/creator/systemChecker.js';
 import { searchLyrics, prepareWhisperContext } from '../../main/creator/lrclibService.js';
 import * as llmService from '../../main/creator/llmService.js';
 import { getAudioInfo, isVideoFile } from '../../main/creator/ffmpegService.js';
-import {
-  runConversion,
-  cancelConversion,
-  isConversionInProgress,
-} from '../../main/creator/conversionService.js';
 import * as creatorJob from '../../main/creator/creatorJob.js';
 import { repairStemFile, repairStemFiles } from '../../main/creator/stemBuilder.js';
 import { basename, join } from 'path';
 import { existsSync } from 'fs';
 import { Atoms as M4AAtoms, StemMp4Writer } from 'stem-mp4';
 
-// Track installation state
-let installationInProgress = false;
-let installationCancelled = false;
-
 /**
- * Check all components status
- * @returns {Promise<Object>} Component status
- */
-export async function checkComponents() {
-  try {
-    const result = await checkAllComponents();
-    return {
-      success: true,
-      ...result,
-    };
-  } catch (error) {
-    console.error('Failed to check components:', error);
-    return {
-      success: false,
-      error: error.message,
-    };
-  }
-}
-
-/**
- * Get installation status
+ * Get creator status. The creator now runs entirely in-browser (WebGPU) — there is no
+ * native install step, so this reports only the cache dir and the current save job.
  * @returns {Object} Status info
  */
 export function getStatus() {
   return {
-    installing: installationInProgress,
-    cancelled: installationCancelled,
-    converting: isConversionInProgress(),
+    converting: creatorJob.getJob()?.status === 'running',
     cacheDir: getCacheDir(),
-    pythonPath: getPythonPath(),
     // Rich, observable job descriptor so any admin surface (Electron + every web
     // browser, incl. one opened/refreshed mid-job) can show "already running".
     job: creatorJob.getJob(),
   };
-}
-
-/**
- * Install all components
- * @param {Function} onProgress - Progress callback (progress, message)
- * @returns {Promise<Object>} Installation result
- */
-export async function installComponents(onProgress) {
-  if (installationInProgress) {
-    return { success: false, error: 'Installation already in progress' };
-  }
-
-  installationInProgress = true;
-  installationCancelled = false;
-
-  try {
-    onProgress?.({
-      step: 'starting',
-      message: 'Starting installation...',
-      progress: 0,
-    });
-
-    const result = await installAllComponents((progress, message) => {
-      if (installationCancelled) {
-        throw new Error('Installation cancelled');
-      }
-
-      onProgress?.({
-        step: 'installing',
-        message,
-        progress,
-      });
-    });
-
-    if (result.success) {
-      onProgress?.({
-        step: 'complete',
-        message: 'Installation complete',
-        progress: 100,
-      });
-    }
-
-    installationInProgress = false;
-    return result;
-  } catch (error) {
-    installationInProgress = false;
-    return { success: false, error: error.message };
-  }
-}
-
-/**
- * Cancel installation
- * @returns {Object} Result
- */
-export function cancelInstall() {
-  if (!installationInProgress) {
-    return { success: false, error: 'No installation in progress' };
-  }
-
-  installationCancelled = true;
-  return { success: true };
 }
 
 /**
@@ -292,89 +195,6 @@ export async function getFileInfo(filePath) {
 }
 
 /**
- * Start conversion
- * @param {Object} options - Conversion options
- * @param {Function} onProgress - Progress callback
- * @param {Function} onConsoleOutput - Console output callback
- * @param {Object} settingsManager - Settings manager for LLM settings
- * @returns {Promise<Object>} Conversion result
- */
-export async function startConversion(
-  options,
-  onProgress,
-  onConsoleOutput = null,
-  settingsManager = null
-) {
-  if (isConversionInProgress()) {
-    // Structured busy result — callers (HTTP 409 / IPC) surface the running job
-    // so a second surface attaches to it instead of starting a duplicate.
-    return {
-      success: false,
-      busy: true,
-      error: 'Conversion already in progress',
-      job: creatorJob.getJob(),
-    };
-  }
-
-  const startedAt = options?.startedAt ?? null;
-  creatorJob.startJob({
-    title: options?.title,
-    artist: options?.artist,
-    source: options?.source,
-    device: options?.device,
-    startedAt,
-  });
-
-  try {
-    onProgress?.({
-      step: 'starting',
-      message: 'Starting conversion...',
-      progress: 0,
-    });
-    creatorJob.updateProgress({ step: 'starting', progress: 0 });
-
-    const result = await runConversion(
-      options,
-      (step, message, progress) => {
-        creatorJob.updateProgress({ step, progress });
-        onProgress?.({
-          step,
-          message,
-          progress,
-        });
-      },
-      (line) => {
-        creatorJob.appendConsole(line);
-        onConsoleOutput?.(line);
-      },
-      settingsManager
-    );
-
-    if (result?.success) {
-      creatorJob.finishJob('complete', { outputPath: result.outputPath });
-    } else if (result?.cancelled) {
-      creatorJob.finishJob('cancelled');
-    } else {
-      creatorJob.finishJob('error', { error: result?.error || 'Conversion failed' });
-    }
-    return result;
-  } catch (error) {
-    console.error('Conversion failed:', error);
-    creatorJob.finishJob('error', { error: error.message });
-    return { success: false, error: error.message };
-  }
-}
-
-/**
- * Cancel conversion
- * @returns {Object} Result
- */
-export function stopConversion() {
-  const cancelled = cancelConversion();
-  return { success: cancelled };
-}
-
-/**
  * Repair a stem file to fix NI Stems metadata
  * @param {string} filePath - Path to .stem.mp4 file
  * @returns {Promise<Object>} Repair result
@@ -444,7 +264,7 @@ export async function saveWebGpuStems({
   const safeFileName = (artist ? `${artist} - ${title}` : title).replace(/[<>:"/\\|?*]/g, '_');
   const outputPath = join(songsFolder, `${safeFileName}.stem.mp4`);
 
-  // --- LLM lyric correction, server-side (IDENTICAL to native startConversion) ---
+  // --- LLM lyric correction, server-side ---
   // The renderer sends the RAW transcription; correction happens HERE on the backend,
   // not in the web UI — same code path, same settings resolution as the Python creator.
   let llmStats = null;
@@ -562,17 +382,12 @@ export async function updateStemLyrics({ inputPath, lyrics, key, pitch }) {
 }
 
 export default {
-  checkComponents,
   getStatus,
   saveWebGpuStems,
   updateStemLyrics,
-  installComponents,
-  cancelInstall,
   findLyrics,
   getWhisperContext,
   getFileInfo,
-  startConversion,
-  stopConversion,
   repairStem,
   repairStems,
 };

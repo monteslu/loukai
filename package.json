@@ -113,9 +113,6 @@
       "!src/web/node_modules",
       "!src/web/src"
     ],
-    "asarUnpack": [
-      "src/main/creator/python/**/*"
-    ],
     "icon": "static/images/logo.png",
     "linux": {
       "target": [

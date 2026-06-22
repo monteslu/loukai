@@ -1,18 +1,16 @@
 /**
  * Creator Service Tests
+ *
+ * The creator runs entirely in-browser (WebGPU) — no native Python install/convert.
+ * These cover the backend-shared bits the service still owns: status, lyric lookup,
+ * Whisper context, and file-info.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// Mock all external dependencies before importing the service
+// Mock external dependencies before importing the service
 vi.mock('../../main/creator/systemChecker.js', () => ({
-  checkAllComponents: vi.fn(),
   getCacheDir: vi.fn(() => '/mock/cache/dir'),
-  getPythonPath: vi.fn(() => '/mock/python'),
-}));
-
-vi.mock('../../main/creator/downloadManager.js', () => ({
-  installAllComponents: vi.fn(),
 }));
 
 vi.mock('../../main/creator/lrclibService.js', () => ({
@@ -25,38 +23,15 @@ vi.mock('../../main/creator/ffmpegService.js', () => ({
   isVideoFile: vi.fn(),
 }));
 
-vi.mock('../../main/creator/conversionService.js', () => ({
-  runConversion: vi.fn(),
-  cancelConversion: vi.fn(),
-  isConversionInProgress: vi.fn(() => false),
-}));
-
 describe('creatorService', () => {
   let creatorService;
-  let checkAllComponents;
-  let _getCacheDir;
-  let _getPythonPath;
-  let installAllComponents;
   let searchLyrics;
   let prepareWhisperContext;
   let getAudioInfo;
   let isVideoFile;
-  let runConversion;
-  let cancelConversion;
-  let isConversionInProgress;
 
   beforeEach(async () => {
-    // Reset modules to clear module-level state (installationInProgress, etc.)
     vi.resetModules();
-
-    // Re-import mocks and service fresh
-    const systemChecker = await import('../../main/creator/systemChecker.js');
-    checkAllComponents = systemChecker.checkAllComponents;
-    _getCacheDir = systemChecker.getCacheDir;
-    _getPythonPath = systemChecker.getPythonPath;
-
-    const downloadManager = await import('../../main/creator/downloadManager.js');
-    installAllComponents = downloadManager.installAllComponents;
 
     const lrclibService = await import('../../main/creator/lrclibService.js');
     searchLyrics = lrclibService.searchLyrics;
@@ -66,119 +41,15 @@ describe('creatorService', () => {
     getAudioInfo = ffmpegService.getAudioInfo;
     isVideoFile = ffmpegService.isVideoFile;
 
-    const conversionService = await import('../../main/creator/conversionService.js');
-    runConversion = conversionService.runConversion;
-    cancelConversion = conversionService.cancelConversion;
-    isConversionInProgress = conversionService.isConversionInProgress;
-
-    // Import fresh service
     creatorService = await import('./creatorService.js');
-
-    // Reset conversion state mock
-    isConversionInProgress.mockReturnValue(false);
-  });
-
-  describe('checkComponents', () => {
-    it('should return component status successfully', async () => {
-      checkAllComponents.mockResolvedValue({
-        ffmpeg: { installed: true },
-        python: { installed: true },
-        whisper: { installed: true },
-      });
-
-      const result = await creatorService.checkComponents();
-
-      expect(result.success).toBe(true);
-      expect(result.ffmpeg).toEqual({ installed: true });
-      expect(result.python).toEqual({ installed: true });
-      expect(result.whisper).toEqual({ installed: true });
-    });
-
-    it('should handle check errors', async () => {
-      checkAllComponents.mockRejectedValue(new Error('Check failed'));
-
-      const result = await creatorService.checkComponents();
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Check failed');
-    });
   });
 
   describe('getStatus', () => {
-    it('should return installation status', () => {
-      isConversionInProgress.mockReturnValue(false);
-
+    it('should return creator status', () => {
       const result = creatorService.getStatus();
-
-      expect(result.installing).toBe(false);
-      expect(result.cancelled).toBe(false);
       expect(result.converting).toBe(false);
       expect(result.cacheDir).toBe('/mock/cache/dir');
-      expect(result.pythonPath).toBe('/mock/python');
-    });
-
-    it('should reflect conversion in progress', () => {
-      isConversionInProgress.mockReturnValue(true);
-
-      const result = creatorService.getStatus();
-
-      expect(result.converting).toBe(true);
-    });
-  });
-
-  describe('installComponents', () => {
-    it('should install components successfully', async () => {
-      installAllComponents.mockImplementation((progressCallback) => {
-        progressCallback(50, 'Installing...');
-        progressCallback(100, 'Done');
-        return { success: true };
-      });
-
-      const onProgress = vi.fn();
-      const result = await creatorService.installComponents(onProgress);
-
-      expect(result.success).toBe(true);
-      expect(onProgress).toHaveBeenCalledWith({
-        step: 'starting',
-        message: 'Starting installation...',
-        progress: 0,
-      });
-      expect(onProgress).toHaveBeenCalledWith({
-        step: 'complete',
-        message: 'Installation complete',
-        progress: 100,
-      });
-    });
-
-    it('should handle installation errors', async () => {
-      installAllComponents.mockRejectedValue(new Error('Install failed'));
-
-      const onProgress = vi.fn();
-      const result = await creatorService.installComponents(onProgress);
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Install failed');
-    });
-
-    it('should prevent concurrent installations', async () => {
-      // Start first installation (won't resolve)
-      installAllComponents.mockImplementation(() => new Promise(() => {}));
-      creatorService.installComponents(vi.fn());
-
-      // Try to start second
-      const result = await creatorService.installComponents(vi.fn());
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Installation already in progress');
-    });
-  });
-
-  describe('cancelInstall', () => {
-    it('should return error when no installation in progress', () => {
-      const result = creatorService.cancelInstall();
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('No installation in progress');
+      expect(result.job).toBeDefined();
     });
   });
 
@@ -213,6 +84,14 @@ describe('creatorService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Search failed');
+    });
+
+    it('should coerce an object title to empty string (no [object Object] query)', async () => {
+      searchLyrics.mockResolvedValue(null);
+
+      await creatorService.findLyrics({ no: 1 }, 'Artist');
+
+      expect(searchLyrics).toHaveBeenCalledWith('', 'Artist');
     });
   });
 
@@ -321,111 +200,15 @@ describe('creatorService', () => {
     });
   });
 
-  describe('startConversion', () => {
-    it('should start conversion successfully', async () => {
-      runConversion.mockImplementation((options, progressCb) => {
-        progressCb('processing', 'Processing...', 50);
-        return { success: true, outputPath: '/output/file.m4a' };
-      });
-
-      const onProgress = vi.fn();
-      const result = await creatorService.startConversion({ inputPath: '/input.mp3' }, onProgress);
-
-      expect(result.success).toBe(true);
-      expect(result.outputPath).toBe('/output/file.m4a');
-      expect(onProgress).toHaveBeenCalledWith({
-        step: 'starting',
-        message: 'Starting conversion...',
-        progress: 0,
-      });
-    });
-
-    it('should prevent concurrent conversions', async () => {
-      isConversionInProgress.mockReturnValue(true);
-
-      const result = await creatorService.startConversion({}, vi.fn());
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Conversion already in progress');
-    });
-
-    it('should handle conversion errors', async () => {
-      runConversion.mockRejectedValue(new Error('Conversion failed'));
-
-      const result = await creatorService.startConversion({}, vi.fn());
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Conversion failed');
-    });
-
-    it('should forward console output through to the caller', async () => {
-      const onConsoleOutput = vi.fn();
-      // startConversion now WRAPS the console callback (to also feed the shared
-      // job descriptor's console tail), so a wrapper Function is passed through.
-      runConversion.mockImplementation(async (_opts, _onProgress, onConsole) => {
-        onConsole('hello from pipeline');
-        return { success: true };
-      });
-
-      await creatorService.startConversion({}, vi.fn(), onConsoleOutput);
-
-      expect(runConversion).toHaveBeenCalledWith(
-        {},
-        expect.any(Function),
-        expect.any(Function),
-        null
-      );
-      // The wrapper must still forward lines to the original callback.
-      expect(onConsoleOutput).toHaveBeenCalledWith('hello from pipeline');
-    });
-
-    it('should pass settings manager', async () => {
-      const settingsManager = { get: vi.fn() };
-      runConversion.mockResolvedValue({ success: true });
-
-      await creatorService.startConversion({}, vi.fn(), null, settingsManager);
-
-      // Console arg is now an internal wrapper Function (not null).
-      expect(runConversion).toHaveBeenCalledWith(
-        {},
-        expect.any(Function),
-        expect.any(Function),
-        settingsManager
-      );
-    });
-  });
-
-  describe('stopConversion', () => {
-    it('should stop conversion', () => {
-      cancelConversion.mockReturnValue(true);
-
-      const result = creatorService.stopConversion();
-
-      expect(result.success).toBe(true);
-      expect(cancelConversion).toHaveBeenCalled();
-    });
-
-    it('should return false when cancel fails', () => {
-      cancelConversion.mockReturnValue(false);
-
-      const result = creatorService.stopConversion();
-
-      expect(result.success).toBe(false);
-    });
-  });
-
   describe('default export', () => {
-    it('should export all functions', () => {
+    it('should export the WebGPU-creator service functions', () => {
       expect(creatorService.default).toBeDefined();
-      expect(creatorService.default.checkComponents).toBeDefined();
       expect(creatorService.default.getStatus).toBeDefined();
-      expect(creatorService.default.installComponents).toBeDefined();
-      expect(creatorService.default.cancelInstall).toBeDefined();
       expect(creatorService.default.findLyrics).toBeDefined();
       expect(creatorService.default.getWhisperContext).toBeDefined();
       expect(creatorService.default.getFileInfo).toBeDefined();
-      expect(creatorService.default.startConversion).toBeDefined();
-      expect(creatorService.default.stopConversion).toBeDefined();
+      expect(creatorService.default.saveWebGpuStems).toBeDefined();
+      expect(creatorService.default.updateStemLyrics).toBeDefined();
     });
   });
 });

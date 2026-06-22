@@ -242,14 +242,11 @@ const api = {
   },
 
   creator: {
-    checkComponents: () => ipcRenderer.invoke('creator:checkComponents'),
-    installComponents: () => ipcRenderer.invoke('creator:installComponents'),
+    // The creator runs entirely in-browser (WebGPU) — no native install/convert.
     getStatus: () => ipcRenderer.invoke('creator:getStatus'),
-    cancelInstall: () => ipcRenderer.invoke('creator:cancelInstall'),
-    // Accept EITHER an object payload ({ title, artist[, existingLyrics] }) from the
-    // WebGPU creator OR positional args from the legacy CreateTab. Normalize to an
-    // object so the IPC handler gets a consistent shape (a positional object had been
-    // landing in `title`, producing "[object Object]" lyric queries).
+    // Accept EITHER an object payload ({ title, artist[, existingLyrics] }) OR positional
+    // args; normalize to an object (a positional object had been landing in `title`,
+    // producing "[object Object]" lyric queries).
     searchLyrics: (a, b) =>
       ipcRenderer.invoke(
         'creator:searchLyrics',
@@ -261,35 +258,14 @@ const api = {
         a && typeof a === 'object' ? a : { title: a, artist: b, existingLyrics: c }
       ),
     selectFile: () => ipcRenderer.invoke('creator:selectFile'),
-    startConversion: (options) => ipcRenderer.invoke('creator:startConversion', options),
-    cancelConversion: () => ipcRenderer.invoke('creator:cancelConversion'),
     saveWebGpuStems: (payload) => ipcRenderer.invoke('creator:saveWebGpuStems', payload),
     correctLyrics: (payload) => ipcRenderer.invoke('creator:correctLyrics', payload),
     updateStemLyrics: (payload) => ipcRenderer.invoke('creator:updateStemLyrics', payload),
 
-    // LLM settings
+    // LLM settings (powers server-side lyric correction)
     getLLMSettings: () => ipcRenderer.invoke('creator:getLLMSettings'),
     saveLLMSettings: (settings) => ipcRenderer.invoke('creator:saveLLMSettings', settings),
     testLLMConnection: (settings) => ipcRenderer.invoke('creator:testLLMConnection', settings),
-
-    onInstallProgress: (callback) => ipcRenderer.on('creator:installProgress', callback),
-    onInstallError: (callback) => ipcRenderer.on('creator:installError', callback),
-    onConversionProgress: (callback) => ipcRenderer.on('creator:conversionProgress', callback),
-    onConversionConsole: (callback) => ipcRenderer.on('creator:conversionConsole', callback),
-    onConversionComplete: (callback) => ipcRenderer.on('creator:conversionComplete', callback),
-    onConversionError: (callback) => ipcRenderer.on('creator:conversionError', callback),
-    removeInstallProgressListener: (callback) =>
-      ipcRenderer.removeListener('creator:installProgress', callback),
-    removeInstallErrorListener: (callback) =>
-      ipcRenderer.removeListener('creator:installError', callback),
-    removeConversionProgressListener: (callback) =>
-      ipcRenderer.removeListener('creator:conversionProgress', callback),
-    removeConversionConsoleListener: (callback) =>
-      ipcRenderer.removeListener('creator:conversionConsole', callback),
-    removeConversionCompleteListener: (callback) =>
-      ipcRenderer.removeListener('creator:conversionComplete', callback),
-    removeConversionErrorListener: (callback) =>
-      ipcRenderer.removeListener('creator:conversionError', callback),
   },
 };
 

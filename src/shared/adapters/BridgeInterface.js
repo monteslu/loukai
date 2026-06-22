@@ -156,28 +156,6 @@ export class BridgeInterface {
     return Promise.reject(new Error('rejectRequest() not implemented'));
   }
 
-  // ===== Creator (song creation) =====
-
-  getCreatorStatus() {
-    return Promise.reject(new Error('getCreatorStatus() not implemented'));
-  }
-
-  getCreatorSources() {
-    return Promise.reject(new Error('getCreatorSources() not implemented'));
-  }
-
-  uploadCreatorFile(_file, _onProgress) {
-    return Promise.reject(new Error('uploadCreatorFile() not implemented'));
-  }
-
-  startConversion(_options) {
-    return Promise.reject(new Error('startConversion() not implemented'));
-  }
-
-  cancelConversion() {
-    return Promise.reject(new Error('cancelConversion() not implemented'));
-  }
-
   // ===== State Subscriptions =====
 
   /**

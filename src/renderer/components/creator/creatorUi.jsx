@@ -1,8 +1,6 @@
 /**
- * Shared creator UI primitives — the design system for BOTH the WebGPU creator and the
- * (legacy) Python CreateTab, so they look identical. Extracted from CreateTab so the
- * WebGPU panel can wear the same polish; when the Python creator is retired, the WebGPU
- * one already owns these cleanly.
+ * Shared creator UI primitives — the design system for the WebGPU creator (cards,
+ * inputs, buttons, error display, per-stem progress bars).
  */
 
 // Shared Tailwind class strings (cards, inputs, buttons, section titles).

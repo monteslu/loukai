@@ -18,7 +18,6 @@ import { TabNavigation } from './TabNavigation.jsx';
 import { ServerTab } from './ServerTab.jsx';
 import { VisualizationSettings } from '../../shared/components/VisualizationSettings.jsx';
 import { toggleCanvasFullscreen } from '../hooks/useKeyboardShortcuts.js';
-import { CreateTab } from './creator/CreateTab.jsx';
 import WebGpuCreatorPanel from './creator/WebGpuCreatorPanel.jsx';
 
 export function App({ bridge }) {
@@ -289,12 +288,7 @@ export function App({ bridge }) {
               <SongEditor bridge={bridge} />
             </div>
 
-            {/* Create Tab */}
-            <div id="create-tab" className="hidden h-full overflow-auto">
-              <CreateTab bridge={bridge} />
-            </div>
-
-            {/* WebGPU Create Tab (experimental, in-browser, no Python) */}
+            {/* Create Tab — in-browser WebGPU creator (no Python) */}
             <div id="webgpu-tab" className="hidden h-full overflow-auto">
               <WebGpuCreatorPanel />
             </div>
