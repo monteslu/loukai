@@ -902,6 +902,7 @@ export default function WebGpuCreatorPanel() {
       let out;
       try {
         const segWordLists = []; // per-segment {start, words:[{text,start,end}]} for reconcile
+        const rawDump = []; // RAW Whisper output per segment, BEFORE any processing (debug)
         for (let pi = 0; pi < plan.length; pi++) {
           const { start, end } = plan[pi];
           const s0 = Math.max(0, Math.floor(start * SR16));
@@ -910,7 +911,30 @@ export default function WebGpuCreatorPanel() {
           chunkIdx += 1;
           setTranscribeInfo(`segment ${chunkIdx}/${plan.length} @ ${start.toFixed(0)}s …`);
           const w = await transcribeWindow(window);
-          const segs = (w.chunks || []).filter((c) => (c.text || '').trim());
+          // Capture the VERBATIM Whisper output for this segment (window-relative chunk
+          // times offset to absolute) + the segment's no_speech, before any filtering.
+          rawDump.push({
+            seg: chunkIdx,
+            window: [Number(start.toFixed(2)), Number(end.toFixed(2))],
+            no_speech: w.noSpeech != null ? Number(w.noSpeech.toFixed(4)) : null,
+            chunks: (w.chunks || []).map((c) => {
+              const ts = c.timestamp || [c.start, c.end];
+              return {
+                text: c.text,
+                t: [
+                  ts[0] != null ? Number((ts[0] + start).toFixed(2)) : null,
+                  ts[1] != null ? Number((ts[1] + start).toFixed(2)) : null,
+                ],
+              };
+            }),
+          });
+          // Per-SEGMENT no_speech drop: now SAFE because dip-cuts align each segment to
+          // a vocal/instrumental boundary — a pure instrumental segment (guitar solo)
+          // reads high no_speech and is dropped whole, while singing that returns lives
+          // in its OWN (next) segment and survives. This kills solo hallucinations like
+          // "# I'm gonna take you to the best #".
+          const isNoSpeech = w.noSpeech != null && w.noSpeech >= 0.6;
+          const segs = isNoSpeech ? [] : (w.chunks || []).filter((c) => (c.text || '').trim());
 
           // Offset this segment's word timestamps to absolute song time.
           const segWords = [];
@@ -930,8 +954,21 @@ export default function WebGpuCreatorPanel() {
           }
           log(
             `  segment ${chunkIdx} @ ${start.toFixed(0)}-${end.toFixed(0)}s: ${segs.length} seg(s)` +
-              (w.noSpeech != null ? `, no_speech=${w.noSpeech.toFixed(2)}` : '')
+              (w.noSpeech != null ? `, no_speech=${w.noSpeech.toFixed(2)}` : '') +
+              (isNoSpeech ? ' → DROPPED (instrumental)' : '')
           );
+        }
+
+        // RAW DUMP: emit verbatim Whisper output as a single JSON STRING (loukai's
+        // console serializer flattens objects to "[object Object]", so stringify).
+        // Copy this from DevTools OR the Electron/node terminal to compare engines.
+        try {
+          console.log(
+            '📋 RAW_WHISPER_WEB ' +
+              JSON.stringify({ engine: 'web-transformersjs', segments: rawDump })
+          );
+        } catch {
+          /* ignore */
         }
 
         // Reconcile overlaps (dedup ONLY within overlap windows → keeps real repeats).
@@ -1040,7 +1077,9 @@ export default function WebGpuCreatorPanel() {
       //      invents phrases over the intro/outro fade. We cull edge words where the
       //      vocals stem is silent. Restricted to the edges so a quiet/breathy real
       //      word mid-song is never culled by energy alone.
-      const isAnnotation = (s) => /[*[\]]/.test((s || '').trim());
+      // Whisper marks non-lyrical audio with * [ ] and music/sound symbols (♪ ♫ #).
+      // Any word containing one is an annotation hallucination — real lyrics don't.
+      const isAnnotation = (s) => /[*[\]#♪♫]/.test((s || '').trim());
       const EDGE_FRAC = 0.01;
       {
         const dur = audio.duration;

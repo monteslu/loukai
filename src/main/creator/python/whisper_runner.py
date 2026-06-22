@@ -172,6 +172,32 @@ def main():
         # Restore stdout
         sys.stdout = old_stdout
 
+        # RAW DUMP (debug): write Whisper's verbatim segment output BEFORE any of our
+        # processing, so the two creators can be compared at the source. Includes the
+        # fields openai-whisper exposes (no_speech_prob, avg_logprob, compression_ratio).
+        # Enabled by setting LOUKAI_DUMP_RAW=/path/to/file.json (or a dir).
+        dump_path = os.environ.get("LOUKAI_DUMP_RAW")
+        if dump_path:
+            try:
+                if os.path.isdir(dump_path):
+                    dump_path = os.path.join(dump_path, "whisper_raw_python.json")
+                raw_segs = [{
+                    "id": s.get("id"),
+                    "start": round(s.get("start", 0), 3),
+                    "end": round(s.get("end", 0), 3),
+                    "text": s.get("text", ""),
+                    "no_speech_prob": s.get("no_speech_prob"),
+                    "avg_logprob": s.get("avg_logprob"),
+                    "compression_ratio": s.get("compression_ratio"),
+                    "temperature": s.get("temperature"),
+                } for s in result.get("segments", [])]
+                with open(dump_path, "w") as fh:
+                    json.dump({"engine": "python-openai-whisper", "model": model_name,
+                               "text": result.get("text", ""), "segments": raw_segs}, fh, indent=2)
+                print(f"PROGRESS:84:Raw Whisper dump → {dump_path}", file=sys.stderr, flush=True)
+            except Exception as _e:
+                print(f"(raw dump failed: {_e})", file=sys.stderr, flush=True)
+
         progress(85, "Extracting line timestamps")
 
         # Extract line-level timestamps and estimate word positions
