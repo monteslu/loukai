@@ -66,6 +66,35 @@ def main():
         audio = whisper.load_audio(input_path)
         duration = len(audio) / whisper.audio.SAMPLE_RATE
 
+        # --- Hallucination-cleanup helpers (parity with the WebGPU creator) ---
+        # The audio we transcribe IS the separated vocals stem, so its energy is an
+        # honest "is anyone singing here?" signal. Whisper invents text over
+        # instrumental sections (solos/intros) — often sound-effect annotations like
+        # "*Music*"/"[Applause]". We (1) strip any token containing * [ ], and
+        # (2) cull words landing where the vocals stem is RMS-silent.
+        SR = whisper.audio.SAMPLE_RATE
+        _win = int(0.20 * SR)  # 200ms RMS windows
+        _nwin = max(1, (len(audio) + _win - 1) // _win)
+        _rms = np.zeros(_nwin, dtype=np.float32)
+        for _w in range(_nwin):
+            _seg = audio[_w * _win:(_w + 1) * _win]
+            if len(_seg):
+                _rms[_w] = float(np.sqrt(np.mean(_seg.astype(np.float32) ** 2)))
+        _peak = float(_rms.max()) if _nwin else 0.0
+        _silent_thresh = _peak * 0.08  # 8% of peak vocal level (relative, adapts to master)
+
+        import re as _re
+        _annot = _re.compile(r"[*\[\]]")
+
+        def _is_annotation(tok):
+            return bool(_annot.search(tok or ""))
+
+        def _vocals_audible_at(t_sec):
+            if _peak <= 0:
+                return True  # no profile → don't cull
+            w = min(_nwin - 1, max(0, int((t_sec * SR) // _win)))
+            return _rms[w] > _silent_thresh
+
         progress(20, f"Transcribing {duration:.1f}s of audio...")
 
         # Build transcription parameters
@@ -107,6 +136,7 @@ def main():
         # Extract line-level timestamps and estimate word positions
         words = []
         lines = []
+        culled = []  # {word, t, why} — for logging
 
         for segment in result.get("segments", []):
             segment_text = segment["text"].strip()
@@ -114,7 +144,10 @@ def main():
             segment_end = segment["end"]
             segment_duration = segment_end - segment_start
 
-            # Estimate word timings by evenly distributing across segment
+            # Estimate word timings by evenly distributing across segment, then KEEP
+            # only words that survive cleanup. A bad word at a line edge shrinks the
+            # line (start/end recomputed from survivors); a bad word in the middle is
+            # removed and the gap closes. An all-bad segment is dropped entirely.
             text_words = segment_text.split()
             segment_words = []
 
@@ -123,6 +156,15 @@ def main():
                 for i, word_text in enumerate(text_words):
                     word_start = segment_start + (i * word_duration)
                     word_end = word_start + word_duration
+                    mid = (word_start + word_end) / 2.0
+                    # (1) annotation token (*Music*, split *Country/music*, [Applause])
+                    if _is_annotation(word_text):
+                        culled.append({"word": word_text, "t": round(mid, 2), "why": "annotation"})
+                        continue
+                    # (2) word over silent vocals → instrumental hallucination
+                    if not _vocals_audible_at(mid):
+                        culled.append({"word": word_text, "t": round(mid, 2), "why": "vocals silent"})
+                        continue
                     word_data = {
                         "word": word_text,
                         "start": round(word_start, 3),
@@ -135,12 +177,19 @@ def main():
                     })
 
             if segment_words:
+                # Rebuild line text + bounds from the SURVIVING words (edge-shrink).
+                line_text = " ".join(w["word"] for w in segment_words).strip()
                 lines.append({
-                    "text": segment_text,
-                    "start": round(segment_start, 3),
-                    "end": round(segment_end, 3),
+                    "text": line_text,
+                    "start": round(segment_words[0]["start"], 3),
+                    "end": round(segment_words[-1]["end"], 3),
                     "words": segment_words
                 })
+
+        if culled:
+            progress(90, f"Trimmed {len(culled)} hallucinated word(s) (annotation/vocals-silent)")
+            for c in culled[:40]:
+                print(f"  ✂ {c['word']!r} @ {c['t']}s ({c['why']})", file=sys.stderr, flush=True)
 
         progress(95, f"Organized into {len(lines)} lines")
 
