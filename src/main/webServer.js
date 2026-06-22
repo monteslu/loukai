@@ -2101,11 +2101,19 @@ class WebServer {
           } catch {
             /* ignore malformed pitch */
           }
+          let refLyrics;
+          try {
+            refLyrics = req.body.referenceLyrics ? req.body.referenceLyrics.toString() : undefined;
+          } catch {
+            /* ignore */
+          }
           const result = await creatorService.saveWebGpuStems({
             stems,
             metadata: { title, artist, album, year, genre, track, duration, key },
             lyrics,
             pitch,
+            referenceLyrics: refLyrics,
+            settingsManager: this.mainApp.settings, // backend runs LLM correction
             songsFolder: this.mainApp.settings?.getSongsFolder?.(),
           });
           cleanup();

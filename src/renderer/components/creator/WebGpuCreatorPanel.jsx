@@ -977,7 +977,7 @@ export default function WebGpuCreatorPanel() {
         }
       }
       log(`after VAD: ${words.length} words`);
-      let lines = words.length
+      const lines = words.length
         ? groupWordsIntoLines(words, { duration: audio.duration })
         : [{ text: (out.text || '').trim(), start: 0, end: audio.duration }];
       const groupedWordCount = lines.reduce(
@@ -1000,64 +1000,14 @@ export default function WebGpuCreatorPanel() {
           `${words.length} words → ${lines.length} lyric lines`
       );
 
-      // --- LLM correction (parity): auto-run when reference lyrics are present ---
-      // Sends the transcription + reference lyrics to the configured LLM to fix
-      // mis-heard words. No-ops gracefully if no LLM is configured.
-      let correctedWords = words;
+      // NOTE: LLM lyric correction is NOT done here in the UI. The renderer sends the
+      // RAW transcription + reference lyrics to the BACKEND save, which runs the
+      // correction server-side (resolving LLM settings the same way the native creator
+      // does). This keeps one code path identical to Python and avoids the web UI
+      // touching LLM endpoints. We just gather the reference lyrics to send along.
+      const correctedWords = words;
       setLlmStats(null);
-      // Title/artist now (needed for the in-flow lyric lookup below) — prefer the UI
-      // fields, else parse "Artist - Title.ext".
-      const baseName0 = file.name.replace(/\.[^.]+$/, '');
-      const dash0 = baseName0.match(/^(.+?)\s*-\s*(.+)$/);
-      const corrArtist = songArtist.trim() || (dash0 ? dash0[1].trim() : '');
-      const corrTitle = songTitle.trim() || (dash0 ? dash0[2].trim() : baseName0);
-      // Ensure reference lyrics IN-FLOW (don't depend on the async file-select lookup
-      // having finished). If empty, look up LRCLIB now with title/artist — this is
-      // what makes LLM correction actually fire (matching the native creator, which
-      // looks up lyrics synchronously during conversion).
-      let refLyrics = referenceLyrics.trim();
-      if (!refLyrics && corrTitle) {
-        try {
-          log(`looking up reference lyrics for correction: ${corrArtist} - ${corrTitle} …`);
-          const lr = await creatorCall('searchLyrics', '/admin/creator/search-lyrics', {
-            title: corrTitle,
-            artist: corrArtist,
-          });
-          refLyrics = (lr?.plainLyrics || lr?.lyrics?.plainLyrics || '').trim();
-          if (refLyrics) {
-            setReferenceLyrics(refLyrics);
-            log(`found reference lyrics (${refLyrics.split('\n').length} lines)`);
-          } else {
-            log('no reference lyrics found (LLM correction will be skipped)');
-          }
-        } catch (e) {
-          log(`reference lyric lookup failed: ${e.message}`);
-        }
-      }
-      if (refLyrics) {
-        setStatus('correcting');
-        log('correcting lyrics with LLM …');
-        try {
-          const cr = await creatorCall('correctLyrics', '/admin/creator/correct', {
-            whisperOutput: { lines, words },
-            referenceLyrics: refLyrics,
-          });
-          if (cr?.success !== false && cr?.lines?.length) {
-            lines = cr.lines;
-            if (cr.words?.length) correctedWords = cr.words;
-            setLyrics(lines);
-            const st = cr.llmStats || cr.stats;
-            if (st) setLlmStats(st);
-            log(
-              `LLM correction applied${st?.corrections_applied != null ? `: ${st.corrections_applied} lines changed` : ''}`
-            );
-          } else {
-            log(`LLM correction skipped (${cr?.error || 'no LLM configured'})`);
-          }
-        } catch (e) {
-          log(`LLM correction failed (${e.message}) — using raw transcription`);
-        }
-      }
+      const refLyrics = referenceLyrics.trim(); // sent to backend; it looks up if empty
 
       // --- CREPE pitch → musical key (parity: native uses CREPE for key detection;
       // pitch track stored best-effort). Reuses the 16k mono vocals. Best-effort. ---
@@ -1187,6 +1137,7 @@ export default function WebGpuCreatorPanel() {
           },
           lyrics: lyricsPayload,
           pitch: pitchData,
+          referenceLyrics: refLyrics, // backend corrects server-side (looks up if empty)
         });
         if (!r?.success) throw new Error(`save failed: ${r?.error || 'unknown'}`);
         saved = r;
@@ -1203,6 +1154,7 @@ export default function WebGpuCreatorPanel() {
         fd.append('lyrics', JSON.stringify(lyricsPayload));
         if (detectedKey) fd.append('key', detectedKey);
         if (pitchData) fd.append('pitch', JSON.stringify(pitchData));
+        if (refLyrics) fd.append('referenceLyrics', refLyrics);
         for (const [k, blob] of Object.entries(wavBlobs)) fd.append(k, blob, `${k}.wav`);
         const saveRes = await fetch('/admin/webgpu-creator/save', {
           method: 'POST',
@@ -1214,6 +1166,14 @@ export default function WebGpuCreatorPanel() {
           throw new Error(`save failed (${saveRes.status}): ${err.error || ''}`);
         }
         saved = await saveRes.json();
+      }
+      // Report the backend's LLM correction result (it ran server-side during save).
+      if (saved.llmStats) {
+        setLlmStats(saved.llmStats);
+        log(
+          `LLM correction (backend): ${saved.llmStats.corrections_applied ?? 0} lines changed` +
+            `${saved.llmStats.failed ? ' (failed: ' + (saved.llmStats.error || '') + ')' : ''}`
+        );
       }
       setStatus('done');
       log(`✅ saved to library: ${saved.fileName}`);

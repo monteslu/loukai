@@ -16,6 +16,7 @@ import {
 } from '../../main/creator/systemChecker.js';
 import { installAllComponents } from '../../main/creator/downloadManager.js';
 import { searchLyrics, prepareWhisperContext } from '../../main/creator/lrclibService.js';
+import * as llmService from '../../main/creator/llmService.js';
 import { getAudioInfo, isVideoFile } from '../../main/creator/ffmpegService.js';
 import {
   runConversion,
@@ -406,7 +407,15 @@ export async function repairStems(filePaths) {
  *   songsFolder: output directory (the library)
  * @returns {Promise<{outputPath, fileName}>}
  */
-export async function saveWebGpuStems({ stems, metadata, lyrics, pitch, songsFolder }) {
+export async function saveWebGpuStems({
+  stems,
+  metadata,
+  lyrics,
+  pitch,
+  referenceLyrics,
+  settingsManager,
+  songsFolder,
+}) {
   if (!songsFolder) throw new Error('songs folder is not set');
   const {
     title = 'Untitled',
@@ -423,6 +432,41 @@ export async function saveWebGpuStems({ stems, metadata, lyrics, pitch, songsFol
   } = metadata || {};
   const safeFileName = (artist ? `${artist} - ${title}` : title).replace(/[<>:"/\\|?*]/g, '_');
   const outputPath = join(songsFolder, `${safeFileName}.stem.mp4`);
+
+  // --- LLM lyric correction, server-side (IDENTICAL to native startConversion) ---
+  // The renderer sends the RAW transcription; correction happens HERE on the backend,
+  // not in the web UI — same code path, same settings resolution as the Python creator.
+  let llmStats = null;
+  let lyricsData = lyrics && lyrics.lines ? { lines: lyrics.lines } : null;
+  if (settingsManager && lyricsData?.lines?.length) {
+    try {
+      // Use the provided reference lyrics, else look up LRCLIB (in-flow, like native).
+      let ref = (referenceLyrics || '').trim();
+      if (!ref) {
+        const r = await searchLyrics(title, artist);
+        ref = (r?.plainLyrics || '').trim();
+      }
+      if (ref) {
+        const llmSettings = llmService.getLLMSettingsRaw(settingsManager);
+        const hasValidConfig = llmSettings.provider === 'lmstudio' || llmSettings.apiKey;
+        if (llmSettings.enabled && hasValidConfig) {
+          const llmResult = await llmService.correctLyrics(
+            { lines: lyricsData.lines, words: lyrics.words },
+            ref,
+            llmSettings
+          );
+          if (llmResult?.output?.lines?.length) {
+            lyricsData = { lines: llmResult.output.lines };
+            llmStats = llmResult.stats;
+          }
+        } else {
+          console.log('🤖 LLM not enabled/configured — skipping correction');
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ LLM correction failed, using original transcription:', e.message);
+    }
+  }
 
   // Pass the FULL tag set through so the output preserves what the source had
   // (parity with the native creator: year/genre/track/album-artist/composer/tempo).
@@ -448,7 +492,7 @@ export async function saveWebGpuStems({ stems, metadata, lyrics, pitch, songsFol
     },
     mixdownWav: stems.master, // the raw original mix = NI-Stems master track
     metadata: fullMeta,
-    lyricsData: lyrics && lyrics.lines ? { lines: lyrics.lines } : undefined,
+    lyricsData: lyricsData || undefined, // corrected lines if LLM ran, else raw
     codec: 'aac',
   });
 
@@ -468,7 +512,7 @@ export async function saveWebGpuStems({ stems, metadata, lyrics, pitch, songsFol
       console.warn('writeVpchAtom failed:', e.message);
     }
   }
-  return { outputPath, fileName: basename(outputPath) };
+  return { outputPath, fileName: basename(outputPath), llmStats };
 }
 
 /**

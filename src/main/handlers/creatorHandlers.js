@@ -191,35 +191,40 @@ export function registerCreatorHandlers(mainApp) {
   // .stem.mp4. The renderer (player window) uses THIS IPC path — it has no admin
   // HTTP session (the web admin uses POST /admin/webgpu-creator/save instead).
   // stems = { master, drums, bass, other, vocals } as WAV Uint8Array/ArrayBuffer.
-  ipcMain.handle('creator:saveWebGpuStems', async (_event, { stems, metadata, lyrics, pitch }) => {
-    const tmpDir = join(getCacheDir(), 'webgpu-creator', crypto.randomBytes(8).toString('hex'));
-    mkdirSync(tmpDir, { recursive: true });
-    const paths = {};
-    try {
-      for (const name of ['master', 'drums', 'bass', 'other', 'vocals']) {
-        if (!stems?.[name]) throw new Error(`missing stem: ${name}`);
-        const p = join(tmpDir, `${name}.wav`);
-        writeFileSync(p, Buffer.from(stems[name]));
-        paths[name] = p;
-      }
-      const result = await creatorService.saveWebGpuStems({
-        stems: paths,
-        metadata,
-        lyrics,
-        pitch,
-        songsFolder: mainApp.settings?.getSongsFolder?.(),
-      });
-      return { success: true, ...result };
-    } catch (e) {
-      return { success: false, error: e.message };
-    } finally {
+  ipcMain.handle(
+    'creator:saveWebGpuStems',
+    async (_event, { stems, metadata, lyrics, pitch, referenceLyrics }) => {
+      const tmpDir = join(getCacheDir(), 'webgpu-creator', crypto.randomBytes(8).toString('hex'));
+      mkdirSync(tmpDir, { recursive: true });
+      const paths = {};
       try {
-        rmSync(tmpDir, { recursive: true, force: true });
-      } catch {
-        /* best-effort */
+        for (const name of ['master', 'drums', 'bass', 'other', 'vocals']) {
+          if (!stems?.[name]) throw new Error(`missing stem: ${name}`);
+          const p = join(tmpDir, `${name}.wav`);
+          writeFileSync(p, Buffer.from(stems[name]));
+          paths[name] = p;
+        }
+        const result = await creatorService.saveWebGpuStems({
+          stems: paths,
+          metadata,
+          lyrics,
+          pitch,
+          referenceLyrics,
+          settingsManager: mainApp.settings, // backend runs LLM correction (like native)
+          songsFolder: mainApp.settings?.getSongsFolder?.(),
+        });
+        return { success: true, ...result };
+      } catch (e) {
+        return { success: false, error: e.message };
+      } finally {
+        try {
+          rmSync(tmpDir, { recursive: true, force: true });
+        } catch {
+          /* best-effort */
+        }
       }
     }
-  });
+  );
 
   // LLM lyric correction (used by the WebGPU creator after transcription). Sends
   // the Whisper output + reference lyrics to the configured LLM to fix mis-heard
