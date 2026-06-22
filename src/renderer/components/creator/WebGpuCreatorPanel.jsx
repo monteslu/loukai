@@ -1,10 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as StemExtractor from 'stem-mp4/extractor';
-import {
-  planVocalSegments,
-  reconcileOverlaps,
-  snapToVocalEnergy,
-} from '../../../shared/creator/vocalSegmentation.js';
+import { planVocalSegments, snapToVocalEnergy } from '../../../shared/creator/vocalSegmentation.js';
 
 /**
  * WebGPU Creator (experimental) — runs Demucs stem separation + Whisper
@@ -894,14 +890,13 @@ export default function WebGpuCreatorPanel() {
         durationSec: audio.duration,
         minSegSec: 20, // always take 20s, then cut at the best dip in the next 10s
         maxSegSec: 30,
-        overlapSec: 2,
+        overlapSec: 0, // cuts land in vocal DIPS → no word is split → no overlap needed
         dipSec: 0.5,
       });
-      log(`planned ${plan.length} vocal-aware segment(s) (20s + best-dip cut, ≤30s, 2s overlap)`);
+      log(`planned ${plan.length} vocal-aware segment(s) (20s + best-dip cut, ≤30s, clean cuts)`);
 
       let out;
       try {
-        const segWordLists = []; // per-segment {start, words:[{text,start,end}]} for reconcile
         const rawDump = []; // RAW Whisper output per segment, BEFORE any processing (debug)
         for (let pi = 0; pi < plan.length; pi++) {
           const { start, end } = plan[pi];
@@ -928,34 +923,32 @@ export default function WebGpuCreatorPanel() {
               };
             }),
           });
-          // Per-SEGMENT no_speech drop: now SAFE because dip-cuts align each segment to
-          // a vocal/instrumental boundary — a pure instrumental segment (guitar solo)
-          // reads high no_speech and is dropped whole, while singing that returns lives
-          // in its OWN (next) segment and survives. This kills solo hallucinations like
-          // "# I'm gonna take you to the best #".
-          const isNoSpeech = w.noSpeech != null && w.noSpeech >= 0.6;
-          const segs = isNoSpeech ? [] : (w.chunks || []).filter((c) => (c.text || '').trim());
-
-          // Offset this segment's word timestamps to absolute song time.
-          const segWords = [];
+          // NOTE: we do NOT gate on no_speech here — the raw data shows Whisper reports
+          // no_speech=0 even over a pure guitar solo it hallucinates as "# ... #", so the
+          // signal is useless for this. Instrumental hallucinations are caught downstream
+          // by the annotation strip (* [ ] # ♪ ♫). Keep every segment's words; no overlap
+          // means no dedup needed — just collect in order.
+          const segs = (w.chunks || []).filter((c) => (c.text || '').trim());
           for (const c of segs) {
             const ts = c.timestamp || [c.start, c.end];
             const a = ts[0] != null ? ts[0] + start : null;
             const b = ts[1] != null ? ts[1] + start : null;
             if (a == null) continue;
-            segWords.push({ text: c.text, start: a, end: b != null ? b : a + 0.4 });
+            allChunks.push({ text: c.text, timestamp: [a, b != null ? b : a + 0.4] });
           }
-          segWordLists.push({ start, words: segWords });
 
-          // Live update from what we have so far (pre-reconcile is fine for feedback).
-          const flat = segWordLists.flatMap((sw) => sw.words);
-          if (flat.length) {
+          // Live update from what we have so far.
+          if (allChunks.length) {
+            const flat = allChunks.map((c) => ({
+              text: c.text,
+              start: c.timestamp[0],
+              end: c.timestamp[1],
+            }));
             setLyrics(groupWordsIntoLines(flat, { duration: audio.duration }));
           }
           log(
             `  segment ${chunkIdx} @ ${start.toFixed(0)}-${end.toFixed(0)}s: ${segs.length} seg(s)` +
-              (w.noSpeech != null ? `, no_speech=${w.noSpeech.toFixed(2)}` : '') +
-              (isNoSpeech ? ' → DROPPED (instrumental)' : '')
+              (w.noSpeech != null ? `, no_speech=${w.noSpeech.toFixed(2)} (hint)` : '')
           );
         }
 
@@ -971,10 +964,9 @@ export default function WebGpuCreatorPanel() {
           /* ignore */
         }
 
-        // Reconcile overlaps (dedup ONLY within overlap windows → keeps real repeats).
-        const reconciled = reconcileOverlaps(segWordLists, 0.6);
-        allChunks.length = 0;
-        for (const w of reconciled) allChunks.push({ text: w.text, timestamp: [w.start, w.end] });
+        // allChunks already holds every segment's words in time order (no overlap → no
+        // dedup needed). Sort defensively in case segment ordering ever changes.
+        allChunks.sort((a, b) => (a.timestamp[0] ?? 0) - (b.timestamp[0] ?? 0));
         out = { chunks: allChunks, text: allChunks.map((c) => c.text).join('') };
       } finally {
         clearInterval(hb);
