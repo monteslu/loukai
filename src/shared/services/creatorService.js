@@ -137,9 +137,20 @@ export function cancelInstall() {
  * @param {string} artist - Artist name
  * @returns {Promise<Object>} Lyrics result
  */
+// Coerce any caller's title/artist to a safe string. music-metadata (and stray
+// payloads) can pass an OBJECT, which would become "[object Object]" in the LRCLIB
+// query → matches the wrong song. Accept string/number/array; objects/null → ''.
+function safeStr(v) {
+  if (v == null) return '';
+  if (typeof v === 'string') return v.trim();
+  if (typeof v === 'number') return String(v);
+  if (Array.isArray(v)) return v.map(safeStr).filter(Boolean).join(', ');
+  return ''; // object/other → not a usable string
+}
+
 export async function findLyrics(title, artist) {
   try {
-    const result = await searchLyrics(title, artist);
+    const result = await searchLyrics(safeStr(title), safeStr(artist));
     if (result) {
       return { success: true, ...result };
     }
@@ -159,7 +170,7 @@ export async function findLyrics(title, artist) {
  */
 export async function getWhisperContext(title, artist, existingLyrics) {
   try {
-    const result = await prepareWhisperContext(title, artist, existingLyrics);
+    const result = await prepareWhisperContext(safeStr(title), safeStr(artist), existingLyrics);
     return { success: true, ...result };
   } catch (error) {
     console.error('Whisper context preparation failed:', error);
