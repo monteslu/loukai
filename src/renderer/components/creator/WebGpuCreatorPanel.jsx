@@ -8,6 +8,7 @@ import {
   encodeWav,
   groupWordsIntoLines,
 } from '../../../shared/creator/creatorAudio.js';
+import { STYLES, ErrorDisplay, SongTitle, StemProgressBars } from './creatorUi.jsx';
 
 /**
  * WebGPU Creator (experimental) — runs Demucs stem separation + Whisper
@@ -47,6 +48,7 @@ export default function WebGpuCreatorPanel() {
   const [ftAvailable, setFtAvailable] = useState(true); // htdemucs_ft models present?
   const [transcribeInfo, setTranscribeInfo] = useState(''); // live transcription status
   const [logLines, setLogLines] = useState([]);
+  const [error, setError] = useState(null); // fatal error message → ErrorDisplay
   const [lyrics, setLyrics] = useState([]);
   const [rtf, setRtf] = useState(null);
   // Lyric-assist (parity with native creator): title/artist for LRCLIB lookup,
@@ -477,6 +479,7 @@ export default function WebGpuCreatorPanel() {
     const file = fileRef.current?.files?.[0];
     if (!file) return;
     setStatus('separating');
+    setError(null);
     setLyrics([]);
     setStemProgress({});
     setRtf(null);
@@ -1229,6 +1232,7 @@ export default function WebGpuCreatorPanel() {
     } catch (e) {
       console.error(e);
       log(`ERROR: ${e.message}`);
+      setError(e.message || 'Conversion failed');
       setStatus('error');
     }
   }
@@ -1242,33 +1246,36 @@ export default function WebGpuCreatorPanel() {
 
   return (
     <div className="h-full overflow-y-auto p-6">
-      <div className="max-w-2xl mx-auto flex flex-col gap-4">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-            Creator (WebGPU) — experimental
-          </h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Stem separation + transcription run entirely in your browser. No Python.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3 text-sm">
-          <span className="text-gray-600 dark:text-gray-400">WebGPU:</span>
+      <div className="max-w-3xl mx-auto flex flex-col gap-6">
+        {/* Header */}
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Create Karaoke ⚡</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Stem separation + transcription run entirely in your browser — no Python.
+            </p>
+          </div>
           <span
-            className={
+            className={`text-xs font-medium px-2.5 py-1 rounded-full ${
               gpu === 'available'
-                ? 'text-teal-600 dark:text-teal-400 font-medium'
+                ? 'bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300'
                 : gpu === 'unavailable'
-                  ? 'text-amber-600 dark:text-amber-400 font-medium'
-                  : 'text-gray-400'
-            }
+                  ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
+            }`}
           >
-            {gpu}
-            {gpu === 'unavailable' ? ' (WASM fallback — slower)' : ''}
+            {gpu === 'available'
+              ? '⚡ WebGPU'
+              : gpu === 'unavailable'
+                ? 'WASM (slower)'
+                : 'checking…'}
           </span>
         </div>
 
-        <div className="rounded-lg border border-gray-300 dark:border-gray-600 p-4 flex flex-col gap-3">
+        <ErrorDisplay error={error} onDismiss={() => setError(null)} />
+
+        {/* File + song info */}
+        <div className={`${STYLES.card} flex flex-col gap-4`}>
           <input
             ref={fileRef}
             type="file"
@@ -1502,33 +1509,11 @@ export default function WebGpuCreatorPanel() {
         </div>
 
         {status === 'separating' && (
-          <div>
-            <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-              Separating stems ·{' '}
-              {demucsModel === 'htdemucs_ft' ? 'htdemucs_ft (4 models)' : 'htdemucs'} on GPU…
-            </div>
-            <div className="flex flex-col gap-1.5">
-              {['drums', 'bass', 'other', 'vocals'].map((stem) => {
-                const frac = stemProgress[stem] || 0;
-                const emoji = { drums: '🥁', bass: '🎸', other: '🎹', vocals: '🎤' }[stem];
-                return (
-                  <div key={stem} className="flex items-center gap-2">
-                    <span className="w-20 text-xs text-gray-600 dark:text-gray-400">
-                      {emoji} {stem}
-                    </span>
-                    <div className="flex-1 h-2 rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                      <div
-                        className="h-full bg-blue-600 transition-all"
-                        style={{ width: `${(frac * 100).toFixed(1)}%` }}
-                      />
-                    </div>
-                    <span className="w-9 text-right text-xs text-gray-500">
-                      {Math.round(frac * 100)}%
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+          <div className={STYLES.card}>
+            <StemProgressBars
+              progress={stemProgress}
+              label={`Separating stems · ${demucsModel === 'htdemucs_ft' ? 'htdemucs_ft (4 models)' : 'htdemucs'} on GPU…`}
+            />
           </div>
         )}
         {status === 'transcribing' && (
@@ -1565,8 +1550,15 @@ export default function WebGpuCreatorPanel() {
         )}
 
         {lyrics.length > 0 && (
-          <div className="rounded-lg border border-gray-300 dark:border-gray-600 p-4 max-h-64 overflow-auto">
-            <h3 className="font-medium mb-2 text-gray-900 dark:text-gray-100">Lyrics</h3>
+          <div className={`${STYLES.card} max-h-72 overflow-auto`}>
+            <h3 className={STYLES.sectionTitle}>
+              Lyrics
+              {(songTitle || songArtist) && (
+                <span className="ml-2 font-normal text-sm text-gray-500 dark:text-gray-400">
+                  <SongTitle artist={songArtist} title={songTitle} />
+                </span>
+              )}
+            </h3>
             <div className="text-sm space-y-0.5 font-mono">
               {lyrics.map((l, i) => (
                 <div key={i} className="text-gray-700 dark:text-gray-300">
