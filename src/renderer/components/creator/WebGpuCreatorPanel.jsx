@@ -750,18 +750,19 @@ export default function WebGpuCreatorPanel() {
       } catch {
         streamer = null;
       }
-      // Reference lyrics as a Whisper prompt nudges it toward the right words
-      // (names, slang, rare words) — same idea as the native creator's hints.
-      const promptText = referenceLyrics.trim()
-        ? referenceLyrics.replace(/\s+/g, ' ').trim().slice(0, 200)
-        : null;
+      // NOTE: we do NOT pass a `prompt` to the chunked pipeline. transformers.js
+      // expects tokenized `prompt_ids` (not a raw string), and feeding a string
+      // prompt into the long-form/chunked decode destabilizes it — it can lock onto
+      // the prompt and drop real lyrics mid-song. The reference lyrics still help via
+      // the post-transcription LLM correction. (If we want true prompting later, do
+      // it with tokenizer-produced prompt_ids.)
+      const promptText = null;
       let out;
       try {
         out = await asr(mono, {
           chunk_length_s: 30,
           stride_length_s: 5,
           return_timestamps: 'word',
-          ...(promptText ? { prompt: promptText } : {}),
           ...(streamer ? { streamer } : {}),
         });
       } finally {
@@ -771,14 +772,23 @@ export default function WebGpuCreatorPanel() {
       const tSec = (performance.now() - tStart) / 1000;
 
       let words = out.chunks || [];
+      // DIAGNOSTIC: where do lyrics disappear? Log counts at each stage.
+      const rawWordCount = words.length;
+      const rawTextLen = (out.text || '').length;
+      const lastWordT = words.length
+        ? (words[words.length - 1].timestamp?.[1] ?? words[words.length - 1].end ?? 0)
+        : 0;
+      log(
+        `Whisper raw: ${rawWordCount} words, ${rawTextLen} chars, last word @ ${lastWordT.toFixed(0)}s of ${audio.duration.toFixed(0)}s${promptText ? ' (prompt ON)' : ''}`
+      );
       // VAD post-filter — ONLY at the song's instrumental bookends. Whisper
       // hallucinations ("thank you", "..") cluster in the intro + outro/fade; the
       // body of the song is essentially all singing, and Silero (a SPEECH vad)
       // under-detects sustained/quiet/harmonized vocals, so filtering the whole
       // track culls real lyrics. So we only DROP words in the first/last EDGE_FRAC
-      // of the track that fall outside any detected speech region; everything in the
-      // middle is kept untouched.
-      const EDGE_FRAC = 0.07;
+      // (3%) of the track that fall outside any detected speech region; everything in
+      // the middle is kept untouched.
+      const EDGE_FRAC = 0.03;
       if (speechRegions && speechRegions.length) {
         const dur = audio.duration;
         const headEnd = dur * EDGE_FRAC;
@@ -799,9 +809,17 @@ export default function WebGpuCreatorPanel() {
           );
         }
       }
+      log(`after VAD: ${words.length} words`);
       let lines = words.length
         ? groupWordsIntoLines(words, { duration: audio.duration })
         : [{ text: (out.text || '').trim(), start: 0, end: audio.duration }];
+      const groupedWordCount = lines.reduce(
+        (n, l) => n + l.text.split(/\s+/).filter(Boolean).length,
+        0
+      );
+      log(
+        `after grouping: ${lines.length} lines, ${groupedWordCount} words (last line ends @ ${(lines[lines.length - 1]?.end ?? 0).toFixed(0)}s)`
+      );
       setLyrics(lines);
       log(
         `transcription done in ${tSec.toFixed(1)}s ` +
