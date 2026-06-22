@@ -156,6 +156,9 @@ export default function WebGpuCreatorPanel() {
   // audible lines). Default to segment for completeness; we re-derive per-word timing
   // by spreading each segment's words across its span, which is plenty for karaoke.
   const [timestampMode, setTimestampMode] = useState('segment');
+  // Whisper weight precision on WebGPU. fp16 (default) matches PyTorch quality
+  // (fp16==fp32 measured); q4f16 is 4-bit — smaller/faster but lower text accuracy.
+  const [whisperDtype, setWhisperDtype] = useState('fp16');
   const [status, setStatus] = useState('idle'); // idle | separating | transcribing | done | error
   const [stemProgress, setStemProgress] = useState({}); // per-stem 0..1 (ft ensemble)
   // Demucs separation model — default to the fast single htdemucs.
@@ -690,7 +693,9 @@ export default function WebGpuCreatorPanel() {
       // huge fp32 ONNX (v3-turbo's decoder is 2.5GB) → unusably slow / OOM. q4f16
       // is 4-bit weights + fp16 compute: tiny (v3-turbo ~564MB) and FAST on WebGPU
       // (measured ~13× realtime vs fp32 not finishing in 4 min). On wasm, q8.
-      const dtype = device === 'webgpu' ? 'q4f16' : 'q8';
+      // fp16 matches PyTorch text quality (fp16==fp32 measured); q4f16 (4-bit) is
+      // smaller/faster but loses accuracy. User-selectable. On wasm, q8.
+      const dtype = device === 'webgpu' ? whisperDtype : 'q8';
       log(`loading Whisper model · ${want} · ${device}/${dtype} (first run downloads it) …`);
       const seenFiles = new Set();
       let asr;
@@ -1464,6 +1469,19 @@ export default function WebGpuCreatorPanel() {
             >
               <option value="segment">segment/line (robust, keeps all lines — default)</option>
               <option value="word">word-level (precise timing, may drop lines)</option>
+            </select>
+          </label>
+          <label className="text-sm text-gray-700 dark:text-gray-300">
+            Whisper precision (WebGPU):
+            <select
+              className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
+              value={whisperDtype}
+              onChange={(e) => setWhisperDtype(e.target.value)}
+              disabled={busy}
+            >
+              <option value="fp16">fp16 — best accuracy (matches PyTorch), larger/slower</option>
+              <option value="q4f16">q4f16 — 4-bit, fastest/smallest, lower accuracy</option>
+              <option value="fp32">fp32 — full precision (largest, slow)</option>
             </select>
           </label>
 
