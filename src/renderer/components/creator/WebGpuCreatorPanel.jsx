@@ -840,6 +840,51 @@ export default function WebGpuCreatorPanel() {
         ...(promptIds ? { prompt_ids: promptIds } : promptText ? { prompt: promptText } : {}),
       };
 
+      // ONE-TIME DIAGNOSTIC (DevTools console): dump the real shapes of model.generate
+      // (with scores) + _decode_asr on the first 30s, so we can wire no_speech_prob
+      // correctly. Logs and continues; does not affect transcription.
+      try {
+        const probe = mono.subarray(0, Math.min(winSamples, mono.length));
+        const inputs = await asr.processor(probe);
+        const ik = Object.keys(inputs || {});
+        const gen = await asr.model.generate({
+          ...inputs,
+          return_timestamps: true,
+          output_scores: true,
+          return_dict_in_generate: true,
+          max_new_tokens: 16,
+        });
+
+        console.log('🔬 generate keys:', Object.keys(gen || {}), '| processor keys:', ik);
+        console.log('🔬 sequences:', gen.sequences && (gen.sequences.dims || gen.sequences.length));
+        const sc = gen.scores;
+        console.log('🔬 scores type:', Array.isArray(sc) ? 'array len ' + sc.length : typeof sc);
+        if (sc && sc[0])
+          console.log(
+            '🔬 scores[0] dims:',
+            sc[0].dims,
+            'sample:',
+            Array.from((sc[0].data || []).slice(0, 3))
+          );
+        try {
+          const dec = asr.tokenizer._decode_asr([gen.sequences], {
+            return_timestamps: true,
+            time_precision: 0.02,
+          });
+          console.log('🔬 _decode_asr([sequences]) →', JSON.stringify(dec)?.slice(0, 300));
+        } catch (e1) {
+          console.log('🔬 _decode_asr([sequences]) FAILED:', e1.message);
+          try {
+            const dec2 = asr.tokenizer.batch_decode(gen.sequences, { skip_special_tokens: false });
+            console.log('🔬 batch_decode(sequences) →', JSON.stringify(dec2)?.slice(0, 200));
+          } catch (e2) {
+            console.log('🔬 batch_decode FAILED:', e2.message);
+          }
+        }
+      } catch (e) {
+        log(`(no_speech probe skipped: ${e.message})`);
+      }
+
       // Transcribe ONE ≤30s window via the (reliable) pipeline call. Instrumental/
       // hallucination suppression is handled AFTER the loop by the annotation-pattern
       // + vocals-RMS filter (the raw model.generate no_speech path broke transcription
