@@ -18,6 +18,30 @@
  */
 import { readFileSync } from 'fs';
 
+// Pull the kara atom's "lines":[...] JSON straight from a .stem.mp4's bytes (robust to
+// the loukai atom wrapper, which stem-mp4's reader doesn't always parse). This lets the
+// GOLD STANDARD be an edited .stem.mp4 saved from loukai's editor — no hand-authored JSON.
+function extractKaraLines(path) {
+  const s = readFileSync(path).toString('latin1');
+  const at = s.indexOf('"lines":');
+  if (at < 0) return [];
+  const i = s.indexOf('[', at);
+  if (i < 0) return [];
+  let depth = 0;
+  let end = -1;
+  for (let k = i; k < s.length; k++) {
+    if (s[k] === '[') depth++;
+    else if (s[k] === ']') {
+      if (--depth === 0) {
+        end = k;
+        break;
+      }
+    }
+  }
+  if (end < 0) return [];
+  return JSON.parse(s.slice(i, end + 1)).map((l) => ({ text: l.text, start: l.start, end: l.end }));
+}
+
 const norm = (s) =>
   (s || '')
     .toLowerCase()
@@ -50,6 +74,8 @@ function wordEditDistance(a, b) {
 
 // Load a file; accept {lines:[...]} or {segments:[...]} (raw dump) and normalize to lines.
 function loadLines(path) {
+  // A .stem.mp4 (e.g. an edited gold file from loukai's editor) → read its kara atom.
+  if (path.endsWith('.mp4')) return extractKaraLines(path);
   const j = JSON.parse(readFileSync(path, 'utf8'));
   if (Array.isArray(j.lines)) return j.lines.map((l) => ({ text: l.text, start: l.start, end: l.end }));
   if (Array.isArray(j.segments)) {
