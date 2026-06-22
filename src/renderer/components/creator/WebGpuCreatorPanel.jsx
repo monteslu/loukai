@@ -420,10 +420,16 @@ export default function WebGpuCreatorPanel() {
     try {
       const mm = await import(/* @vite-ignore */ 'music-metadata');
       const { common } = await mm.parseBlob(file);
-      // Coerce to strings — music-metadata can return arrays/objects for some tags
-      // (e.g. artists[]), which would otherwise become "[object Object]" in the query.
-      const str = (v) =>
-        Array.isArray(v) ? v.join(', ') : typeof v === 'string' ? v : v ? String(v) : '';
+      // Coerce to strings — music-metadata can return arrays/objects for some tags.
+      // A plain OBJECT must NOT become "[object Object]" (that polluted the LRCLIB
+      // query → matched the wrong song). Accept string/number/array only; drop objects.
+      const str = (v) => {
+        if (v == null) return '';
+        if (typeof v === 'string') return v;
+        if (typeof v === 'number') return String(v);
+        if (Array.isArray(v)) return v.map(str).filter(Boolean).join(', ');
+        return ''; // object/other → not a usable title/artist string
+      };
       title = str(common?.title);
       artist = str(common?.artist || common?.artists);
       album = str(common?.album);

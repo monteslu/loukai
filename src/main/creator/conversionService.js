@@ -104,17 +104,21 @@ export async function runConversion(
     artist,
     tags = {},
     numStems = 4,
-    demucsModel = 'htdemucs_ft', // 'htdemucs' (fast single) | 'htdemucs_ft' (4-model ensemble)
-    whisperModel = 'large-v3-turbo',
     language = 'en',
     enableCrepe = true,
     referenceLyrics = '',
     outputDir = dirname(inputPath),
     lyricsOnlyMode = false,
     vocalsTrackIndex = 4, // Default: vocals is typically track 4 in NI Stems format (0=master, 1=drums, 2=bass, 3=other, 4=vocals)
-    device = 'auto', // PyTorch backend: auto|rocm|cuda|mps|cpu (Python resolves + falls back)
     transcriptionEngine = 'whisper', // 'whisper' (estimated word timing) | 'whisperx' (forced-alignment, precise line+word timing)
   } = options;
+  // Null-coerced defaults: destructure defaults only fill `undefined`, but callers
+  // (web form / older payloads) may send explicit null → coerce so the GPU device,
+  // models, and stats labels are always real (this is why earlier runs logged
+  // device=null and ran on CPU).
+  const device = options.device || 'auto'; // PyTorch backend: auto|rocm|cuda|mps|cpu
+  const demucsModel = options.demucsModel || 'htdemucs'; // 'htdemucs' (fast) | 'htdemucs_ft' (4-model)
+  const whisperModel = options.whisperModel || 'large-v3-turbo';
 
   if (conversionInProgress) {
     throw new Error('Conversion already in progress');
