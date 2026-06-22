@@ -15,140 +15,88 @@
  */
 
 /**
- * Plan transcription segments by cutting at vocal silence.
+ * Plan transcription segments: guaranteed-minimum + best-dip cut.
  *
  * Algorithm:
- *  1. Classify each RMS window as silent (< fraction of peak) or voiced.
- *  2. Walk voiced regions. Accumulate into a segment until adding the next voiced run
- *     would exceed maxSegSec — then cut at the SILENCE gap between runs (the natural
- *     boundary). A phrase is never split.
- *  3. If a single continuous voiced run is itself longer than maxSegSec (rare — a very
- *     long held passage), force a cut at the QUIETEST interior point of that run.
- *  4. Each segment after the first steps BACK by overlapSec so the boundary words are
- *     transcribed in both segments (reconciled later).
+ *  1. Take a guaranteed `minSegSec` (e.g. 20s) of audio — never cut before this, so
+ *     no tiny fragments.
+ *  2. Scan the window from minSegSec..maxSegSec (e.g. 20→30s) for the best SUSTAINED
+ *     dip in vocal energy (the quietest short run) — cut there. Bounded by maxSegSec,
+ *     so the segment is always ≤30s and the cut lands in a quiet spot (unlikely to
+ *     split a word).
+ *  3. The next segment starts at that cut, stepping back `overlapSec` so boundary words
+ *     are transcribed in both segments (reconciled later).
+ *  4. Repeat until the audio is consumed.
+ *
+ * Much simpler than global silence analysis: a local search each step, always ≤30s by
+ * construction, no special cases for long runs or long silences.
  *
  * @param {Float32Array|number[]} rms - per-window vocals RMS energy.
  * @param {Object} opts
- * @param {number} opts.hopSec - seconds per RMS window (e.g. 0.20).
+ * @param {number} opts.hopSec - seconds per RMS window (e.g. 0.10).
  * @param {number} opts.durationSec - total audio duration.
- * @param {number} [opts.maxSegSec=28] - hard cap per segment (< Whisper's 30s limit).
+ * @param {number} [opts.minSegSec=20] - guaranteed audio taken before any cut.
+ * @param {number} [opts.maxSegSec=30] - hard cap per segment (Whisper's limit).
  * @param {number} [opts.overlapSec=2] - step-back overlap between consecutive segments.
- * @param {number} [opts.silentFrac=0.08] - silence threshold as fraction of peak RMS.
- * @param {number} [opts.minGapSec=0.30] - min silent run to count as a cuttable gap.
+ * @param {number} [opts.dipSec=0.5] - width of the sustained-dip search kernel.
  * @returns {Array<{start:number, end:number}>} segment spans in seconds.
  */
 export function planVocalSegments(rms, opts) {
   const {
     hopSec,
     durationSec,
-    maxSegSec = 28,
+    minSegSec = 20,
+    maxSegSec = 30,
     overlapSec = 2,
-    silentFrac = 0.08,
-    minGapSec = 0.3,
-    longGapSec = 2.0, // a silence this long is always a cut point (instrumental break)
+    dipSec = 0.5,
   } = opts;
 
   const n = rms.length;
   if (!n || !durationSec) return [{ start: 0, end: durationSec || 0 }];
 
-  let peak = 1e-9;
-  for (let i = 0; i < n; i++) if (rms[i] > peak) peak = rms[i];
-  const thresh = peak * silentFrac;
-  const voiced = (i) => rms[i] > thresh;
   const tOf = (i) => i * hopSec;
-
-  // Find voiced runs [startIdx, endIdx) and the silent gaps between them.
-  const runs = [];
-  let i = 0;
-  while (i < n) {
-    while (i < n && !voiced(i)) i++;
-    if (i >= n) break;
-    const s = i;
-    while (i < n && voiced(i)) i++;
-    runs.push([s, i]); // [start, end) in window indices
-  }
-
-  // No voiced content at all → one segment over the whole thing.
-  if (!runs.length) return [{ start: 0, end: durationSec }];
-
-  const minGapWins = Math.max(1, Math.round(minGapSec / hopSec));
-
-  // Effective content budget per segment: the window we feed Whisper is
-  // [cut - overlap, nextCut], so the SPACING between cuts must leave room for the
-  // step-back. Keep the actual window <= maxSegSec.
-  const budget = Math.max(5, maxSegSec - overlapSec);
-
-  // Build cut points (in seconds). Cut in the silence BEFORE a run when keeping going
-  // would exceed the budget; if a single run itself exceeds the budget, cut at its
-  // quietest interior point(s).
-  const cuts = [0];
-  let segStartT = 0;
-  const pushCut = (t) => {
-    if (t > segStartT + 0.5 && t < durationSec - 0.05) {
-      cuts.push(t);
-      segStartT = t;
-    }
+  const dipWins = Math.max(1, Math.round(dipSec / hopSec));
+  // Sustained dip = lowest average energy over a dipWins-wide kernel centered at i.
+  const dipScore = (i) => {
+    const lo = Math.max(0, i - (dipWins >> 1));
+    const hi = Math.min(n - 1, lo + dipWins - 1);
+    let sum = 0;
+    for (let k = lo; k <= hi; k++) sum += rms[k];
+    return sum / (hi - lo + 1);
   };
 
-  for (let r = 0; r < runs.length; r++) {
-    const [rs, re] = runs[r];
-    const runEndT = tOf(re);
-
-    // (a) cut at the silent gap BEFORE this run when either:
-    //   - continuing past it would blow the budget, OR
-    //   - the gap is LONG (a multi-second instrumental break is always a clean,
-    //     phrase-safe cut point — e.g. a guitar solo), so segments never absorb a
-    //     big silence and stay short.
-    if (r > 0) {
-      const [, prevEnd] = runs[r - 1];
-      const gapWins = rs - prevEnd;
-      const gapSec = gapWins * hopSec;
-      const wouldExceed = tOf(rs) - segStartT > budget;
-      const longGap = gapSec >= longGapSec;
-      if (gapWins >= minGapWins && (wouldExceed || longGap)) {
-        pushCut(tOf((prevEnd + rs) / 2)); // middle of the silence
-      }
-    }
-
-    // (b) a single voiced run longer than the budget → force interior cut(s) at the
-    // quietest point near each budget stride.
-    while (runEndT - segStartT > budget) {
-      const targetT = segStartT + budget;
-      let bestI = Math.min(re - 1, Math.max(rs, Math.round(targetT / hopSec)));
-      const lo = Math.max(rs, bestI - Math.round(1.5 / hopSec));
-      const hi = Math.min(re - 1, bestI + Math.round(1.5 / hopSec));
-      let minV = Infinity;
-      for (let k = lo; k <= hi; k++) {
-        if (rms[k] < minV) {
-          minV = rms[k];
-          bestI = k;
-        }
-      }
-      const cutT = tOf(bestI);
-      if (cutT <= segStartT + 0.5) break; // can't make progress → avoid infinite loop
-      pushCut(cutT);
-    }
-  }
-
-  // Last voiced offset — used to trim a trailing all-silent tail (outro fade) so the
-  // final segment doesn't carry dead air that pushes its length over maxSegSec.
-  const lastVoicedT = tOf(runs[runs.length - 1][1]);
-
-  // Build segments from cut points, applying the step-back overlap to the START only.
-  const bounds = [...cuts, durationSec];
   const segments = [];
-  for (let s = 0; s < bounds.length - 1; s++) {
-    const rawStart = bounds[s];
-    let end = bounds[s + 1];
-    const start = s === 0 ? 0 : Math.max(0, rawStart - overlapSec);
-    // Trim trailing silence: never extend a segment more than a small pad past the
-    // last voiced content, and never let the window exceed maxSegSec.
-    if (end - start > maxSegSec) end = start + maxSegSec;
-    if (end > lastVoicedT + 1.0 && start < lastVoicedT) {
-      end = Math.min(end, lastVoicedT + 1.0);
+  let startT = 0;
+  let guard = 0;
+  const maxSegments = Math.ceil(durationSec / Math.max(1, minSegSec)) + 4;
+  while (startT < durationSec - 0.05 && guard++ < maxSegments) {
+    const hardEnd = Math.min(durationSec, startT + maxSegSec);
+    // If what remains fits in one segment, take it all and stop.
+    if (durationSec - startT <= maxSegSec) {
+      const start = segments.length === 0 ? 0 : Math.max(0, startT - overlapSec);
+      segments.push({ start, end: durationSec });
+      break;
     }
-    segments.push({ start, end });
+    // Search [startT+minSegSec, startT+maxSegSec] for the quietest sustained dip.
+    const searchLoT = startT + minSegSec;
+    const searchHiT = startT + maxSegSec;
+    const loI = Math.round(searchLoT / hopSec);
+    const hiI = Math.min(n - 1, Math.round(searchHiT / hopSec));
+    let bestI = hiI; // default: cut at maxSegSec if no clear dip
+    let bestScore = Infinity;
+    for (let i = loI; i <= hiI; i++) {
+      const sc = dipScore(i);
+      if (sc < bestScore) {
+        bestScore = sc;
+        bestI = i;
+      }
+    }
+    const cutT = Math.min(hardEnd, Math.max(searchLoT, tOf(bestI)));
+    const start = segments.length === 0 ? 0 : Math.max(0, startT - overlapSec);
+    segments.push({ start, end: cutT });
+    startT = cutT;
   }
+  if (!segments.length) segments.push({ start: 0, end: durationSec });
   return segments;
 }
 

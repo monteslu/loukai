@@ -892,11 +892,12 @@ export default function WebGpuCreatorPanel() {
       const plan = planVocalSegments(rms, {
         hopSec: WIN_SEC,
         durationSec: audio.duration,
-        maxSegSec: 28,
+        minSegSec: 20, // always take 20s, then cut at the best dip in the next 10s
+        maxSegSec: 30,
         overlapSec: 2,
-        silentFrac: SILENT_FRAC,
+        dipSec: 0.5,
       });
-      log(`planned ${plan.length} vocal-aware segment(s) (silence-cut, ≤28s, 2s overlap)`);
+      log(`planned ${plan.length} vocal-aware segment(s) (20s + best-dip cut, ≤30s, 2s overlap)`);
 
       let out;
       try {
