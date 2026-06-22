@@ -900,10 +900,10 @@ export default function WebGpuCreatorPanel() {
         const rawDump = []; // RAW Whisper output per segment, BEFORE any processing (debug)
         for (let pi = 0; pi < plan.length; pi++) {
           const { start, end } = plan[pi];
+          chunkIdx += 1;
           const s0 = Math.max(0, Math.floor(start * SR16));
           const s1 = Math.min(totalSamples, Math.ceil(end * SR16));
           const window = mono.subarray(s0, s1);
-          chunkIdx += 1;
           setTranscribeInfo(`segment ${chunkIdx}/${plan.length} @ ${start.toFixed(0)}s …`);
           const w = await transcribeWindow(window);
           // Capture the VERBATIM Whisper output for this segment (window-relative chunk
