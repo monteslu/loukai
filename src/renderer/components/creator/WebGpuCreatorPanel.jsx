@@ -840,57 +840,13 @@ export default function WebGpuCreatorPanel() {
         ...(promptIds ? { prompt_ids: promptIds } : promptText ? { prompt: promptText } : {}),
       };
 
-      // Transcribe ONE ≤30s window via the raw model so we get Whisper's per-window
-      // no_speech probability (the <|nospeech|> token logit at the first decode step)
-      // — the SAME signal the Python runner uses to drop instrumental/non-vocal
-      // sections. The high-level pipeline hides it; calling model.generate ourselves
-      // exposes it. We then decode the tokens with the tokenizer's own _decode_asr
-      // (the exact fn the pipeline uses) → {text, chunks:[{text,timestamp}]}.
-      const NO_SPEECH_TOKEN = 50362; // <|nospeech|> in the multilingual Whisper vocab
-      const NO_SPEECH_THRESHOLD = 0.6; // Python openai-whisper default
+      // Transcribe ONE ≤30s window via the (reliable) pipeline call. Instrumental/
+      // hallucination suppression is handled AFTER the loop by the annotation-pattern
+      // + vocals-RMS filter (the raw model.generate no_speech path broke transcription
+      // on this transformers.js build, so we use the working pipeline here).
       const transcribeWindow = async (window) => {
-        const inputs = await asr.processor(window);
-        const gen = await asr.model.generate({
-          ...inputs,
-          ...baseOpts,
-          output_scores: true,
-          return_dict_in_generate: true,
-        });
-        // no_speech_prob from the first-step logits.
-        let noSpeech = 0;
-        try {
-          const s0 = gen.scores?.[0];
-          if (s0?.data) {
-            const d = s0.data;
-            const V = s0.dims ? s0.dims[s0.dims.length - 1] : d.length;
-            let mx = -Infinity;
-            for (let i = 0; i < V; i++) if (d[i] > mx) mx = d[i];
-            let sum = 0;
-            for (let i = 0; i < V; i++) sum += Math.exp(d[i] - mx);
-            if (NO_SPEECH_TOKEN < V) noSpeech = Math.exp(d[NO_SPEECH_TOKEN] - mx) / sum;
-          }
-        } catch {
-          /* no scores → treat as speech */
-        }
-        // Decode tokens → text + segment timestamps (same path the pipeline uses).
-        const seqs = gen.sequences ?? gen;
-        let decoded;
-        try {
-          decoded = asr.tokenizer._decode_asr(
-            [{ stride: [window.length / SR16, 0, 0], tokens: seqs }],
-            {
-              return_timestamps: baseOpts.return_timestamps,
-              time_precision: 0.02,
-              force_full_sequences: false,
-            }
-          );
-        } catch {
-          // Fallback: plain batch_decode (no per-segment timestamps).
-          const text = asr.tokenizer.batch_decode(seqs, { skip_special_tokens: true })?.[0] || '';
-          decoded = [text, { chunks: [{ text, timestamp: [0, window.length / SR16] }] }];
-        }
-        const res = Array.isArray(decoded) ? decoded[1] : decoded;
-        return { chunks: res?.chunks || [], text: res?.text || '', noSpeech };
+        const w = await asr(window, baseOpts);
+        return { chunks: w.chunks || [], text: w.text || '', noSpeech: 0 };
       };
 
       let out;
@@ -901,16 +857,8 @@ export default function WebGpuCreatorPanel() {
           const windowSec = window.length / SR16;
           chunkIdx += 1;
           setTranscribeInfo(`window ${chunkIdx} @ ${segStartSec.toFixed(0)}s …`);
-          const w = await transcribeWindow(window); // raw generate → text + no_speech
-          // Python-parity: if Whisper flags this window as non-speech, DROP it (this is
-          // the instrumental/solo suppression — kills "*Music*"-type hallucinations).
-          const isNoSpeech = w.noSpeech >= NO_SPEECH_THRESHOLD;
-          const segs = isNoSpeech ? [] : (w.chunks || []).filter((c) => (c.text || '').trim());
-          if (isNoSpeech) {
-            log(
-              `  window ${chunkIdx} @ ${segStartSec.toFixed(0)}s: no-speech (p=${w.noSpeech.toFixed(2)}) → dropped (instrumental)`
-            );
-          }
+          const w = await transcribeWindow(window);
+          const segs = (w.chunks || []).filter((c) => (c.text || '').trim());
 
           // Offset this window's segment timestamps to absolute time + collect.
           let lastEnd = null;
@@ -920,6 +868,17 @@ export default function WebGpuCreatorPanel() {
             const s1 = ts[1] != null ? ts[1] + segStartSec : null;
             allChunks.push({ text: c.text, timestamp: [s0, s1] });
             if (ts[1] != null) lastEnd = ts[1]; // window-relative end of last segment
+          }
+
+          // Live update: show lyrics-so-far after each window (incremental feedback,
+          // like the per-window progress). Grouped on the fly.
+          if (allChunks.length) {
+            setLyrics(
+              groupWordsIntoLines(
+                allChunks.filter((c) => c.timestamp[0] != null),
+                { duration: audio.duration }
+              )
+            );
           }
 
           // Advance: snap to the last predicted segment end (the openai-whisper move).
