@@ -590,7 +590,7 @@ export default function WebGpuCreatorPanel() {
     setStemProgress({});
     setRtf(null);
     try {
-      const { ort, demucs, ftEnsemble, pipeline, tf, crepeMod, DemucsProcessor } = await loadLibs();
+      const { ort, demucs, ftEnsemble, pipeline, crepeMod, DemucsProcessor } = await loadLibs();
       const { STEMS, createEnsembleSessions, runEnsemble } = ftEnsemble;
 
       // Lyrics-only mode: an existing .stem.mp4 → re-transcribe its vocals track and
@@ -779,35 +779,14 @@ export default function WebGpuCreatorPanel() {
       // Live feedback (the native tab streams whisper progress; we do the same via
       // transformers.js's WhisperTextStreamer — VERIFIED to fire, unlike the plain
       // callback_function). on_chunk_start ticks per 30s chunk; the text callback
-      // streams decoded words. A 1s heartbeat guarantees elapsed time always moves.
+      // streams progress. The sequential seek-loop below drives its own per-window
+      // progress (one asr() call per window), so no WhisperTextStreamer here. A 1s
+      // heartbeat keeps elapsed time moving in the status line.
       let chunkIdx = 0;
-      let partial = '';
-      const totalChunks = Math.max(1, Math.ceil(mono.length / 16000 / 30));
       const hb = setInterval(() => {
         const el = ((performance.now() - tStart) / 1000).toFixed(0);
-        setTranscribeInfo(
-          `transcribing chunk ${Math.min(chunkIdx, totalChunks)}/${totalChunks} · ${el}s`
-        );
+        setTranscribeInfo(`transcribing window ${chunkIdx} · ${el}s`);
       }, 1000);
-      let streamer = null;
-      try {
-        if (tf?.WhisperTextStreamer) {
-          streamer = new tf.WhisperTextStreamer(asr.tokenizer, {
-            on_chunk_start: () => {
-              chunkIdx += 1;
-              partial = '';
-              const el = ((performance.now() - tStart) / 1000).toFixed(0);
-              log(`  …chunk ${chunkIdx}/${totalChunks} (${el}s)`);
-            },
-            callback_function: (text) => {
-              partial += text;
-              setTranscribeInfo(`chunk ${chunkIdx}/${totalChunks}: …${partial.slice(-48)}`);
-            },
-          });
-        }
-      } catch {
-        streamer = null;
-      }
       // NOTE: we do NOT pass a `prompt` to the chunked pipeline. transformers.js
       // expects tokenized `prompt_ids` (not a raw string), and feeding a string
       // prompt into the long-form/chunked decode destabilizes it — it can lock onto
@@ -834,22 +813,67 @@ export default function WebGpuCreatorPanel() {
           log(`prompt tokenize failed (${e.message}) — transcribing without prompt`);
         }
       }
-      // chunk_length_s=30 (Whisper's max), stride_length_s=8. Larger overlap → bigger
-      // trusted center per chunk + more seam redundancy. Segment timestamps stitch
-      // boundaries far less lossily than per-word DTW (default; 'word' opt-in).
+      // SEQUENTIAL seek-loop transcription — matches openai-whisper's long-form
+      // algorithm (what the Python creator uses), NOT transformers.js's fixed-grid
+      // chunking. Each pass transcribes a 30s window, then advances the window start
+      // to the model's PREDICTED last-segment-end (snapping to a phrase boundary) so
+      // no lyric line ever straddles a chunk seam. Window content is fed to the model
+      // un-chunked (≤30s → zero-padded internally).
       log(
-        `timestamp mode: ${timestampMode}, chunk 30s / stride 8s${promptText ? ', prompt ON' : ''}`
+        `transcribing with sequential seek-loop (Python-parity)${promptText ? ', prompt ON' : ''}`
       );
+      const SR16 = 16000;
+      const WINDOW_S = 30;
+      const winSamples = WINDOW_S * SR16;
+      const totalSamples = mono.length;
+      const allChunks = [];
+      let seek = 0; // sample offset of current window start
+      let safety = 0;
+      const maxPasses = Math.ceil(totalSamples / SR16 / 5) + 8; // hard cap (>=5s/pass)
+      const baseOpts = {
+        return_timestamps: useWordTs ? 'word' : true,
+        ...(promptIds ? { prompt_ids: promptIds } : promptText ? { prompt: promptText } : {}),
+      };
       let out;
       try {
-        out = await asr(mono, {
-          chunk_length_s: 30,
-          stride_length_s: 8,
-          // 'word' → per-word DTW timing; true → per-segment (line) timing.
-          return_timestamps: useWordTs ? 'word' : true,
-          ...(promptIds ? { prompt_ids: promptIds } : promptText ? { prompt: promptText } : {}),
-          ...(streamer ? { streamer } : {}),
-        });
+        while (seek < totalSamples && safety++ < maxPasses) {
+          const segStartSec = seek / SR16;
+          const window = mono.subarray(seek, Math.min(seek + winSamples, totalSamples));
+          const windowSec = window.length / SR16;
+          chunkIdx += 1;
+          setTranscribeInfo(`window ${chunkIdx} @ ${segStartSec.toFixed(0)}s …`);
+          const w = await asr(window, baseOpts); // single ≤30s window (no chunk_length_s)
+          const segs = (w.chunks || []).filter((c) => (c.text || '').trim());
+
+          // Offset this window's segment timestamps to absolute time + collect.
+          let lastEnd = null;
+          for (const c of segs) {
+            const ts = c.timestamp || [c.start, c.end];
+            const s0 = ts[0] != null ? ts[0] + segStartSec : null;
+            const s1 = ts[1] != null ? ts[1] + segStartSec : null;
+            allChunks.push({ text: c.text, timestamp: [s0, s1] });
+            if (ts[1] != null) lastEnd = ts[1]; // window-relative end of last segment
+          }
+
+          // Advance: snap to the last predicted segment end (the openai-whisper move).
+          // Guard so we always move forward by a sane amount and don't loop.
+          if (window.length < winSamples) {
+            break; // consumed the tail
+          }
+          let advanceSec;
+          if (lastEnd != null && lastEnd > 1 && lastEnd <= windowSec) {
+            advanceSec = lastEnd;
+          } else {
+            advanceSec = WINDOW_S; // no usable timestamp → full window step
+          }
+          // never advance less than 1s (avoid stalls) or more than the window
+          advanceSec = Math.max(1, Math.min(advanceSec, WINDOW_S));
+          seek += Math.round(advanceSec * SR16);
+          log(
+            `  window ${chunkIdx} @ ${segStartSec.toFixed(0)}s: ${segs.length} seg(s), advance ${advanceSec.toFixed(1)}s`
+          );
+        }
+        out = { chunks: allChunks, text: allChunks.map((c) => c.text).join('') };
       } finally {
         clearInterval(hb);
         setTranscribeInfo('');
