@@ -2117,6 +2117,12 @@ class WebServer {
             songsFolder: this.mainApp.settings?.getSongsFolder?.(),
           });
           cleanup();
+          // Re-sync the library so the new song shows up immediately (like native).
+          try {
+            await libraryService.syncLibrary(this.mainApp);
+          } catch (err) {
+            console.warn('library sync after WebGPU save failed:', err.message);
+          }
           res.json({ success: true, ...result });
         } catch (e) {
           cleanup();

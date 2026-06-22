@@ -9,6 +9,7 @@ import { log } from '../logger.js';
 import { ipcMain, dialog } from 'electron';
 import { CREATOR_CHANNELS } from '../../shared/ipcContracts.js';
 import * as creatorService from '../../shared/services/creatorService.js';
+import * as libraryService from '../../shared/services/libraryService.js';
 import * as llmService from '../creator/llmService.js';
 import { getCacheDir } from '../creator/systemChecker.js';
 import { mkdirSync, writeFileSync, rmSync } from 'fs';
@@ -215,6 +216,13 @@ export function registerCreatorHandlers(mainApp) {
           settingsManager: mainApp.settings, // backend runs LLM correction (like native)
           songsFolder: mainApp.settings?.getSongsFolder?.(),
         });
+        // Re-sync the library so the new song appears immediately (matches the native
+        // creator). Best-effort — a sync failure must not fail the save.
+        try {
+          await libraryService.syncLibrary(mainApp);
+        } catch (err) {
+          log(`library sync after WebGPU save failed: ${err.message}`);
+        }
         return { success: true, ...result };
       } catch (e) {
         return { success: false, error: e.message };
