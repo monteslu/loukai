@@ -8,7 +8,7 @@ import {
   encodeWav,
   groupWordsIntoLines,
 } from '../../../shared/creator/creatorAudio.js';
-import { STYLES, ErrorDisplay, SongTitle, StemProgressBars } from './creatorUi.jsx';
+import { STYLES, Spinner, ErrorDisplay, SongTitle, StemProgressBars } from './creatorUi.jsx';
 
 /**
  * WebGPU Creator (experimental) — runs Demucs stem separation + Whisper
@@ -26,6 +26,10 @@ import { STYLES, ErrorDisplay, SongTitle, StemProgressBars } from './creatorUi.j
 
 export default function WebGpuCreatorPanel() {
   const [gpu, setGpu] = useState('checking'); // checking | available | unavailable
+  const [activeSubTab, setActiveSubTab] = useState('create'); // 'create' | 'settings'
+  const [dragActive, setDragActive] = useState(false); // drop-zone hover state
+  const [fileName, setFileName] = useState(''); // selected file name (drop or browse)
+  const [fileLoading, setFileLoading] = useState(false); // reading tags + lyric lookup
   // Default to large-v3-turbo — most accurate AND fast via q4f16 on WebGPU
   // (~13× realtime). The earlier slowness was a dtype bug: WebGPU defaulted to the
   // 2.5GB fp32 ONNX; q4f16 fixes it. Smaller models stay available for low-VRAM.
@@ -74,6 +78,7 @@ export default function WebGpuCreatorPanel() {
   const [showLlm, setShowLlm] = useState(false);
   const [llmTest, setLlmTest] = useState(null);
   const fileRef = useRef(null);
+  const selectedFileRef = useRef(null); // the chosen File (from input OR drop)
   const libs = useRef({}); // cached dynamic imports
   const logEnd = useRef(null);
 
@@ -292,9 +297,14 @@ export default function WebGpuCreatorPanel() {
   // prefill title/artist/album, then AUTO-search LRCLIB — matching the native
   // creator's getFileInfo behaviour (ID3 → fields → auto lyric lookup). Falls back
   // to "Artist - Title.ext" filename parsing when there are no tags.
-  async function onFileSelect() {
-    const file = fileRef.current?.files?.[0];
+  // `droppedFile` lets the drag-and-drop zone pass a File directly (the <input> path
+  // reads from fileRef instead).
+  async function onFileSelect(droppedFile = null) {
+    const file = droppedFile || fileRef.current?.files?.[0];
     if (!file) return;
+    selectedFileRef.current = file;
+    setFileName(file.name);
+    setFileLoading(true);
     let title = '';
     let artist = '';
     let album = '';
@@ -352,6 +362,15 @@ export default function WebGpuCreatorPanel() {
     setSongAlbum(album);
     // Auto lyric lookup (don't auto-lookup for a .stem.mp4 re-transcribe unless empty).
     if (title) await lookupLyrics(title, artist);
+    setFileLoading(false);
+  }
+
+  // Drag-and-drop onto the big drop zone — feeds the same onFileSelect.
+  function onDrop(e) {
+    e.preventDefault();
+    setDragActive(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) onFileSelect(file);
   }
 
   // Load LLM settings on mount (IPC or REST GET).
@@ -476,7 +495,7 @@ export default function WebGpuCreatorPanel() {
   }
 
   async function run() {
-    const file = fileRef.current?.files?.[0];
+    const file = selectedFileRef.current || fileRef.current?.files?.[0];
     if (!file) return;
     setStatus('separating');
     setError(null);
@@ -1274,237 +1293,291 @@ export default function WebGpuCreatorPanel() {
 
         <ErrorDisplay error={error} onDismiss={() => setError(null)} />
 
-        {/* File + song info */}
-        <div className={`${STYLES.card} flex flex-col gap-4`}>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,.mp4,.stem.mp4"
-            className="text-sm"
-            disabled={busy}
-            onChange={onFileSelect}
-          />
-
-          {/* Lyric assist: title/artist → LRCLIB lookup → reference lyrics, which
-              guide transcription (Whisper prompt) + power LLM correction. */}
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="text-xs text-gray-600 dark:text-gray-400 flex flex-col">
-              Title
-              <input
-                type="text"
-                value={songTitle}
-                onChange={(e) => setSongTitle(e.target.value)}
-                disabled={busy}
-                placeholder="Song title"
-                className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
-              />
-            </label>
-            <label className="text-xs text-gray-600 dark:text-gray-400 flex flex-col">
-              Artist
-              <input
-                type="text"
-                value={songArtist}
-                onChange={(e) => setSongArtist(e.target.value)}
-                disabled={busy}
-                placeholder="Artist"
-                className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
-              />
-            </label>
-            <label className="text-xs text-gray-600 dark:text-gray-400 flex flex-col">
-              Album
-              <input
-                type="text"
-                value={songAlbum}
-                onChange={(e) => setSongAlbum(e.target.value)}
-                disabled={busy}
-                placeholder="Album (optional)"
-                className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
-              />
-            </label>
+        {/* Sub-tab navigation */}
+        <div className="flex border-b border-gray-300 dark:border-gray-600">
+          {['create', 'settings'].map((tab) => (
             <button
-              type="button"
-              onClick={() => lookupLyrics()}
-              disabled={busy || lookingUp || !songTitle}
-              className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-sm hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
+              key={tab}
+              className={`px-4 py-2 font-medium transition-colors capitalize ${
+                activeSubTab === tab
+                  ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              }`}
+              onClick={() => setActiveSubTab(tab)}
             >
-              {lookingUp ? 'Looking…' : '🔎 Find lyrics'}
+              {tab}
             </button>
+          ))}
+        </div>
+
+        {/* ===================== CREATE TAB ===================== */}
+        {activeSubTab === 'create' && (
+          <div className="flex flex-col gap-4">
+            {/* Big drag-and-drop target */}
+            <label
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (!busy) setDragActive(true);
+              }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={busy ? (e) => e.preventDefault() : onDrop}
+              className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-10 text-center transition-colors cursor-pointer ${
+                dragActive
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                  : 'border-gray-300 dark:border-gray-600 hover:border-blue-400 hover:bg-gray-50 dark:hover:bg-gray-800/50'
+              } ${busy ? 'opacity-50 pointer-events-none' : ''}`}
+            >
+              {fileLoading ? (
+                <Spinner size="sm" message="Reading file info & searching lyrics…" />
+              ) : (
+                <>
+                  <div className="text-4xl">{fileName ? '🎵' : '⬆️'}</div>
+                  <div className="font-medium text-gray-800 dark:text-gray-200">
+                    {fileName || 'Drop an audio file here, or click to browse'}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    mp3 · wav · flac · m4a · mp4 · .stem.mp4
+                  </div>
+                </>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,.mp4,.stem.mp4"
+                className="hidden"
+                disabled={busy}
+                onChange={() => onFileSelect()}
+              />
+            </label>
+
+            {/* Song info + lyric assist */}
+            <div className={`${STYLES.card} flex flex-col gap-3`}>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <label className={STYLES.label}>
+                  Title
+                  <input
+                    type="text"
+                    value={songTitle}
+                    onChange={(e) => setSongTitle(e.target.value)}
+                    disabled={busy}
+                    placeholder="Song title"
+                    className={STYLES.input}
+                  />
+                </label>
+                <label className={STYLES.label}>
+                  Artist
+                  <input
+                    type="text"
+                    value={songArtist}
+                    onChange={(e) => setSongArtist(e.target.value)}
+                    disabled={busy}
+                    placeholder="Artist"
+                    className={STYLES.input}
+                  />
+                </label>
+                <label className={STYLES.label}>
+                  Album
+                  <input
+                    type="text"
+                    value={songAlbum}
+                    onChange={(e) => setSongAlbum(e.target.value)}
+                    disabled={busy}
+                    placeholder="Album (optional)"
+                    className={STYLES.input}
+                  />
+                </label>
+              </div>
+              <label className={STYLES.label}>
+                Reference lyrics (optional — improves accuracy + enables LLM correction)
+                <textarea
+                  value={referenceLyrics}
+                  onChange={(e) => setReferenceLyrics(e.target.value)}
+                  disabled={busy}
+                  rows={3}
+                  placeholder="Paste known lyrics, or use Find lyrics →"
+                  className={`${STYLES.input} font-mono`}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => lookupLyrics()}
+                disabled={busy || lookingUp || !songTitle}
+                className="self-start px-3 py-1.5 rounded-lg bg-gray-200 dark:bg-gray-700 text-sm hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 flex items-center gap-2"
+              >
+                {lookingUp ? <Spinner size="sm" /> : '🔎'}
+                {lookingUp ? 'Searching lyrics…' : 'Find lyrics'}
+              </button>
+            </div>
           </div>
-          <label className="text-xs text-gray-600 dark:text-gray-400 flex flex-col">
-            Reference lyrics (optional — improves accuracy + enables LLM correction)
-            <textarea
-              value={referenceLyrics}
-              onChange={(e) => setReferenceLyrics(e.target.value)}
-              disabled={busy}
-              rows={3}
-              placeholder="Paste known lyrics, or use Find lyrics above"
-              className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm font-mono"
-            />
-          </label>
+        )}
 
-          <label className="text-sm text-gray-700 dark:text-gray-300">
-            Demucs model:
-            <select
-              className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
-              value={demucsModel}
-              onChange={(e) => setDemucsModel(e.target.value)}
-              disabled={busy}
-            >
-              {DEMUCS_MODELS.map((m) => {
-                const unavail = m.kind === 'ft' && !ftAvailable;
-                return (
-                  <option key={m.id} value={m.id} disabled={unavail}>
+        {/* ===================== SETTINGS TAB ===================== */}
+        {activeSubTab === 'settings' && (
+          <div className={`${STYLES.card} flex flex-col gap-4`}>
+            <h3 className={STYLES.sectionTitle}>Creator Settings</h3>
+            <label className="text-sm text-gray-700 dark:text-gray-300">
+              Demucs model:
+              <select
+                className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
+                value={demucsModel}
+                onChange={(e) => setDemucsModel(e.target.value)}
+                disabled={busy}
+              >
+                {DEMUCS_MODELS.map((m) => {
+                  const unavail = m.kind === 'ft' && !ftAvailable;
+                  return (
+                    <option key={m.id} value={m.id} disabled={unavail}>
+                      {m.label}
+                      {unavail ? ' — not installed' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            <label className="text-sm text-gray-700 dark:text-gray-300">
+              Whisper model (word-timed → grouped into lines):
+              <select
+                className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
+                value={asrModel}
+                onChange={(e) => setAsrModel(e.target.value)}
+                disabled={busy}
+              >
+                {WHISPER_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
                     {m.label}
-                    {unavail ? ' — not installed' : ''}
                   </option>
-                );
-              })}
-            </select>
-          </label>
-          <label className="text-sm text-gray-700 dark:text-gray-300">
-            Whisper model (word-timed → grouped into lines):
-            <select
-              className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
-              value={asrModel}
-              onChange={(e) => setAsrModel(e.target.value)}
-              disabled={busy}
-            >
-              {WHISPER_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
+                ))}
+              </select>
+            </label>
+            <label className="text-sm text-gray-700 dark:text-gray-300">
+              Lyric timing:
+              <select
+                className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
+                value={timestampMode}
+                onChange={(e) => setTimestampMode(e.target.value)}
+                disabled={busy}
+              >
+                <option value="segment">segment/line (robust, keeps all lines — default)</option>
+                <option value="word">word-level (precise timing, may drop lines)</option>
+              </select>
+            </label>
+            <label className="text-sm text-gray-700 dark:text-gray-300">
+              Whisper precision (WebGPU):
+              <select
+                className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
+                value={whisperDtype}
+                onChange={(e) => setWhisperDtype(e.target.value)}
+                disabled={busy}
+              >
+                <option value="q4f16">
+                  q4f16 — 4-bit, fastest/smallest (same accuracy — default)
                 </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm text-gray-700 dark:text-gray-300">
-            Lyric timing:
-            <select
-              className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
-              value={timestampMode}
-              onChange={(e) => setTimestampMode(e.target.value)}
-              disabled={busy}
-            >
-              <option value="segment">segment/line (robust, keeps all lines — default)</option>
-              <option value="word">word-level (precise timing, may drop lines)</option>
-            </select>
-          </label>
-          <label className="text-sm text-gray-700 dark:text-gray-300">
-            Whisper precision (WebGPU):
-            <select
-              className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
-              value={whisperDtype}
-              onChange={(e) => setWhisperDtype(e.target.value)}
-              disabled={busy}
-            >
-              <option value="q4f16">
-                q4f16 — 4-bit, fastest/smallest (same accuracy — default)
-              </option>
-              <option value="fp16">fp16 — larger/slower, no measured accuracy gain</option>
-              <option value="fp32">fp32 — full precision (largest, slow)</option>
-            </select>
-          </label>
+                <option value="fp16">fp16 — larger/slower, no measured accuracy gain</option>
+                <option value="fp32">fp32 — full precision (largest, slow)</option>
+              </select>
+            </label>
 
-          {/* LLM settings (powers lyric correction). Collapsible — only needed to
+            {/* LLM settings (powers lyric correction). Collapsible — only needed to
               configure the provider/key once. */}
-          <div className="text-sm">
-            <button
-              type="button"
-              onClick={() => setShowLlm((v) => !v)}
-              className="text-blue-600 dark:text-blue-400 hover:underline"
-            >
-              {showLlm ? '▾' : '▸'} LLM correction settings
-            </button>
-            {showLlm && (
-              <div className="mt-2 flex flex-col gap-2 rounded border border-gray-200 dark:border-gray-700 p-3">
-                <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={llmSettings.enabled}
-                    onChange={(e) => setLlmSettings((p) => ({ ...p, enabled: e.target.checked }))}
-                  />
-                  Enable LLM correction (uses reference lyrics)
-                </label>
-                <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">
-                  Provider
-                  <select
-                    value={llmSettings.provider}
-                    onChange={(e) => setLlmSettings((p) => ({ ...p, provider: e.target.value }))}
-                    className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1"
-                  >
-                    <option value="lmstudio">Local LLM Server (LM Studio / Ollama)</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="google">Google Gemini</option>
-                  </select>
-                </label>
-                <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">
-                  Base URL (local server)
-                  <input
-                    type="text"
-                    value={llmSettings.baseUrl}
-                    onChange={(e) => setLlmSettings((p) => ({ ...p, baseUrl: e.target.value }))}
-                    className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 font-mono"
-                  />
-                </label>
-                <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">
-                  Model
-                  <input
-                    type="text"
-                    value={llmSettings.model}
-                    onChange={(e) => setLlmSettings((p) => ({ ...p, model: e.target.value }))}
-                    placeholder="e.g. gpt-4o-mini, claude-…, or local model name"
-                    className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 font-mono"
-                  />
-                </label>
-                {llmSettings.provider !== 'lmstudio' && (
-                  <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">
-                    API key
+            <div className="text-sm">
+              <button
+                type="button"
+                onClick={() => setShowLlm((v) => !v)}
+                className="text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                {showLlm ? '▾' : '▸'} LLM correction settings
+              </button>
+              {showLlm && (
+                <div className="mt-2 flex flex-col gap-2 rounded border border-gray-200 dark:border-gray-700 p-3">
+                  <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
                     <input
-                      type="password"
-                      value={llmSettings.apiKey}
-                      onChange={(e) => setLlmSettings((p) => ({ ...p, apiKey: e.target.value }))}
+                      type="checkbox"
+                      checked={llmSettings.enabled}
+                      onChange={(e) => setLlmSettings((p) => ({ ...p, enabled: e.target.checked }))}
+                    />
+                    Enable LLM correction (uses reference lyrics)
+                  </label>
+                  <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">
+                    Provider
+                    <select
+                      value={llmSettings.provider}
+                      onChange={(e) => setLlmSettings((p) => ({ ...p, provider: e.target.value }))}
+                      className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1"
+                    >
+                      <option value="lmstudio">Local LLM Server (LM Studio / Ollama)</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="anthropic">Anthropic</option>
+                      <option value="google">Google Gemini</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">
+                    Base URL (local server)
+                    <input
+                      type="text"
+                      value={llmSettings.baseUrl}
+                      onChange={(e) => setLlmSettings((p) => ({ ...p, baseUrl: e.target.value }))}
                       className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 font-mono"
                     />
                   </label>
-                )}
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={saveLlmSettings}
-                    className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-xs hover:bg-gray-300 dark:hover:bg-gray-600"
-                  >
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    onClick={testLlm}
-                    disabled={llmTest?.testing}
-                    className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-xs hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
-                  >
-                    {llmTest?.testing ? 'Testing…' : 'Test connection'}
-                  </button>
-                  {llmTest && !llmTest.testing && (
-                    <span
-                      className={`text-xs ${llmTest.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}
-                    >
-                      {llmTest.success ? '✓ OK' : `✗ ${llmTest.error || 'failed'}`}
-                    </span>
+                  <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">
+                    Model
+                    <input
+                      type="text"
+                      value={llmSettings.model}
+                      onChange={(e) => setLlmSettings((p) => ({ ...p, model: e.target.value }))}
+                      placeholder="e.g. gpt-4o-mini, claude-…, or local model name"
+                      className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 font-mono"
+                    />
+                  </label>
+                  {llmSettings.provider !== 'lmstudio' && (
+                    <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">
+                      API key
+                      <input
+                        type="password"
+                        value={llmSettings.apiKey}
+                        onChange={(e) => setLlmSettings((p) => ({ ...p, apiKey: e.target.value }))}
+                        className="mt-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 font-mono"
+                      />
+                    </label>
                   )}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={saveLlmSettings}
+                      className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-xs hover:bg-gray-300 dark:hover:bg-gray-600"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={testLlm}
+                      disabled={llmTest?.testing}
+                      className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-xs hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
+                    >
+                      {llmTest?.testing ? 'Testing…' : 'Test connection'}
+                    </button>
+                    {llmTest && !llmTest.testing && (
+                      <span
+                        className={`text-xs ${llmTest.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}
+                      >
+                        {llmTest.success ? '✓ OK' : `✗ ${llmTest.error || 'failed'}`}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
+        )}
 
-          <button
-            onClick={run}
-            disabled={busy}
-            className="self-start px-4 py-2 rounded bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
-          >
-            {busy ? 'Working…' : 'Create (in-browser)'}
+        {/* Create button + status — always visible below the tabs */}
+        <div className="flex flex-col gap-2">
+          <button onClick={run} disabled={busy || !fileName} className={STYLES.btnPrimary}>
+            {busy ? 'Working…' : 'Create Karaoke ⚡'}
           </button>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             First run downloads htdemucs (~172 MB) + the chosen Whisper model via loukai (cached
-            locally afterwards). large-v3-turbo is most accurate but largest.
+            locally afterwards).
           </p>
         </div>
 
