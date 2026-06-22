@@ -158,12 +158,16 @@ def main():
                     word_end = word_start + word_duration
                     mid = (word_start + word_end) / 2.0
                     # (1) annotation token (*Music*, split *Country/music*, [Applause])
+                    # — applied EVERYWHERE; this removes mid-song instrumental garbage.
                     if _is_annotation(word_text):
                         culled.append({"word": word_text, "t": round(mid, 2), "why": "annotation"})
                         continue
-                    # (2) word over silent vocals → instrumental hallucination
-                    if not _vocals_audible_at(mid):
-                        culled.append({"word": word_text, "t": round(mid, 2), "why": "vocals silent"})
+                    # (2) vocals-RMS cull, ONLY in the first 1% / last 1% of the song —
+                    # garbage up front (count-ins/noise) or an outro "thank you"/"♪" over
+                    # the fade. Restricted to edges so a quiet real word mid-song is never
+                    # culled by energy alone.
+                    if (mid <= duration * 0.01 or mid >= duration * 0.99) and not _vocals_audible_at(mid):
+                        culled.append({"word": word_text, "t": round(mid, 2), "why": "edge vocals silent"})
                         continue
                     word_data = {
                         "word": word_text,

@@ -1041,23 +1041,21 @@ export default function WebGpuCreatorPanel() {
           console.log(`🎤 ${k}-${k + 10}s (${byTen[k].length}w): ${byTen[k].join('  ')}`);
         }
       }
-      // Hallucination trim — drop words where the VOCALS STEM is silent ANYWHERE in
-      // the song (not just the edges). Whisper invents phrases over instrumental
-      // sections — intros/outros AND mid-song solos (e.g. a guitar solo transcribed
-      // as repeated "*Country music*" / "[Music]"). The vocals stem is near-silent
-      // wherever no one is singing, so vocals-RMS is an honest gate: real sung words
-      // keep RMS high and survive; hallucinations over instrumentals get culled.
-      // Also strip sound-effect/annotation hallucinations ("*...*", "[...]",
-      // "(...)") regardless of RMS — Whisper never emits those for real lyrics.
-      const isAnnotation = (s) => {
-        const t = (s || '').trim();
-        // Whisper marks non-lyrical audio with * [ ] sound-effect annotations
-        // (*Music*, [Applause]). These often arrive SPLIT across word-chunks
-        // ("*Country" then "music*"), so match any word CONTAINING * or [ or ] —
-        // real lyrics never contain those characters.
-        return /[*[\]]/.test(t);
-      };
+      // Hallucination trim. Two independent signals:
+      //  (1) ANNOTATION strip, applied EVERYWHERE — Whisper marks non-lyrical audio
+      //      with "*Music*"/"[Applause]" sound-effect tokens (incl. split "*Country"
+      //      then "music*"). Any word containing * [ ] is dropped; real lyrics never
+      //      contain those. This is what removes mid-song instrumental garbage.
+      //  (2) VOCALS-RMS cull, applied ONLY at the song's first 1% / last 1% — Whisper
+      //      invents phrases over the intro/outro fade. We cull edge words where the
+      //      vocals stem is silent. Restricted to the edges so a quiet/breathy real
+      //      word mid-song is never culled by energy alone.
+      const isAnnotation = (s) => /[*[\]]/.test((s || '').trim());
+      const EDGE_FRAC = 0.01;
       {
+        const dur = audio.duration;
+        const headEnd = dur * EDGE_FRAC;
+        const tailStart = dur * (1 - EDGE_FRAC);
         const before = words.length;
         const culled = [];
         words = words.filter((w) => {
@@ -1069,13 +1067,14 @@ export default function WebGpuCreatorPanel() {
             return false;
           }
           if (mid == null) return true;
-          // Cull anywhere the vocals stem is silent (no singing → hallucination).
+          // RMS cull only in the 1% edge zones; the middle is kept (annotation-only).
+          if (mid > headEnd && mid < tailStart) return true;
           if (vocalsAudibleAt(mid)) return true;
-          culled.push({ text, t: Number(mid.toFixed(2)), why: 'vocals silent' });
+          culled.push({ text, t: Number(mid.toFixed(2)), why: 'edge vocals silent' });
           return false;
         });
         if (culled.length) {
-          log(`trimmed ${culled.length} hallucinated word(s) (vocals silent / annotation):`);
+          log(`trimmed ${culled.length} hallucinated word(s) (annotation / edge vocals silent):`);
           for (const c of culled) log(`    ✂ "${c.text}" @ ${c.t}s (${c.why})`);
         } else if (before) {
           log('no hallucinations to trim');
