@@ -409,9 +409,13 @@ export default function WebGpuCreatorPanel() {
     try {
       const mm = await import(/* @vite-ignore */ 'music-metadata');
       const { common } = await mm.parseBlob(file);
-      title = common?.title || '';
-      artist = common?.artist || '';
-      album = common?.album || '';
+      // Coerce to strings — music-metadata can return arrays/objects for some tags
+      // (e.g. artists[]), which would otherwise become "[object Object]" in the query.
+      const str = (v) =>
+        Array.isArray(v) ? v.join(', ') : typeof v === 'string' ? v : v ? String(v) : '';
+      title = str(common?.title);
+      artist = str(common?.artist || common?.artists);
+      album = str(common?.album);
       if (title || artist) {
         log(`ID3 tags: ${artist || '?'} — ${title || '?'}${album ? ` (${album})` : ''}`);
       }
@@ -846,18 +850,28 @@ export default function WebGpuCreatorPanel() {
           log(`⚠ ${gaps.length} large gap(s) (>4s) in transcription — possible dropped sections:`);
           for (const g of gaps) log(`    ↔ ${g.gapSec}s gap: ${g.from} → ${g.to}`);
         }
-        // Full structured dumps to console (not screen-log).
+        // Flat-TEXT dumps (loukai's console serializer flattens objects to
+        // "[object Object]", so console.table/group are useless — print strings).
 
-        console.group('🎤 Whisper transcription diagnostics');
-        console.log('audio duration (s):', audio.duration, '| sampleRate:', audio.sampleRate);
-        console.log('raw word count:', words.length, '| text chars:', (out.text || '').length);
-        console.log('full text:', out.text);
-        console.log('words/30s buckets:', buckets);
-        console.table(gaps.length ? gaps : [{ note: 'no gaps >4s' }]);
-        console.log('ALL words (text/start/end):');
-        console.table(wordRows);
-        console.log('raw out object:', out);
-        console.groupEnd();
+        console.log(
+          '🎤 WHISPER DIAG | dur=' + audio.duration.toFixed(1) + 's words=' + words.length
+        );
+        console.log('🎤 FULL TEXT: ' + (out.text || ''));
+        console.log('🎤 buckets/30s: ' + bucketStr);
+        for (const g of gaps) {
+          console.log(`🎤 GAP ${g.gapSec}s: ${g.from} -> ${g.to}`);
+        }
+        // Per-word timeline as one big string (chunked into 10s windows for readability).
+        const byTen = {};
+        for (const r of wordRows) {
+          const b = Math.floor((r.start ?? 0) / 10) * 10;
+          (byTen[b] ||= []).push(`${(r.start ?? 0).toFixed(1)}|${r.text}`);
+        }
+        for (const k of Object.keys(byTen)
+          .map(Number)
+          .sort((a, b) => a - b)) {
+          console.log(`🎤 ${k}-${k + 10}s (${byTen[k].length}w): ${byTen[k].join('  ')}`);
+        }
       }
       // Hallucination trim — ONLY at the song's instrumental bookends. Whisper
       // invents phrases ("thank you", "..") over the intro + outro/fade. We drop a
