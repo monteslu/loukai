@@ -169,6 +169,9 @@ export default function WebGpuCreatorPanel() {
   const [songTitle, setSongTitle] = useState('');
   const [songArtist, setSongArtist] = useState('');
   const [songAlbum, setSongAlbum] = useState('');
+  // Extra ID3 tags carried through from the source file (parity with native creator,
+  // which preserves year/genre/track/etc).
+  const [songTags, setSongTags] = useState({});
   const [referenceLyrics, setReferenceLyrics] = useState('');
   const [lookingUp, setLookingUp] = useState(false);
   const [llmStats, setLlmStats] = useState(null);
@@ -418,8 +421,24 @@ export default function WebGpuCreatorPanel() {
       title = str(common?.title);
       artist = str(common?.artist || common?.artists);
       album = str(common?.album);
+      // Carry through the full tag set (parity with native creator: year/genre/track/
+      // albumartist/composer/disk). Stored + written into the output file's metadata.
+      const num = (v) =>
+        typeof v === 'number' ? v : (v?.no ?? (v ? Number(v) || undefined : undefined));
+      setSongTags({
+        year: common?.year,
+        genre: str(common?.genre),
+        track: num(common?.track),
+        disk: num(common?.disk),
+        albumartist: str(common?.albumartist),
+        composer: str(common?.composer),
+        date: str(common?.date),
+      });
       if (title || artist) {
-        log(`ID3 tags: ${artist || '?'} — ${title || '?'}${album ? ` (${album})` : ''}`);
+        log(
+          `ID3 tags: ${artist || '?'} — ${title || '?'}${album ? ` (${album})` : ''}` +
+            `${common?.year ? ` [${common.year}]` : ''}${common?.genre ? ` {${str(common.genre)}}` : ''}`
+        );
       }
     } catch {
       /* no/unreadable tags → filename fallback below */
@@ -944,13 +963,42 @@ export default function WebGpuCreatorPanel() {
       // mis-heard words. No-ops gracefully if no LLM is configured.
       let correctedWords = words;
       setLlmStats(null);
-      if (referenceLyrics.trim()) {
+      // Title/artist now (needed for the in-flow lyric lookup below) — prefer the UI
+      // fields, else parse "Artist - Title.ext".
+      const baseName0 = file.name.replace(/\.[^.]+$/, '');
+      const dash0 = baseName0.match(/^(.+?)\s*-\s*(.+)$/);
+      const corrArtist = songArtist.trim() || (dash0 ? dash0[1].trim() : '');
+      const corrTitle = songTitle.trim() || (dash0 ? dash0[2].trim() : baseName0);
+      // Ensure reference lyrics IN-FLOW (don't depend on the async file-select lookup
+      // having finished). If empty, look up LRCLIB now with title/artist — this is
+      // what makes LLM correction actually fire (matching the native creator, which
+      // looks up lyrics synchronously during conversion).
+      let refLyrics = referenceLyrics.trim();
+      if (!refLyrics && corrTitle) {
+        try {
+          log(`looking up reference lyrics for correction: ${corrArtist} - ${corrTitle} …`);
+          const lr = await creatorCall('searchLyrics', '/admin/creator/search-lyrics', {
+            title: corrTitle,
+            artist: corrArtist,
+          });
+          refLyrics = (lr?.plainLyrics || lr?.lyrics?.plainLyrics || '').trim();
+          if (refLyrics) {
+            setReferenceLyrics(refLyrics);
+            log(`found reference lyrics (${refLyrics.split('\n').length} lines)`);
+          } else {
+            log('no reference lyrics found (LLM correction will be skipped)');
+          }
+        } catch (e) {
+          log(`reference lyric lookup failed: ${e.message}`);
+        }
+      }
+      if (refLyrics) {
         setStatus('correcting');
-        log('correcting lyrics with LLM (reference lyrics provided) …');
+        log('correcting lyrics with LLM …');
         try {
           const cr = await creatorCall('correctLyrics', '/admin/creator/correct', {
             whisperOutput: { lines, words },
-            referenceLyrics,
+            referenceLyrics: refLyrics,
           });
           if (cr?.success !== false && cr?.lines?.length) {
             lines = cr.lines;
@@ -1082,7 +1130,19 @@ export default function WebGpuCreatorPanel() {
         }
         const r = await window.kaiAPI.creator.saveWebGpuStems({
           stems,
-          metadata: { title, artist, album, duration: audio.duration, key: detectedKey },
+          metadata: {
+            title,
+            artist,
+            album,
+            duration: audio.duration,
+            key: detectedKey,
+            year: songTags.year,
+            genre: songTags.genre,
+            track: songTags.track,
+            disk: songTags.disk,
+            albumartist: songTags.albumartist,
+            composer: songTags.composer,
+          },
           lyrics: lyricsPayload,
           pitch: pitchData,
         });
@@ -1094,6 +1154,9 @@ export default function WebGpuCreatorPanel() {
         fd.append('title', title);
         fd.append('artist', artist);
         if (album) fd.append('album', album);
+        if (songTags.year) fd.append('year', String(songTags.year));
+        if (songTags.genre) fd.append('genre', songTags.genre);
+        if (songTags.track) fd.append('track', String(songTags.track));
         fd.append('duration', String(audio.duration));
         fd.append('lyrics', JSON.stringify(lyricsPayload));
         if (detectedKey) fd.append('key', detectedKey);

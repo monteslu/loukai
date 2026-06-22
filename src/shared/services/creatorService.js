@@ -408,9 +408,33 @@ export async function repairStems(filePaths) {
  */
 export async function saveWebGpuStems({ stems, metadata, lyrics, pitch, songsFolder }) {
   if (!songsFolder) throw new Error('songs folder is not set');
-  const { title = 'Untitled', artist = 'Unknown', album, key } = metadata || {};
+  const {
+    title = 'Untitled',
+    artist = 'Unknown',
+    album,
+    key,
+    year,
+    genre,
+    track,
+    disk,
+    albumartist,
+    composer,
+    tempo,
+  } = metadata || {};
   const safeFileName = (artist ? `${artist} - ${title}` : title).replace(/[<>:"/\\|?*]/g, '_');
   const outputPath = join(songsFolder, `${safeFileName}.stem.mp4`);
+
+  // Pass the FULL tag set through so the output preserves what the source had
+  // (parity with the native creator: year/genre/track/album-artist/composer/tempo).
+  const fullMeta = { title, artist };
+  if (album) fullMeta.album = album;
+  if (year) fullMeta.year = year;
+  if (genre) fullMeta.genre = genre;
+  if (track) fullMeta.track = track;
+  if (disk) fullMeta.disk = disk;
+  if (albumartist) fullMeta.albumartist = albumartist;
+  if (composer) fullMeta.composer = composer;
+  if (tempo) fullMeta.tempo = tempo;
 
   // stem-mp4 StemMp4Writer.write encodes the WAVs to AAC, muxes the 5-track NI-Stems
   // container (master + 4 stems), and writes the kara (lyrics) atom — all in one call.
@@ -423,7 +447,7 @@ export async function saveWebGpuStems({ stems, metadata, lyrics, pitch, songsFol
       vocals: stems.vocals,
     },
     mixdownWav: stems.master, // the raw original mix = NI-Stems master track
-    metadata: { title, artist, ...(album ? { album } : {}) },
+    metadata: fullMeta,
     lyricsData: lyrics && lyrics.lines ? { lines: lyrics.lines } : undefined,
     codec: 'aac',
   });

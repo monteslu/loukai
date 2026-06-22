@@ -2070,6 +2070,9 @@ class WebServer {
           const title = (req.body.title || 'Untitled').toString().slice(0, 200);
           const artist = (req.body.artist || 'Unknown').toString().slice(0, 200);
           const album = req.body.album ? req.body.album.toString().slice(0, 200) : undefined;
+          const year = req.body.year ? parseInt(req.body.year, 10) || undefined : undefined;
+          const genre = req.body.genre ? req.body.genre.toString().slice(0, 100) : undefined;
+          const track = req.body.track ? parseInt(req.body.track, 10) || undefined : undefined;
           const duration = parseFloat(req.body.duration) || 0;
           const key = req.body.key ? req.body.key.toString().slice(0, 16) : undefined;
           let lyrics = {};
@@ -2086,7 +2089,7 @@ class WebServer {
           }
           const result = await creatorService.saveWebGpuStems({
             stems,
-            metadata: { title, artist, album, duration, key },
+            metadata: { title, artist, album, year, genre, track, duration, key },
             lyrics,
             pitch,
             songsFolder: this.mainApp.settings?.getSongsFolder?.(),
