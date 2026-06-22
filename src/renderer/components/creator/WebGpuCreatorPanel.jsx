@@ -786,6 +786,52 @@ export default function WebGpuCreatorPanel() {
       log(
         `Whisper raw: ${rawWordCount} words, ${rawTextLen} chars, last word @ ${lastWordT.toFixed(0)}s of ${audio.duration.toFixed(0)}s${promptText ? ' (prompt ON)' : ''}`
       );
+      // ========================================================================
+      // FULL DIAGNOSTIC DUMP to devtools console (open DevTools to inspect).
+      // This is the ground truth of what Whisper actually returned, so we can see
+      // WHERE lyrics go missing.
+      // ========================================================================
+      {
+        const CH = 30; // Whisper's hard 30s chunk size
+        const nb = Math.ceil(audio.duration / CH);
+        const buckets = new Array(nb).fill(0);
+        const wordRows = words.map((w, i) => {
+          const t0 = w.timestamp?.[0] ?? w.start ?? null;
+          const t1 = w.timestamp?.[1] ?? w.end ?? null;
+          if (t0 != null) buckets[Math.min(nb - 1, Math.floor(t0 / CH))]++;
+          return { i, text: (w.text || '').trim(), start: t0, end: t1 };
+        });
+        // Gaps > 4s between consecutive words = where transcription went silent.
+        const gaps = [];
+        for (let i = 1; i < wordRows.length; i++) {
+          const g = (wordRows[i].start ?? 0) - (wordRows[i - 1].end ?? 0);
+          if (g > 4) {
+            gaps.push({
+              gapSec: Number(g.toFixed(1)),
+              from: `${(wordRows[i - 1].end ?? 0).toFixed(1)}s "${wordRows[i - 1].text}"`,
+              to: `${(wordRows[i].start ?? 0).toFixed(1)}s "${wordRows[i].text}"`,
+            });
+          }
+        }
+        const bucketStr = buckets.map((b, i) => `${i * CH}s:${b}`).join(' ');
+        log(`words per 30s chunk: [${bucketStr}]`);
+        if (gaps.length) {
+          log(`⚠ ${gaps.length} large gap(s) (>4s) in transcription — possible dropped sections:`);
+          for (const g of gaps) log(`    ↔ ${g.gapSec}s gap: ${g.from} → ${g.to}`);
+        }
+        // Full structured dumps to console (not screen-log).
+
+        console.group('🎤 Whisper transcription diagnostics');
+        console.log('audio duration (s):', audio.duration, '| sampleRate:', audio.sampleRate);
+        console.log('raw word count:', words.length, '| text chars:', (out.text || '').length);
+        console.log('full text:', out.text);
+        console.log('words/30s buckets:', buckets);
+        console.table(gaps.length ? gaps : [{ note: 'no gaps >4s' }]);
+        console.log('ALL words (text/start/end):');
+        console.table(wordRows);
+        console.log('raw out object:', out);
+        console.groupEnd();
+      }
       // Hallucination trim — ONLY at the song's instrumental bookends. Whisper
       // invents phrases ("thank you", "..") over the intro + outro/fade. We drop a
       // word in the first/last EDGE_FRAC (3%) of the track ONLY IF the vocals stem is
