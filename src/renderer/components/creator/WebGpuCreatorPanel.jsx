@@ -832,8 +832,67 @@ export default function WebGpuCreatorPanel() {
       const maxPasses = Math.ceil(totalSamples / SR16 / 5) + 8; // hard cap (>=5s/pass)
       const baseOpts = {
         return_timestamps: useWordTs ? 'word' : true,
+        // Match the Python runner's decode params (whisper_runner.py): no prev-text
+        // conditioning (reduces repetition loops in singing), permissive no-speech.
+        // transformers.js ignores ones it doesn't support; harmless.
+        condition_on_previous_text: false,
+        no_speech_threshold: 0.3,
         ...(promptIds ? { prompt_ids: promptIds } : promptText ? { prompt: promptText } : {}),
       };
+
+      // Transcribe ONE ≤30s window via the raw model so we get Whisper's per-window
+      // no_speech probability (the <|nospeech|> token logit at the first decode step)
+      // — the SAME signal the Python runner uses to drop instrumental/non-vocal
+      // sections. The high-level pipeline hides it; calling model.generate ourselves
+      // exposes it. We then decode the tokens with the tokenizer's own _decode_asr
+      // (the exact fn the pipeline uses) → {text, chunks:[{text,timestamp}]}.
+      const NO_SPEECH_TOKEN = 50362; // <|nospeech|> in the multilingual Whisper vocab
+      const NO_SPEECH_THRESHOLD = 0.6; // Python openai-whisper default
+      const transcribeWindow = async (window) => {
+        const inputs = await asr.processor(window);
+        const gen = await asr.model.generate({
+          ...inputs,
+          ...baseOpts,
+          output_scores: true,
+          return_dict_in_generate: true,
+        });
+        // no_speech_prob from the first-step logits.
+        let noSpeech = 0;
+        try {
+          const s0 = gen.scores?.[0];
+          if (s0?.data) {
+            const d = s0.data;
+            const V = s0.dims ? s0.dims[s0.dims.length - 1] : d.length;
+            let mx = -Infinity;
+            for (let i = 0; i < V; i++) if (d[i] > mx) mx = d[i];
+            let sum = 0;
+            for (let i = 0; i < V; i++) sum += Math.exp(d[i] - mx);
+            if (NO_SPEECH_TOKEN < V) noSpeech = Math.exp(d[NO_SPEECH_TOKEN] - mx) / sum;
+          }
+        } catch {
+          /* no scores → treat as speech */
+        }
+        // Decode tokens → text + segment timestamps (same path the pipeline uses).
+        const seqs = gen.sequences ?? gen;
+        let decoded;
+        try {
+          decoded = asr.tokenizer._decode_asr(
+            [{ stride: [window.length / SR16, 0, 0], tokens: seqs }],
+            {
+              return_timestamps: baseOpts.return_timestamps,
+              time_precision: 0.02,
+              force_full_sequences: false,
+            }
+          );
+        } catch {
+          // Fallback: plain batch_decode (no per-segment timestamps).
+          const text = asr.tokenizer.batch_decode(seqs, { skip_special_tokens: true })?.[0] || '';
+          decoded = [text, { chunks: [{ text, timestamp: [0, window.length / SR16] }] }];
+        }
+        const res = Array.isArray(decoded) ? decoded[1] : decoded;
+        return { chunks: res?.chunks || [], text: res?.text || '', noSpeech };
+      };
+
       let out;
       try {
         while (seek < totalSamples && safety++ < maxPasses) {
@@ -842,8 +901,16 @@ export default function WebGpuCreatorPanel() {
           const windowSec = window.length / SR16;
           chunkIdx += 1;
           setTranscribeInfo(`window ${chunkIdx} @ ${segStartSec.toFixed(0)}s …`);
-          const w = await asr(window, baseOpts); // single ≤30s window (no chunk_length_s)
-          const segs = (w.chunks || []).filter((c) => (c.text || '').trim());
+          const w = await transcribeWindow(window); // raw generate → text + no_speech
+          // Python-parity: if Whisper flags this window as non-speech, DROP it (this is
+          // the instrumental/solo suppression — kills "*Music*"-type hallucinations).
+          const isNoSpeech = w.noSpeech >= NO_SPEECH_THRESHOLD;
+          const segs = isNoSpeech ? [] : (w.chunks || []).filter((c) => (c.text || '').trim());
+          if (isNoSpeech) {
+            log(
+              `  window ${chunkIdx} @ ${segStartSec.toFixed(0)}s: no-speech (p=${w.noSpeech.toFixed(2)}) → dropped (instrumental)`
+            );
+          }
 
           // Offset this window's segment timestamps to absolute time + collect.
           let lastEnd = null;
@@ -966,38 +1033,41 @@ export default function WebGpuCreatorPanel() {
           console.log(`🎤 ${k}-${k + 10}s (${byTen[k].length}w): ${byTen[k].join('  ')}`);
         }
       }
-      // Hallucination trim — ONLY at the song's instrumental bookends. Whisper
-      // invents phrases ("thank you", "..") over the intro + outro/fade. We drop a
-      // word in the first/last EDGE_FRAC (3%) of the track ONLY IF the vocals stem is
-      // actually near-silent at that moment (no one's singing → it's a hallucination).
-      // The entire middle is kept untouched, and a word in the edge zone DURING real
-      // singing is kept. Uses the vocals RMS profile (honest for sung audio).
-      const EDGE_FRAC = 0.03;
+      // Hallucination trim — drop words where the VOCALS STEM is silent ANYWHERE in
+      // the song (not just the edges). Whisper invents phrases over instrumental
+      // sections — intros/outros AND mid-song solos (e.g. a guitar solo transcribed
+      // as repeated "*Country music*" / "[Music]"). The vocals stem is near-silent
+      // wherever no one is singing, so vocals-RMS is an honest gate: real sung words
+      // keep RMS high and survive; hallucinations over instrumentals get culled.
+      // Also strip sound-effect/annotation hallucinations ("*...*", "[...]",
+      // "(...)") regardless of RMS — Whisper never emits those for real lyrics.
+      const isAnnotation = (s) => {
+        const t = (s || '').trim();
+        // wrapped in * [ ] ( ) — e.g. *Music*, [Applause], (guitar solo)
+        return /^[*[(].*[*\])]$/.test(t) || /^\*.*\*$/.test(t);
+      };
       {
-        const dur = audio.duration;
-        const headEnd = dur * EDGE_FRAC;
-        const tailStart = dur * (1 - EDGE_FRAC);
         const before = words.length;
         const culled = [];
         words = words.filter((w) => {
+          const text = (w.text || '').trim();
           const ts = w.timestamp || [w.start, w.end];
           const mid = ts[0] != null && ts[1] != null ? (ts[0] + ts[1]) / 2 : ts[0];
+          if (isAnnotation(text)) {
+            culled.push({ text, t: mid == null ? -1 : Number(mid.toFixed(2)), why: 'annotation' });
+            return false;
+          }
           if (mid == null) return true;
-          // Only the edges are gated; the middle is always kept.
-          if (mid > headEnd && mid < tailStart) return true;
-          // In the edge zone: keep if vocals are audible, cull if near-silent.
+          // Cull anywhere the vocals stem is silent (no singing → hallucination).
           if (vocalsAudibleAt(mid)) return true;
-          culled.push({ text: (w.text || '').trim(), t: Number(mid.toFixed(2)) });
+          culled.push({ text, t: Number(mid.toFixed(2)), why: 'vocals silent' });
           return false;
         });
         if (culled.length) {
-          log(
-            `trimmed ${culled.length} hallucinated word(s) in the intro/outro (first/last ${Math.round(EDGE_FRAC * 100)}%, vocals silent):`
-          );
-          for (const c of culled) log(`    ✂ "${c.text}" @ ${c.t}s`);
-          console.table(culled);
+          log(`trimmed ${culled.length} hallucinated word(s) (vocals silent / annotation):`);
+          for (const c of culled) log(`    ✂ "${c.text}" @ ${c.t}s (${c.why})`);
         } else if (before) {
-          log('no intro/outro hallucinations to trim (vocals audible throughout edges)');
+          log('no hallucinations to trim');
         }
       }
       log(`after VAD: ${words.length} words`);
