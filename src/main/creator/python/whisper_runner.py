@@ -95,6 +95,47 @@ def main():
             w = min(_nwin - 1, max(0, int((t_sec * SR) // _win)))
             return _rms[w] > _silent_thresh
 
+        # Final alignment pass: snap a line's start/end to the nearest vocal onset/offset
+        # (Whisper timestamps drift on singing). Same logic as the WebGPU creator's
+        # snapToVocalEnergy. Searches +/- search_sec, clamped to not cross neighbors.
+        _hop = _win / SR
+
+        def _voiced(i):
+            return 0 <= i < _nwin and _rms[i] > _silent_thresh
+
+        def _nearest_onset(t, span):
+            c = min(_nwin - 1, max(0, int(round(t / _hop))))
+            for d in range(span + 1):
+                if _voiced(c - d) and not _voiced(c - d - 1):
+                    return (c - d) * _hop
+                if _voiced(c + d) and not _voiced(c + d - 1):
+                    return (c + d) * _hop
+            return t
+
+        def _nearest_offset(t, span):
+            c = min(_nwin - 1, max(0, int(round(t / _hop))))
+            for d in range(span + 1):
+                if _voiced(c - d) and not _voiced(c - d + 1):
+                    return (c - d + 1) * _hop
+                if _voiced(c + d) and not _voiced(c + d + 1):
+                    return (c + d + 1) * _hop
+            return t
+
+        def _snap_lines(line_list, search_sec=0.5):
+            if _peak <= 0 or not line_list:
+                return line_list
+            span = max(1, int(round(search_sec / _hop)))
+            for i, ln in enumerate(line_list):
+                prev_end = line_list[i - 1]["end"] if i > 0 else 0.0
+                next_start = line_list[i + 1]["start"] if i < len(line_list) - 1 else float("inf")
+                s = _nearest_onset(ln["start"], span)
+                e = _nearest_offset(ln["end"], span)
+                s = max(prev_end, min(s, ln["end"] - 0.1))
+                e = min(next_start, max(e, s + 0.1))
+                ln["start"] = round(s, 3)
+                ln["end"] = round(e, 3)
+            return line_list
+
         progress(20, f"Transcribing {duration:.1f}s of audio...")
 
         # Build transcription parameters
@@ -194,6 +235,11 @@ def main():
             progress(90, f"Trimmed {len(culled)} hallucinated word(s) (annotation/vocals-silent)")
             for c in culled[:40]:
                 print(f"  ✂ {c['word']!r} @ {c['t']}s ({c['why']})", file=sys.stderr, flush=True)
+
+        # Final alignment pass: snap line bounds to the actual vocal onset/offset
+        # (corrects Whisper's timestamp drift on singing). Chunker-agnostic — keeps
+        # openai-whisper's own (good) internal chunking intact.
+        lines = _snap_lines(lines, search_sec=0.5)
 
         progress(95, f"Organized into {len(lines)} lines")
 

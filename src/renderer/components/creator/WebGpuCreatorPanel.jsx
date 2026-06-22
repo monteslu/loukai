@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import * as StemExtractor from 'stem-mp4/extractor';
+import {
+  planVocalSegments,
+  reconcileOverlaps,
+  snapToVocalEnergy,
+} from '../../../shared/creator/vocalSegmentation.js';
 
 /**
  * WebGPU Creator (experimental) — runs Demucs stem separation + Whisper
@@ -819,17 +824,10 @@ export default function WebGpuCreatorPanel() {
       // to the model's PREDICTED last-segment-end (snapping to a phrase boundary) so
       // no lyric line ever straddles a chunk seam. Window content is fed to the model
       // un-chunked (≤30s → zero-padded internally).
-      log(
-        `transcribing with sequential seek-loop (Python-parity)${promptText ? ', prompt ON' : ''}`
-      );
+      log(`transcribing with silence-aware vocal segmentation${promptText ? ', prompt ON' : ''}`);
       const SR16 = 16000;
-      const WINDOW_S = 30;
-      const winSamples = WINDOW_S * SR16;
       const totalSamples = mono.length;
       const allChunks = [];
-      let seek = 0; // sample offset of current window start
-      let safety = 0;
-      const maxPasses = Math.ceil(totalSamples / SR16 / 5) + 8; // hard cap (>=5s/pass)
       const baseOpts = {
         return_timestamps: useWordTs ? 'word' : true,
         ...(promptIds ? { prompt_ids: promptIds } : promptText ? { prompt: promptText } : {}),
@@ -887,67 +885,58 @@ export default function WebGpuCreatorPanel() {
         return { chunks: w.chunks || [], text: w.text || '', noSpeech: cap?.prob ?? null };
       };
 
+      // Plan transcription segments on the VOCALS STEM's own silence (not a blind time
+      // grid): cuts land at vocal-silence so a sung phrase is never split at a seam,
+      // each segment is ≤30s, and consecutive segments step back `overlapSec` so
+      // boundary words are seen in both (reconciled after). Uses the RMS profile above.
+      const plan = planVocalSegments(rms, {
+        hopSec: WIN_SEC,
+        durationSec: audio.duration,
+        maxSegSec: 28,
+        overlapSec: 2,
+        silentFrac: SILENT_FRAC,
+      });
+      log(`planned ${plan.length} vocal-aware segment(s) (silence-cut, ≤28s, 2s overlap)`);
+
       let out;
       try {
-        while (seek < totalSamples && safety++ < maxPasses) {
-          const segStartSec = seek / SR16;
-          const window = mono.subarray(seek, Math.min(seek + winSamples, totalSamples));
-          const windowSec = window.length / SR16;
+        const segWordLists = []; // per-segment {start, words:[{text,start,end}]} for reconcile
+        for (let pi = 0; pi < plan.length; pi++) {
+          const { start, end } = plan[pi];
+          const s0 = Math.max(0, Math.floor(start * SR16));
+          const s1 = Math.min(totalSamples, Math.ceil(end * SR16));
+          const window = mono.subarray(s0, s1);
           chunkIdx += 1;
-          setTranscribeInfo(`window ${chunkIdx} @ ${segStartSec.toFixed(0)}s …`);
+          setTranscribeInfo(`segment ${chunkIdx}/${plan.length} @ ${start.toFixed(0)}s …`);
           const w = await transcribeWindow(window);
-          // Keep the whole window's transcription. We do NOT drop on no_speech here —
-          // no_speech_prob is measured at the window START, so a window that begins in
-          // an instrumental solo but has singing returning mid-window would lose the
-          // real lyrics. Instrumental hallucinations are culled per-WORD afterward
-          // using the vocals-stem RMS (silent exactly where there's no singing). The
-          // no_speech value is logged as a diagnostic hint only.
           const segs = (w.chunks || []).filter((c) => (c.text || '').trim());
-          if (w.noSpeech != null) {
-            log(
-              `  window ${chunkIdx} @ ${segStartSec.toFixed(0)}s: no_speech=${w.noSpeech.toFixed(2)} (hint)`
-            );
-          }
 
-          // Offset this window's segment timestamps to absolute time + collect.
-          let lastEnd = null;
+          // Offset this segment's word timestamps to absolute song time.
+          const segWords = [];
           for (const c of segs) {
             const ts = c.timestamp || [c.start, c.end];
-            const s0 = ts[0] != null ? ts[0] + segStartSec : null;
-            const s1 = ts[1] != null ? ts[1] + segStartSec : null;
-            allChunks.push({ text: c.text, timestamp: [s0, s1] });
-            if (ts[1] != null) lastEnd = ts[1]; // window-relative end of last segment
+            const a = ts[0] != null ? ts[0] + start : null;
+            const b = ts[1] != null ? ts[1] + start : null;
+            if (a == null) continue;
+            segWords.push({ text: c.text, start: a, end: b != null ? b : a + 0.4 });
           }
+          segWordLists.push({ start, words: segWords });
 
-          // Live update: show lyrics-so-far after each window (incremental feedback,
-          // like the per-window progress). Grouped on the fly.
-          if (allChunks.length) {
-            setLyrics(
-              groupWordsIntoLines(
-                allChunks.filter((c) => c.timestamp[0] != null),
-                { duration: audio.duration }
-              )
-            );
+          // Live update from what we have so far (pre-reconcile is fine for feedback).
+          const flat = segWordLists.flatMap((sw) => sw.words);
+          if (flat.length) {
+            setLyrics(groupWordsIntoLines(flat, { duration: audio.duration }));
           }
-
-          // Advance: snap to the last predicted segment end (the openai-whisper move).
-          // Guard so we always move forward by a sane amount and don't loop.
-          if (window.length < winSamples) {
-            break; // consumed the tail
-          }
-          let advanceSec;
-          if (lastEnd != null && lastEnd > 1 && lastEnd <= windowSec) {
-            advanceSec = lastEnd;
-          } else {
-            advanceSec = WINDOW_S; // no usable timestamp → full window step
-          }
-          // never advance less than 1s (avoid stalls) or more than the window
-          advanceSec = Math.max(1, Math.min(advanceSec, WINDOW_S));
-          seek += Math.round(advanceSec * SR16);
           log(
-            `  window ${chunkIdx} @ ${segStartSec.toFixed(0)}s: ${segs.length} seg(s), advance ${advanceSec.toFixed(1)}s`
+            `  segment ${chunkIdx} @ ${start.toFixed(0)}-${end.toFixed(0)}s: ${segs.length} seg(s)` +
+              (w.noSpeech != null ? `, no_speech=${w.noSpeech.toFixed(2)}` : '')
           );
         }
+
+        // Reconcile overlaps (dedup ONLY within overlap windows → keeps real repeats).
+        const reconciled = reconcileOverlaps(segWordLists, 0.6);
+        allChunks.length = 0;
+        for (const w of reconciled) allChunks.push({ text: w.text, timestamp: [w.start, w.end] });
         out = { chunks: allChunks, text: allChunks.map((c) => c.text).join('') };
       } finally {
         clearInterval(hb);
@@ -1081,9 +1070,18 @@ export default function WebGpuCreatorPanel() {
         }
       }
       log(`after VAD: ${words.length} words`);
-      const lines = words.length
+      let lines = words.length
         ? groupWordsIntoLines(words, { duration: audio.duration })
         : [{ text: (out.text || '').trim(), start: 0, end: audio.duration }];
+      // Final alignment pass: snap each line's start/end to the actual vocal onset/
+      // offset (Whisper timestamps drift on singing). Preserves the `.dropped` marker.
+      const droppedMark = lines.dropped;
+      lines = snapToVocalEnergy(lines, rms, {
+        hopSec: WIN_SEC,
+        searchSec: 0.5,
+        silentFrac: SILENT_FRAC,
+      });
+      if (droppedMark) lines.dropped = droppedMark;
       const groupedWordCount = lines.reduce(
         (n, l) => n + l.text.split(/\s+/).filter(Boolean).length,
         0
