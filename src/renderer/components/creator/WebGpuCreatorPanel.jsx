@@ -844,7 +844,6 @@ export default function WebGpuCreatorPanel() {
       // logits UNCHANGED so transcription is unaffected. (Token ids are tokenizer-verified
       // for large-v3-turbo: SOT=50258, <|nospeech|>=50363.)
       const NO_SPEECH_TOKEN = 50363;
-      const NO_SPEECH_THRESHOLD = 0.6; // openai-whisper default; a window above this is non-speech
       const LogitsProcessor = tf?.LogitsProcessor;
       const makeNoSpeechCapture = () => {
         if (!LogitsProcessor) return null;
@@ -897,13 +896,16 @@ export default function WebGpuCreatorPanel() {
           chunkIdx += 1;
           setTranscribeInfo(`window ${chunkIdx} @ ${segStartSec.toFixed(0)}s …`);
           const w = await transcribeWindow(window);
-          // Python-parity: drop windows Whisper flags as non-speech (instrumental
-          // solos, intros). This is the REAL no_speech_prob, not a text heuristic.
-          const isNoSpeech = w.noSpeech != null && w.noSpeech >= NO_SPEECH_THRESHOLD;
-          const segs = isNoSpeech ? [] : (w.chunks || []).filter((c) => (c.text || '').trim());
+          // Keep the whole window's transcription. We do NOT drop on no_speech here —
+          // no_speech_prob is measured at the window START, so a window that begins in
+          // an instrumental solo but has singing returning mid-window would lose the
+          // real lyrics. Instrumental hallucinations are culled per-WORD afterward
+          // using the vocals-stem RMS (silent exactly where there's no singing). The
+          // no_speech value is logged as a diagnostic hint only.
+          const segs = (w.chunks || []).filter((c) => (c.text || '').trim());
           if (w.noSpeech != null) {
             log(
-              `  window ${chunkIdx} @ ${segStartSec.toFixed(0)}s: no_speech=${w.noSpeech.toFixed(2)}${isNoSpeech ? ' → DROPPED (instrumental)' : ''}`
+              `  window ${chunkIdx} @ ${segStartSec.toFixed(0)}s: no_speech=${w.noSpeech.toFixed(2)} (hint)`
             );
           }
 
