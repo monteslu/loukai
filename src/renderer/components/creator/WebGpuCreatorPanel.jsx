@@ -55,6 +55,9 @@ export default function WebGpuCreatorPanel() {
   const [error, setError] = useState(null); // fatal error message → ErrorDisplay
   const [lyrics, setLyrics] = useState([]);
   const [rtf, setRtf] = useState(null);
+  const [completedFile, setCompletedFile] = useState(null); // output .stem.mp4 path (done)
+  const [enableCrepe, setEnableCrepe] = useState(true); // run CREPE pitch/key detection
+  const [language, setLanguage] = useState('en'); // Whisper transcription language
   // Lyric-assist (parity with native creator): title/artist for LRCLIB lookup,
   // reference lyrics (Whisper prompt + LLM correction source), correction stats.
   const [songTitle, setSongTitle] = useState('');
@@ -363,6 +366,47 @@ export default function WebGpuCreatorPanel() {
     // Auto lyric lookup (don't auto-lookup for a .stem.mp4 re-transcribe unless empty).
     if (title) await lookupLyrics(title, artist);
     setFileLoading(false);
+  }
+
+  // Reset for the next song (after a completed create).
+  function handleCreateAnother() {
+    selectedFileRef.current = null;
+    if (fileRef.current) fileRef.current.value = '';
+    setFileName('');
+    setCompletedFile(null);
+    setLyrics([]);
+    setLlmStats(null);
+    setRtf(null);
+    setStemProgress({});
+    setSongTitle('');
+    setSongArtist('');
+    setSongAlbum('');
+    setSongTags({});
+    setReferenceLyrics('');
+    setLogLines([]);
+    setError(null);
+    setStatus('idle');
+    setActiveSubTab('create');
+  }
+
+  // Open the just-created file in the editor (matches the native creator).
+  async function handleOpenInEditor() {
+    if (!completedFile) return;
+    try {
+      await window.kaiAPI?.editor?.loadKai?.(completedFile);
+      // Switch to the editor tab (same DOM pattern as TabNavigation / CreateTab).
+      document.querySelectorAll('[id$="-tab"]').forEach((pane) => {
+        pane.classList.add('hidden');
+        pane.classList.remove('block', 'flex');
+      });
+      const editorPane = document.getElementById('editor-tab');
+      if (editorPane) {
+        editorPane.classList.remove('hidden');
+        editorPane.classList.add('block');
+      }
+    } catch (err) {
+      setError(`Failed to open in editor: ${err.message}`);
+    }
   }
 
   // Drag-and-drop onto the big drop zone — feeds the same onFileSelect.
@@ -757,6 +801,7 @@ export default function WebGpuCreatorPanel() {
       const allChunks = [];
       const baseOpts = {
         return_timestamps: useWordTs ? 'word' : true,
+        ...(language && language !== 'auto' ? { language } : {}),
         ...(promptIds ? { prompt_ids: promptIds } : promptText ? { prompt: promptText } : {}),
       };
 
@@ -1040,10 +1085,15 @@ export default function WebGpuCreatorPanel() {
       const refLyrics = referenceLyrics.trim(); // sent to backend; it looks up if empty
 
       // --- CREPE pitch → musical key (parity: native uses CREPE for key detection;
-      // pitch track stored best-effort). Reuses the 16k mono vocals. Best-effort. ---
+      // pitch track stored best-effort). Reuses the 16k mono vocals. Best-effort.
+      // Skipped when the user disables pitch detection in Settings. ---
       let detectedKey = null;
       let pitchData = null;
       try {
+        if (!enableCrepe) {
+          log('pitch detection (CREPE) disabled in settings — skipping');
+          throw new Error('crepe-disabled'); // jump to the catch, leaves pitch/key null
+        }
         const { detectPitch, detectKey } = crepeMod;
         if (!libs.current.crepeSession) {
           log('loading CREPE (pitch) …');
@@ -1246,6 +1296,7 @@ export default function WebGpuCreatorPanel() {
             `${saved.llmStats.failed ? ' (failed: ' + (saved.llmStats.error || '') + ')' : ''}`
         );
       }
+      setCompletedFile(saved.outputPath || null);
       setStatus('done');
       log(`✅ saved to library: ${saved.fileName}`);
     } catch (e) {
@@ -1476,6 +1527,36 @@ export default function WebGpuCreatorPanel() {
                 <option value="fp32">fp32 — full precision (largest, slow)</option>
               </select>
             </label>
+            <label className="text-sm text-gray-700 dark:text-gray-300">
+              Language:
+              <select
+                className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                disabled={busy}
+              >
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="it">Italian</option>
+                <option value="pt">Portuguese</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="zh">Chinese</option>
+                <option value="auto">Auto-detect</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={enableCrepe}
+                onChange={(e) => setEnableCrepe(e.target.checked)}
+                disabled={busy}
+                className="rounded"
+              />
+              Detect pitch + musical key (CREPE)
+            </label>
 
             {/* LLM settings (powers lyric correction). Collapsible — only needed to
               configure the provider/key once. */}
@@ -1610,6 +1691,31 @@ export default function WebGpuCreatorPanel() {
             <span className="inline-block animate-pulse">●</span> Encoding stems + saving .stem.mp4…
           </div>
         )}
+
+        {/* Completion card — Open in Editor / Create Another (matches native creator) */}
+        {status === 'done' && (
+          <div className={`${STYLES.card} flex flex-col gap-3`}>
+            <div className="text-lg font-semibold text-green-700 dark:text-green-400">
+              ✅ Karaoke file created!
+            </div>
+            {(songTitle || songArtist) && (
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                <SongTitle artist={songArtist} title={songTitle} />
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {completedFile && (
+                <button onClick={handleOpenInEditor} className={STYLES.btnPrimary}>
+                  ✏️ Open in Editor
+                </button>
+              )}
+              <button onClick={handleCreateAnother} className={STYLES.btnSecondary}>
+                ➕ Create Another
+              </button>
+            </div>
+          </div>
+        )}
+
         {rtf !== null && (
           <div className="text-xs text-gray-500 dark:text-gray-400">
             separation: {rtf.toFixed(2)}× realtime · htdemucs_ft on WebGPU
