@@ -149,6 +149,10 @@ export default function WebGpuCreatorPanel() {
   // (~13× realtime). The earlier slowness was a dtype bug: WebGPU defaulted to the
   // 2.5GB fp32 ONNX; q4f16 fixes it. Smaller models stay available for low-VRAM.
   const [asrModel, setAsrModel] = useState('onnx-community/whisper-large-v3-turbo_timestamped');
+  // Timestamp granularity. 'word' = per-word DTW timing (precise, but transformers.js
+  // can DROP words it can't align at chunk seams → missing mid-song lyrics). 'segment'
+  // = per-line timing (coarser, but far more robust about not losing content). A/B-able.
+  const [timestampMode, setTimestampMode] = useState('word');
   const [status, setStatus] = useState('idle'); // idle | separating | transcribing | done | error
   const [stemProgress, setStemProgress] = useState({}); // per-stem 0..1 (ft ensemble)
   // Demucs separation model — default to the fast single htdemucs.
@@ -762,12 +766,15 @@ export default function WebGpuCreatorPanel() {
       // the post-transcription LLM correction. (If we want true prompting later, do
       // it with tokenizer-produced prompt_ids.)
       const promptText = null;
+      const useWordTs = timestampMode === 'word';
+      log(`timestamp mode: ${timestampMode}`);
       let out;
       try {
         out = await asr(mono, {
           chunk_length_s: 30,
           stride_length_s: 5,
-          return_timestamps: 'word',
+          // 'word' → per-word DTW timing; true → per-segment (line) timing.
+          return_timestamps: useWordTs ? 'word' : true,
           ...(streamer ? { streamer } : {}),
         });
       } finally {
@@ -776,7 +783,27 @@ export default function WebGpuCreatorPanel() {
       }
       const tSec = (performance.now() - tStart) / 1000;
 
+      // In segment mode, each chunk is {text:'a whole line', timestamp:[s,e]}. Split it
+      // into pseudo-words (evenly spaced across the segment) so the line-grouper +
+      // word-timed kara atom still work. Word mode passes chunks through unchanged.
       let words = out.chunks || [];
+      if (!useWordTs) {
+        const expanded = [];
+        for (const seg of words) {
+          const [s, e] = seg.timestamp || [seg.start, seg.end];
+          const toks = (seg.text || '').trim().split(/\s+/).filter(Boolean);
+          if (s == null || !toks.length) continue;
+          const dur = (e ?? s) - s;
+          const step = toks.length > 0 ? dur / toks.length : 0;
+          toks.forEach((tok, i) => {
+            expanded.push({
+              text: (i ? ' ' : '') + tok,
+              timestamp: [s + i * step, s + (i + 1) * step],
+            });
+          });
+        }
+        words = expanded;
+      }
       // DIAGNOSTIC: where do lyrics disappear? Log counts at each stage.
       const rawWordCount = words.length;
       const rawTextLen = (out.text || '').length;
@@ -1204,6 +1231,18 @@ export default function WebGpuCreatorPanel() {
                   {m.label}
                 </option>
               ))}
+            </select>
+          </label>
+          <label className="text-sm text-gray-700 dark:text-gray-300">
+            Lyric timing:
+            <select
+              className="ml-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
+              value={timestampMode}
+              onChange={(e) => setTimestampMode(e.target.value)}
+              disabled={busy}
+            >
+              <option value="word">word-level (precise, may drop some words)</option>
+              <option value="segment">segment/line (robust, keeps more lyrics)</option>
             </select>
           </label>
 
