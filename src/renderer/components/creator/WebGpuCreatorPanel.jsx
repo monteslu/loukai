@@ -761,10 +761,6 @@ export default function WebGpuCreatorPanel() {
       // present at time t (seconds).
       const SILENT_FRAC = 0.08;
       const silentThresh = peakRms * SILENT_FRAC;
-      const vocalsAudibleAt = (t) => {
-        const w = Math.min(nWin - 1, Math.max(0, Math.floor((t * 16000) / winLen)));
-        return rms[w] > silentThresh;
-      };
       // True if time t sits inside a SUSTAINED instrumental gap — vocals below the
       // silence threshold continuously for >= minGapSec. This is how we drop Whisper's
       // hallucinations over instrumental breaks (e.g. a guitar solo) the way
