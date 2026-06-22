@@ -79,7 +79,6 @@
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
     "fuse.js": "^7.1.0",
-    "m4a-stems": "^0.3.0",
     "multer": "^2.2.0",
     "music-metadata": "^11.9.0",
     "node-id3": "^0.2.9",
@@ -89,10 +88,13 @@
     "react-dom": "^19.2.0",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
+    "stem-mp4": "^0.4.0",
     "tar": "^7.5.9",
     "ws": "^8.13.0",
     "yauzl": "^3.0.0",
-    "yazl": "^3.3.1"
+    "yazl": "^3.3.1",
+    "loukai-htdemucs-ft": "file:packages/loukai-htdemucs-ft",
+    "loukai-vad": "file:packages/loukai-vad"
   },
   "build": {
     "appId": "com.loukai.app",

@@ -1,0 +1,28 @@
+{
+  "name": "loukai-htdemucs-ft",
+  "version": "0.1.0",
+  "description": "htdemucs_ft 4-model ensemble (fp16 ONNX, in-browser/WebGPU) for PyTorch-quality stem separation — models + ensemble runner",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cpu-nodes": "./ft_cpu_nodes.json",
+    "./drums": "./htdemucs_ft_drums_safe16.onnx",
+    "./bass": "./htdemucs_ft_bass_safe16.onnx",
+    "./other": "./htdemucs_ft_other_safe16.onnx",
+    "./vocals": "./htdemucs_ft_vocals_safe16.onnx"
+  },
+  "files": [
+    "index.js",
+    "ft_cpu_nodes.json",
+    "htdemucs_ft_drums_safe16.onnx",
+    "htdemucs_ft_bass_safe16.onnx",
+    "htdemucs_ft_other_safe16.onnx",
+    "htdemucs_ft_vocals_safe16.onnx",
+    "README.md"
+  ],
+  "keywords": ["demucs", "htdemucs", "stem-separation", "onnx", "webgpu", "onnxruntime-web", "karaoke", "source-separation"],
+  "license": "MIT",
+  "author": "Luis Montes",
+  "repository": "github:monteslu/loukai"
+}

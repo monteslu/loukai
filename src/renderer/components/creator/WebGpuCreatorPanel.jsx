@@ -621,9 +621,9 @@ export default function WebGpuCreatorPanel() {
         const { detectSpeechRegions } = vadMod;
         if (!libs.current.vadSession) {
           log('loading VAD (Silero) …');
-          const vbuf = await fetch(
-            '/webgpu-models/onnx-community/silero-vad/resolve/main/onnx/model.onnx'
-          ).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`vad ${r.status}`))));
+          const vbuf = await fetch('/webgpu-models/silero_vad.onnx').then((r) =>
+            r.ok ? r.arrayBuffer() : Promise.reject(new Error(`vad ${r.status}`))
+          );
           libs.current.vadSession = await ort.InferenceSession.create(new Uint8Array(vbuf), {
             executionProviders: ['wasm'],
           });

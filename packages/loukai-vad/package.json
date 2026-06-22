@@ -1,0 +1,17 @@
+{
+  "name": "loukai-vad",
+  "version": "0.1.0",
+  "description": "Silero VAD speech-gating (ONNX, in-browser/WebGPU) for suppressing Whisper hallucination on non-speech — model + region detector",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./model": "./silero_vad.onnx",
+    "./silero_vad.onnx": "./silero_vad.onnx"
+  },
+  "files": ["index.js", "silero_vad.onnx", "README.md"],
+  "keywords": ["vad", "silero", "voice-activity-detection", "onnx", "webgpu", "onnxruntime-web", "whisper", "karaoke"],
+  "license": "MIT",
+  "author": "Luis Montes",
+  "repository": "github:monteslu/loukai"
+}

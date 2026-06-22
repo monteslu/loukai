@@ -25,8 +25,37 @@ import {
 } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import https from 'https';
 import { getCacheDir } from './systemChecker.js';
+
+const require = createRequire(import.meta.url);
+
+// loukai's own models ship as npm packages (no HF hosting, no 300MB in the npm
+// package's own tree — they come along as normal deps, offline after install).
+// Map the path the renderer requests → the bundled file inside the package.
+// Resolved lazily + cached; a missing package (e.g. trimmed install) just falls
+// through to the cache/HF path.
+const PACKAGE_MODELS = {
+  // crepe is tiny (~1.9MB) → bundled directly in static/webgpu (served below), not a package.
+  'silero_vad.onnx': () => require.resolve('loukai-vad/silero_vad.onnx'),
+  'ft_cpu_nodes.json': () => require.resolve('loukai-htdemucs-ft/cpu-nodes'),
+  'htdemucs_ft_drums_safe16.onnx': () => require.resolve('loukai-htdemucs-ft/drums'),
+  'htdemucs_ft_bass_safe16.onnx': () => require.resolve('loukai-htdemucs-ft/bass'),
+  'htdemucs_ft_other_safe16.onnx': () => require.resolve('loukai-htdemucs-ft/other'),
+  'htdemucs_ft_vocals_safe16.onnx': () => require.resolve('loukai-htdemucs-ft/vocals'),
+};
+
+function packageModelPath(rel) {
+  const resolver = PACKAGE_MODELS[rel];
+  if (!resolver) return null;
+  try {
+    const p = resolver();
+    return existsSync(p) ? p : null;
+  } catch {
+    return null; // package not installed
+  }
+}
 
 // loukai's bundled static/webgpu dir (ships ft-ensemble.js + ft_cpu_nodes.json,
 // and — once vendored — the libs). Served same-origin under /webgpu-assets.
@@ -153,11 +182,12 @@ export function registerWebGpuAssets(app) {
     if (req.path === '/webgpu-assets/ft-available') {
       const md = modelsDir();
       const present = ['drums', 'bass', 'other', 'vocals'].every((s) => {
-        const f = join(md, `htdemucs_ft_${s}_safe16.onnx`);
+        const name = `htdemucs_ft_${s}_safe16.onnx`;
+        if (packageModelPath(name)) return true; // shipped as the loukai-htdemucs-ft package
+        const f = join(md, name);
         return existsSync(f) && statSync(f).size > 0;
       });
-      const nodes = existsSync(join(STATIC_WEBGPU, 'ft_cpu_nodes.json'));
-      return res.json({ available: present && nodes });
+      return res.json({ available: present });
     }
     // Express 5 (path-to-regexp v8) requires a named splat, not a bare '*'.
     // Strip the prefix; reject traversal.
@@ -197,12 +227,17 @@ export function registerWebGpuAssets(app) {
     const rel = decodeURIComponent(req.path.replace(/^\/webgpu-models\//, ''));
     if (!rel || rel.includes('..')) return res.status(400).json({ error: 'bad path' });
 
-    const dest = join(modelsDir(), rel);
+    // loukai's own models: silero VAD + htdemucs_ft ship as npm packages (served
+    // straight from node_modules); crepe is bundled in static/webgpu. All present
+    // offline after install — no HF needed for our models.
+    const bundled = join(STATIC_WEBGPU, rel);
+    const pkgPath =
+      packageModelPath(rel) || (existsSync(bundled) && statSync(bundled).size > 0 ? bundled : null);
+    const dest = pkgPath || join(modelsDir(), rel);
     try {
-      // Serve a locally-present model directly (e.g. the htdemucs_ft_*.onnx ensemble
-      // placed/bundled into the cache dir) — no upstream needed. Otherwise fall back
-      // to the HF reverse-proxy (htdemucs.onnx alias + transformers.js model trees).
-      if (!(existsSync(dest) && statSync(dest).size > 0)) {
+      // Otherwise: serve a locally-cached model, or fall back to the HF reverse-proxy
+      // (htdemucs.onnx alias + transformers.js model trees).
+      if (!pkgPath && !(existsSync(dest) && statSync(dest).size > 0)) {
         const upstream = rel === 'htdemucs.onnx' ? HTDEMUCS_URL : `${HF_BASE}/${rel}`;
         if (!upstream.startsWith('https://huggingface.co/')) {
           return res.status(404).json({ error: 'model not found locally and no upstream' });
