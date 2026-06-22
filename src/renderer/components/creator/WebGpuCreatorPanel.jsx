@@ -150,9 +150,11 @@ export default function WebGpuCreatorPanel() {
   // 2.5GB fp32 ONNX; q4f16 fixes it. Smaller models stay available for low-VRAM.
   const [asrModel, setAsrModel] = useState('onnx-community/whisper-large-v3-turbo_timestamped');
   // Timestamp granularity. 'word' = per-word DTW timing (precise, but transformers.js
-  // can DROP words it can't align at chunk seams → missing mid-song lyrics). 'segment'
-  // = per-line timing (coarser, but far more robust about not losing content). A/B-able.
-  const [timestampMode, setTimestampMode] = useState('word');
+  // can DROP words/whole lines it can't align at chunk seams → missing lyrics).
+  // 'segment' = per-line timing (coarser per-word, but far more robust — doesn't drop
+  // audible lines). Default to segment for completeness; we re-derive per-word timing
+  // by spreading each segment's words across its span, which is plenty for karaoke.
+  const [timestampMode, setTimestampMode] = useState('segment');
   const [status, setStatus] = useState('idle'); // idle | separating | transcribing | done | error
   const [stemProgress, setStemProgress] = useState({}); // per-stem 0..1 (ft ensemble)
   // Demucs separation model — default to the fast single htdemucs.
@@ -771,12 +773,18 @@ export default function WebGpuCreatorPanel() {
       // it with tokenizer-produced prompt_ids.)
       const promptText = null;
       const useWordTs = timestampMode === 'word';
-      log(`timestamp mode: ${timestampMode}`);
+      // chunk_length_s=30 (Whisper's max), stride_length_s=8 (was 5). Larger overlap
+      // → a bigger "trusted" center per chunk and more redundancy at the 20s-spaced
+      // chunk seams, so a clear lyric line landing near a boundary (e.g. ~65s) isn't
+      // dropped by the chunk-merge. Segment timestamps (return_timestamps:true) also
+      // stitch boundaries far less lossily than per-word DTW, which can silently drop
+      // a whole audible line — so that's the default; 'word' is opt-in.
+      log(`timestamp mode: ${timestampMode}, chunk 30s / stride 8s`);
       let out;
       try {
         out = await asr(mono, {
           chunk_length_s: 30,
-          stride_length_s: 5,
+          stride_length_s: 8,
           // 'word' → per-word DTW timing; true → per-segment (line) timing.
           return_timestamps: useWordTs ? 'word' : true,
           ...(streamer ? { streamer } : {}),
@@ -1255,8 +1263,8 @@ export default function WebGpuCreatorPanel() {
               onChange={(e) => setTimestampMode(e.target.value)}
               disabled={busy}
             >
-              <option value="word">word-level (precise, may drop some words)</option>
-              <option value="segment">segment/line (robust, keeps more lyrics)</option>
+              <option value="segment">segment/line (robust, keeps all lines — default)</option>
+              <option value="word">word-level (precise timing, may drop lines)</option>
             </select>
           </label>
 
