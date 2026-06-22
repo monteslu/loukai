@@ -1218,6 +1218,23 @@ export default function WebGpuCreatorPanel() {
         log(
           `    TOTAL:          ${totalSec.toFixed(1)}s  (${x(totalSec)})  (excludes encode/save)`
         );
+        // Also as ONE copyable line (loukai console flattens objects → use a string),
+        // so it's unmissable in DevTools or the Electron terminal next to 📋.
+
+        console.log(
+          '⏱️ TIMING_WEB ' +
+            JSON.stringify({
+              audioSec: Number(a.toFixed(1)),
+              separation: Number(perf.separation.toFixed(1)),
+              transcription: Number(perf.transcription.toFixed(1)),
+              pitch: Number(perf.pitch.toFixed(1)),
+              total: Number(totalSec.toFixed(1)),
+              ep,
+              demucs: demucsModel,
+              whisper: asrModel.split('/').pop(),
+              dtype: whisperDtype,
+            })
+        );
       }
 
       // --- Save as .stem.mp4 (encode 4 stems → POST → backend muxes via ffmpeg) ---

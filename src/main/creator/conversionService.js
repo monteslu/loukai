@@ -536,6 +536,19 @@ export async function runConversion(
     if (timings.pitch != null)
       log(`    pitch (CREPE):  ${timings.pitch.toFixed(1)}s  (${x(timings.pitch)})`);
     log(`    TOTAL:          ${totalSec.toFixed(1)}s  (${x(totalSec)})  device=${device}`);
+    log(
+      '⏱️ TIMING_PYTHON ' +
+        JSON.stringify({
+          audioSec: Number((audioSec || 0).toFixed(1)),
+          separation: timings.separation != null ? Number(timings.separation.toFixed(1)) : null,
+          transcription:
+            timings.transcription != null ? Number(timings.transcription.toFixed(1)) : null,
+          pitch: timings.pitch != null ? Number(timings.pitch.toFixed(1)) : null,
+          total: Number(totalSec.toFixed(1)),
+          device,
+          whisper: whisperModel,
+        })
+    );
 
     return {
       success: true,
