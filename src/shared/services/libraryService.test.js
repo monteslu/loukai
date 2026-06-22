@@ -367,7 +367,7 @@ describe('libraryService', () => {
 
       expect(result.success).toBe(true);
       expect(result.song.title).toBe('New Song');
-      expect(result.song.format).toBe('m4a-stems');
+      expect(result.song.format).toBe('stem-mp4');
       expect(result.fromCache).toBe(false);
       expect(mainApp.extractM4AMetadata).toHaveBeenCalledWith('/music/new.m4a');
     });

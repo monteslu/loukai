@@ -223,10 +223,10 @@ async function setupButterchurnForCDG(app, songData, waveformPrefs) {
 }
 
 /**
- * Load M4A Stems format song
+ * Load Stem MP4 format song
  */
 export async function loadM4ASong(app, songData, metadata) {
-  app.player.currentFormat = 'm4a-stems';
+  app.player.currentFormat = 'stem-mp4';
   app.player.currentPlayer = app.kaiPlayer;
 
   // Set song end callback

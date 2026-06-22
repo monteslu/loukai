@@ -5,6 +5,8 @@
  * to ensure consistent library behavior across all interfaces.
  */
 
+import { STEM_MP4_FORMAT } from '../formatUtils.js';
+
 /**
  * Get the current songs folder path
  * @param {Object} mainApp - Main application instance with settings
@@ -326,13 +328,13 @@ export async function getSongInfo(mainApp, filePath) {
       lowerPath.endsWith('.stem.m4a') ||
       lowerPath.endsWith('.m4a') ||
       lowerPath.endsWith('.mp4')
-        ? 'm4a-stems'
+        ? STEM_MP4_FORMAT
         : lowerPath.endsWith('.kar') || lowerPath.endsWith('.zip')
           ? 'cdg-archive'
           : 'cdg-pair';
 
     let metadata;
-    if (format === 'm4a-stems') {
+    if (format === STEM_MP4_FORMAT) {
       metadata = await mainApp.extractM4AMetadata?.(filePath);
     } else if (format === 'cdg-archive') {
       metadata = await mainApp.extractCDGArchiveMetadata?.(filePath);

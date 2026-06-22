@@ -15,7 +15,7 @@
  * Also accepts .stem.m4a files.
  */
 
-import { Atoms as M4AAtoms } from 'm4a-stems';
+import { Atoms as M4AAtoms } from 'stem-mp4';
 import { existsSync } from 'fs';
 import { resolve, basename } from 'path';
 

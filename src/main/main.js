@@ -9,7 +9,8 @@ import { io } from 'socket.io-client';
 import AudioEngine from './audioEngine.js';
 import CDGLoader from '../utils/cdgLoader.js';
 import M4ALoader from '../utils/m4aLoader.js';
-import { Atoms as M4AAtoms } from 'm4a-stems';
+import { Atoms as M4AAtoms } from 'stem-mp4';
+import { STEM_MP4_FORMAT } from '../shared/formatUtils.js';
 import SettingsManager from './settingsManager.js';
 import WebServer from './webServer.js';
 import AppState from './appState.js';
@@ -871,7 +872,7 @@ class KaiPlayerApp {
               size: stats.size,
               modified: stats.mtime,
               folder: path.relative(this.settings.getSongsFolder(), folderPath) || '.',
-              format: 'm4a-stems',
+              format: STEM_MP4_FORMAT,
               ...metadata,
             });
           }
@@ -1160,7 +1161,7 @@ class KaiPlayerApp {
         metadata.duration = mmData.format.duration;
       }
 
-      // Check for stem atom using m4a-stems (source of truth for audio tracks)
+      // Check for stem atom using stem-mp4 (source of truth for audio tracks)
       try {
         const stemData = await M4AAtoms.readNiStemsMetadata(m4aFilePath);
         if (stemData && stemData.stems) {
@@ -1171,7 +1172,7 @@ class KaiPlayerApp {
         // No stem atom - not a stem file
       }
 
-      // Check for kara atom using m4a-stems (lyrics and karaoke data)
+      // Check for kara atom using stem-mp4 (lyrics and karaoke data)
       try {
         const karaData = await M4AAtoms.readKaraAtom(m4aFilePath);
 
@@ -1248,7 +1249,7 @@ class KaiPlayerApp {
 
     // Check for M4A/MP4 format (hasKaraoke check filters non-karaoke files)
     if (lowerPath.endsWith('.m4a') || lowerPath.endsWith('.mp4')) {
-      return { type: 'm4a', format: 'm4a-stems', cdgPath: null };
+      return { type: 'm4a', format: STEM_MP4_FORMAT, cdgPath: null };
     }
 
     // Check for CDG archive (.kar or .zip)
@@ -1370,7 +1371,7 @@ class KaiPlayerApp {
         duration: m4aData.metadata?.duration || 0,
         requester: requester,
         isLoading: true, // Song is being loaded
-        format: 'm4a-stems', // Format for display icon
+        format: STEM_MP4_FORMAT, // Format for display icon
         queueItemId: queueItemId, // Track which queue item (for duplicate songs)
       };
       this.appState.setCurrentSong(songData);
@@ -1625,7 +1626,7 @@ class KaiPlayerApp {
               name: fullPath,
               path: fullPath,
               file: fullPath,
-              format: 'm4a-stems',
+              format: STEM_MP4_FORMAT,
               title: metadata.title,
               artist: metadata.artist,
               album: metadata.album,
@@ -1907,7 +1908,7 @@ class KaiPlayerApp {
               files.push({
                 name: fullPath,
                 path: fullPath,
-                format: 'm4a-stems',
+                format: STEM_MP4_FORMAT,
                 title: metadata.title,
                 artist: metadata.artist,
                 album: metadata.album,

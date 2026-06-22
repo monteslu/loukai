@@ -270,10 +270,10 @@ The Creator runs:
 
 ### Programmatic Creation
 
-Use the [m4a-stems](https://www.npmjs.com/package/m4a-stems) npm package:
+Use the [stem-mp4](https://www.npmjs.com/package/stem-mp4) npm package:
 
 ```javascript
-import { Atoms } from 'm4a-stems';
+import { Atoms } from 'stem-mp4';
 
 // Write NI Stems metadata (for DJ software compatibility)
 // This defines the audio tracks - kara atom does NOT duplicate this info
@@ -296,7 +296,7 @@ await Atoms.writeKaraAtom('song.stem.mp4', {
 ## Reading Files
 
 ```javascript
-import { Atoms } from 'm4a-stems';
+import { Atoms } from 'stem-mp4';
 
 // Read NI Stems metadata (audio track info)
 const stems = await Atoms.readNiStemsMetadata('song.stem.mp4');
@@ -357,7 +357,7 @@ Loukai reads and writes both extensions interchangeably.
 
 - [NI Stems File Specification](https://www.native-instruments.com/en/specials/stems/) - Official spec document
 - [MPEG-4 Part 14 (MP4)](https://en.wikipedia.org/wiki/MP4_file_format)
-- [m4a-stems npm package](https://www.npmjs.com/package/m4a-stems)
+- [stem-mp4 npm package](https://www.npmjs.com/package/stem-mp4)
 - [Demucs](https://github.com/facebookresearch/demucs) - AI stem separation
 - [Whisper](https://github.com/openai/whisper) - AI speech recognition
 - [CREPE](https://github.com/marl/crepe) - Pitch detection (used for key detection)

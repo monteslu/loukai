@@ -5,14 +5,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as editorService from './editorService.js';
 
-// Mock M4ALoader and m4a-stems Atoms
+// Mock M4ALoader and stem-mp4 Atoms
 vi.mock('../../utils/m4aLoader.js', () => ({
   default: {
     load: vi.fn(),
   },
 }));
 
-vi.mock('m4a-stems', () => ({
+vi.mock('stem-mp4', () => ({
   Atoms: {
     writeKaraAtom: vi.fn(),
     addStandardMetadata: vi.fn(),
@@ -21,7 +21,7 @@ vi.mock('m4a-stems', () => ({
 }));
 
 import M4ALoader from '../../utils/m4aLoader.js';
-import { Atoms } from 'm4a-stems';
+import { Atoms } from 'stem-mp4';
 
 describe('editorService', () => {
   beforeEach(() => {
@@ -49,7 +49,7 @@ describe('editorService', () => {
 
       const result = await editorService.loadSong('/music/test.m4a');
 
-      expect(result.format).toBe('m4a-stems');
+      expect(result.format).toBe('stem-mp4');
       expect(result.kaiData).toBeDefined();
       expect(result.kaiData.metadata.title).toBe('Test Song');
       expect(result.kaiData.originalFilePath).toBe('/music/test.m4a');
@@ -67,7 +67,7 @@ describe('editorService', () => {
 
       const result = await editorService.loadSong('/music/test.mp4');
 
-      expect(result.format).toBe('m4a-stems');
+      expect(result.format).toBe('stem-mp4');
       expect(M4ALoader.load).toHaveBeenCalledWith('/music/test.mp4');
     });
 
@@ -79,14 +79,14 @@ describe('editorService', () => {
 
     it('should throw error for CDG format', async () => {
       await expect(editorService.loadSong('/music/test.cdg')).rejects.toThrow(
-        'Only M4A stems format is supported for editing'
+        'Only Stem MP4 format is supported for editing'
       );
       expect(M4ALoader.load).not.toHaveBeenCalled();
     });
 
     it('should throw error for MP3 format', async () => {
       await expect(editorService.loadSong('/music/test.mp3')).rejects.toThrow(
-        'Only M4A stems format is supported for editing'
+        'Only Stem MP4 format is supported for editing'
       );
       expect(M4ALoader.load).not.toHaveBeenCalled();
     });
@@ -131,7 +131,7 @@ describe('editorService', () => {
 
     it('should save M4A metadata updates successfully', async () => {
       const updates = {
-        format: 'm4a-stems',
+        format: 'stem-mp4',
         metadata: {
           title: 'New Title',
           artist: 'New Artist',
@@ -153,6 +153,22 @@ describe('editorService', () => {
       );
     });
 
+    it('should accept the legacy m4a-stems format on save', async () => {
+      const updates = {
+        format: 'm4a-stems',
+        metadata: { title: 'Legacy Title' },
+        lyrics: mockM4AData.lyrics,
+      };
+
+      const result = await editorService.saveSong('/music/test.m4a', updates);
+
+      expect(result.success).toBe(true);
+      expect(Atoms.addStandardMetadata).toHaveBeenCalledWith(
+        '/music/test.m4a',
+        expect.objectContaining({ title: 'Legacy Title' })
+      );
+    });
+
     it('should save lyrics updates', async () => {
       const newLyrics = [
         { start: 0, end: 2, text: 'Updated Line 1' },
@@ -161,7 +177,7 @@ describe('editorService', () => {
       ];
 
       const updates = {
-        format: 'm4a-stems',
+        format: 'stem-mp4',
         metadata: {},
         lyrics: newLyrics,
       };
@@ -177,7 +193,7 @@ describe('editorService', () => {
     });
 
     it('should throw error when path is missing', async () => {
-      const updates = { format: 'm4a-stems', metadata: {}, lyrics: [] };
+      const updates = { format: 'stem-mp4', metadata: {}, lyrics: [] };
 
       await expect(editorService.saveSong('', updates)).rejects.toThrow('Path is required');
       await expect(editorService.saveSong(null, updates)).rejects.toThrow('Path is required');
@@ -188,14 +204,14 @@ describe('editorService', () => {
       const updates = { format: 'cdg', metadata: {}, lyrics: [] };
 
       await expect(editorService.saveSong('/music/test.cdg', updates)).rejects.toThrow(
-        'Unsupported format: cdg. Only m4a-stems format is supported.'
+        'Unsupported format: cdg. Only stem-mp4 format is supported.'
       );
       expect(Atoms.writeKaraAtom).not.toHaveBeenCalled();
     });
 
     it('should write musical key when changed', async () => {
       const updates = {
-        format: 'm4a-stems',
+        format: 'stem-mp4',
         metadata: { key: 'Am' },
         lyrics: [],
       };
@@ -208,7 +224,7 @@ describe('editorService', () => {
     it('should handle M4ALoader errors during save', async () => {
       M4ALoader.load.mockRejectedValue(new Error('Failed to load'));
 
-      const updates = { format: 'm4a-stems', metadata: {}, lyrics: [] };
+      const updates = { format: 'stem-mp4', metadata: {}, lyrics: [] };
 
       await expect(editorService.saveSong('/music/test.m4a', updates)).rejects.toThrow(
         'Failed to load'

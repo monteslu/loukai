@@ -18,7 +18,7 @@ import { log } from '../logger.js';
 
 import { spawn } from 'child_process';
 import { getFFmpegPath } from './systemChecker.js';
-import { Atoms as M4AAtoms } from 'm4a-stems';
+import { Atoms as M4AAtoms } from 'stem-mp4';
 
 /**
  * Build a .stem.mp4 file from individual stem files
@@ -171,7 +171,7 @@ export async function buildStemM4a(options) {
   const afterStemSize = (await stat(outputPath)).size;
   log(`📊 File size after stem atom: ${afterStemSize} bytes`);
 
-  // Now inject kara atom for karaoke data using m4a-stems library
+  // Now inject kara atom for karaoke data using stem-mp4 library
   await injectKaraokeAtoms(outputPath, {
     lyrics,
     pitch,
@@ -183,7 +183,7 @@ export async function buildStemM4a(options) {
 }
 
 /**
- * Inject karaoke atoms into an M4A file using m4a-stems library
+ * Inject karaoke atoms into an MP4 file using stem-mp4 library
  *
  * @param {string} filePath - Path to M4A file
  * @param {Object} data - Karaoke data to embed
@@ -221,7 +221,7 @@ async function injectKaraokeAtoms(filePath, data) {
     }
   }
 
-  // Build kara data structure for m4a-stems
+  // Build kara data structure for stem-mp4
   // Note: Audio sources are read from the NI Stems 'stem' atom, not stored in kara
   const karaData = {
     // Timing information
@@ -270,7 +270,7 @@ async function injectKaraokeAtoms(filePath, data) {
     };
   }
 
-  // Write kara atom using m4a-stems library
+  // Write kara atom using stem-mp4 library
   log(`💾 Writing kara atom: ${lines.length} lines`);
   await M4AAtoms.writeKaraAtom(filePath, karaData);
 

@@ -402,7 +402,7 @@ Channels organized by domain:
 - **Electron 38** - Desktop framework
 - **Express 5** - Web server
 - **Socket.io 4** - Real-time communication
-- **m4a-stems** - NI Stems + karaoke atom reading/writing
+- **stem-mp4** - NI Stems + karaoke atom reading/writing
 - **music-metadata** - Audio metadata parsing
 - **yauzl/yazl** - ZIP handling
 - **Fuse.js 7** - Fuzzy search

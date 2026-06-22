@@ -5,7 +5,7 @@ import { log } from '../logger.js';
  * Provides Node.js wrappers for FFmpeg/FFprobe operations:
  * - Audio info extraction (duration, sample rate, channels)
  * - Format conversion (to WAV for processing)
- * - AAC encoding (for M4A stems)
+ * - AAC encoding (for Stem MP4)
  */
 
 import { spawn, execSync } from 'child_process';
@@ -422,7 +422,7 @@ export function isVideoFile(inputPath) {
 }
 
 /**
- * Extract a specific audio track from an M4A stems file to WAV
+ * Extract a specific audio track from a Stem MP4 file to WAV
  *
  * @param {string} inputPath - Input M4A file with multiple audio streams
  * @param {string} outputPath - Output WAV file path

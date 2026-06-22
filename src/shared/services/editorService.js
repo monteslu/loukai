@@ -6,7 +6,8 @@
  */
 
 import M4ALoader from '../../utils/m4aLoader.js';
-import { Atoms } from 'm4a-stems';
+import { Atoms } from 'stem-mp4';
+import { STEM_MP4_FORMAT, isStemMp4Format } from '../formatUtils.js';
 
 /**
  * Load a song for editing
@@ -25,12 +26,12 @@ export async function loadSong(path) {
     const m4aData = await M4ALoader.load(path);
     m4aData.originalFilePath = path;
     return {
-      format: 'm4a-stems',
+      format: STEM_MP4_FORMAT,
       kaiData: m4aData, // Named kaiData for compatibility with existing editor components
     };
   } else {
     // CDG and other formats are not supported for editing
-    throw new Error('Only M4A stems format is supported for editing');
+    throw new Error('Only Stem MP4 format is supported for editing');
   }
 }
 
@@ -47,11 +48,11 @@ export async function saveSong(path, updates) {
 
   const { format, metadata, lyrics } = updates;
 
-  if (format === 'm4a-stems') {
-    // Handle M4A format
+  if (isStemMp4Format(format)) {
+    // Handle Stem MP4 format
     return await saveM4ASong(path, { metadata, lyrics });
   } else {
-    throw new Error(`Unsupported format: ${format}. Only m4a-stems format is supported.`);
+    throw new Error(`Unsupported format: ${format}. Only stem-mp4 format is supported.`);
   }
 }
 
@@ -135,7 +136,7 @@ async function saveM4ASong(path, updates) {
     dataToSave.meta = updatedMeta;
   }
 
-  // Prepare kara data structure for m4a-stems
+  // Prepare kara data structure for stem-mp4
   // Note: Audio sources are read from the NI Stems 'stem' atom, not stored in kara
   const karaData = {
     // Timing information
@@ -174,7 +175,7 @@ async function saveM4ASong(path, updates) {
     }),
   };
 
-  // Save using m4a-stems
+  // Save using stem-mp4
   console.log('💾 Saving M4A kara atom:', path);
   console.log('📝 kara data prepared:', {
     lyricsCount: karaData.lines?.length || 0,

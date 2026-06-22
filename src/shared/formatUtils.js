@@ -3,10 +3,33 @@
  * Used across renderer, web UI, and main process
  */
 
+/**
+ * Canonical format identifier for Stem MP4 (.stem.mp4) karaoke files.
+ * Written to the song library for newly indexed/edited songs.
+ */
+export const STEM_MP4_FORMAT = 'stem-mp4';
+
+/**
+ * Legacy format identifiers that older libraries may still have persisted.
+ * Accepted on read so existing song libraries keep working after the rename.
+ */
+export const LEGACY_STEM_MP4_FORMATS = ['m4a-stems'];
+
+/**
+ * True if the given format tag refers to a Stem MP4 file, including the
+ * legacy 'm4a-stems' value used before the package rename.
+ * @param {string} format
+ * @returns {boolean}
+ */
+export function isStemMp4Format(format) {
+  return format === STEM_MP4_FORMAT || LEGACY_STEM_MP4_FORMATS.includes(format);
+}
+
 export function getFormatIcon(format) {
+  if (isStemMp4Format(format)) {
+    return '⚡'; // Stem MP4 format
+  }
   switch (format) {
-    case 'm4a-stems':
-      return '⚡'; // M4A stems format
     case 'cdg-archive':
     case 'cdg-pair':
       return '💿';
