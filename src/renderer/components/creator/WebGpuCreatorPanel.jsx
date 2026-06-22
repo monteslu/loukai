@@ -771,19 +771,32 @@ export default function WebGpuCreatorPanel() {
       const tSec = (performance.now() - tStart) / 1000;
 
       let words = out.chunks || [];
-      // VAD post-filter: drop words whose midpoint is outside every speech region
-      // (these are the hallucinations on instrumental/silence). Skip if VAD failed.
+      // VAD post-filter — ONLY at the song's instrumental bookends. Whisper
+      // hallucinations ("thank you", "..") cluster in the intro + outro/fade; the
+      // body of the song is essentially all singing, and Silero (a SPEECH vad)
+      // under-detects sustained/quiet/harmonized vocals, so filtering the whole
+      // track culls real lyrics. So we only DROP words in the first/last EDGE_FRAC
+      // of the track that fall outside any detected speech region; everything in the
+      // middle is kept untouched.
+      const EDGE_FRAC = 0.07;
       if (speechRegions && speechRegions.length) {
+        const dur = audio.duration;
+        const headEnd = dur * EDGE_FRAC;
+        const tailStart = dur * (1 - EDGE_FRAC);
+        const inSpeech = (t) => speechRegions.some((r) => t >= r.start - 0.5 && t <= r.end + 0.5);
         const before = words.length;
-        const inSpeech = (t) =>
-          t == null || speechRegions.some((r) => t >= r.start - 0.5 && t <= r.end + 0.5);
         words = words.filter((w) => {
           const ts = w.timestamp || [w.start, w.end];
           const mid = ts[0] != null && ts[1] != null ? (ts[0] + ts[1]) / 2 : ts[0];
+          if (mid == null) return true;
+          // Only the edges are gated; the middle is always kept.
+          if (mid > headEnd && mid < tailStart) return true;
           return inSpeech(mid);
         });
         if (before - words.length > 0) {
-          log(`VAD filtered ${before - words.length} hallucinated word(s) outside speech`);
+          log(
+            `VAD trimmed ${before - words.length} word(s) in the intro/outro (first/last ${Math.round(EDGE_FRAC * 100)}%) outside speech`
+          );
         }
       }
       let lines = words.length
