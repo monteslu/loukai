@@ -590,7 +590,7 @@ export default function WebGpuCreatorPanel() {
     setStemProgress({});
     setRtf(null);
     try {
-      const { ort, demucs, ftEnsemble, pipeline, crepeMod, DemucsProcessor } = await loadLibs();
+      const { ort, demucs, ftEnsemble, pipeline, crepeMod, DemucsProcessor, tf } = await loadLibs();
       const { STEMS, createEnsembleSessions, runEnsemble } = ftEnsemble;
 
       // Lyrics-only mode: an existing .stem.mp4 → re-transcribe its vocals track and
@@ -832,66 +832,60 @@ export default function WebGpuCreatorPanel() {
       const maxPasses = Math.ceil(totalSamples / SR16 / 5) + 8; // hard cap (>=5s/pass)
       const baseOpts = {
         return_timestamps: useWordTs ? 'word' : true,
-        // Match the Python runner's decode params (whisper_runner.py): no prev-text
-        // conditioning (reduces repetition loops in singing), permissive no-speech.
-        // transformers.js ignores ones it doesn't support; harmless.
-        condition_on_previous_text: false,
-        no_speech_threshold: 0.3,
         ...(promptIds ? { prompt_ids: promptIds } : promptText ? { prompt: promptText } : {}),
       };
 
-      // ONE-TIME DIAGNOSTIC (DevTools console): dump the real shapes of model.generate
-      // (with scores) + _decode_asr on the first 30s, so we can wire no_speech_prob
-      // correctly. Logs and continues; does not affect transcription.
-      try {
-        const probe = mono.subarray(0, Math.min(winSamples, mono.length));
-        const inputs = await asr.processor(probe);
-        const ik = Object.keys(inputs || {});
-        const gen = await asr.model.generate({
-          ...inputs,
-          return_timestamps: true,
-          output_scores: true,
-          return_dict_in_generate: true,
-          max_new_tokens: 16,
-        });
-
-        console.log('🔬 generate keys:', Object.keys(gen || {}), '| processor keys:', ik);
-        console.log('🔬 sequences:', gen.sequences && (gen.sequences.dims || gen.sequences.length));
-        const sc = gen.scores;
-        console.log('🔬 scores type:', Array.isArray(sc) ? 'array len ' + sc.length : typeof sc);
-        if (sc && sc[0])
-          console.log(
-            '🔬 scores[0] dims:',
-            sc[0].dims,
-            'sample:',
-            Array.from((sc[0].data || []).slice(0, 3))
-          );
-        try {
-          const dec = asr.tokenizer._decode_asr([gen.sequences], {
-            return_timestamps: true,
-            time_precision: 0.02,
-          });
-          console.log('🔬 _decode_asr([sequences]) →', JSON.stringify(dec)?.slice(0, 300));
-        } catch (e1) {
-          console.log('🔬 _decode_asr([sequences]) FAILED:', e1.message);
-          try {
-            const dec2 = asr.tokenizer.batch_decode(gen.sequences, { skip_special_tokens: false });
-            console.log('🔬 batch_decode(sequences) →', JSON.stringify(dec2)?.slice(0, 200));
-          } catch (e2) {
-            console.log('🔬 batch_decode FAILED:', e2.message);
+      // no_speech_prob — Whisper's REAL "is anyone speaking?" signal, the same one the
+      // Python runner uses to drop instrumental sections. The decoder ONNX outputs
+      // `logits` every step; transformers.js's pipeline discards them, but it accepts a
+      // `logits_processor` that is called per step with the live logits. We attach a
+      // NON-DESTRUCTIVE processor that, at the FIRST decode step (the <|startoftranscript|>
+      // position), reads softmax(logits)[<|nospeech|>] and stashes it — then returns the
+      // logits UNCHANGED so transcription is unaffected. (Token ids are tokenizer-verified
+      // for large-v3-turbo: SOT=50258, <|nospeech|>=50363.)
+      const NO_SPEECH_TOKEN = 50363;
+      const NO_SPEECH_THRESHOLD = 0.6; // openai-whisper default; a window above this is non-speech
+      const LogitsProcessor = tf?.LogitsProcessor;
+      const makeNoSpeechCapture = () => {
+        if (!LogitsProcessor) return null;
+        const cap = new (class extends LogitsProcessor {
+          constructor() {
+            super();
+            this.prob = null;
           }
-        }
-      } catch (e) {
-        log(`(no_speech probe skipped: ${e.message})`);
-      }
+          _call(inputIds, logits) {
+            // Capture once, at the first decode step (the <|startoftranscript|>
+            // position) — that's where Whisper computes no_speech. logits is a
+            // Tensor [batch, vocab]; read row 0. Non-destructive (returns unchanged).
+            try {
+              if (this.prob === null) {
+                const row = logits.dims?.length === 2 ? logits[0] : logits; // [vocab]
+                const data = row.data ?? row;
+                const vocab = row.dims ? row.dims[row.dims.length - 1] : data.length;
+                let mx = -Infinity;
+                for (let i = 0; i < vocab; i++) if (data[i] > mx) mx = data[i];
+                let sum = 0;
+                for (let i = 0; i < vocab; i++) sum += Math.exp(data[i] - mx);
+                this.prob = Math.exp(data[NO_SPEECH_TOKEN] - mx) / sum;
+              }
+            } catch {
+              /* if shape surprises us, just don't gate this window (fail-safe) */
+            }
+            return logits; // non-destructive
+          }
+        })();
+        return cap;
+      };
 
-      // Transcribe ONE ≤30s window via the (reliable) pipeline call. Instrumental/
-      // hallucination suppression is handled AFTER the loop by the annotation-pattern
-      // + vocals-RMS filter (the raw model.generate no_speech path broke transcription
-      // on this transformers.js build, so we use the working pipeline here).
+      // Transcribe ONE ≤30s window via the reliable pipeline call, with the no_speech
+      // capture attached. Returns the decoded chunks + the window's no_speech_prob.
       const transcribeWindow = async (window) => {
-        const w = await asr(window, baseOpts);
-        return { chunks: w.chunks || [], text: w.text || '', noSpeech: 0 };
+        const cap = makeNoSpeechCapture();
+        const w = await asr(window, {
+          ...baseOpts,
+          ...(cap ? { logits_processor: [cap] } : {}),
+        });
+        return { chunks: w.chunks || [], text: w.text || '', noSpeech: cap?.prob ?? null };
       };
 
       let out;
@@ -903,7 +897,15 @@ export default function WebGpuCreatorPanel() {
           chunkIdx += 1;
           setTranscribeInfo(`window ${chunkIdx} @ ${segStartSec.toFixed(0)}s …`);
           const w = await transcribeWindow(window);
-          const segs = (w.chunks || []).filter((c) => (c.text || '').trim());
+          // Python-parity: drop windows Whisper flags as non-speech (instrumental
+          // solos, intros). This is the REAL no_speech_prob, not a text heuristic.
+          const isNoSpeech = w.noSpeech != null && w.noSpeech >= NO_SPEECH_THRESHOLD;
+          const segs = isNoSpeech ? [] : (w.chunks || []).filter((c) => (c.text || '').trim());
+          if (w.noSpeech != null) {
+            log(
+              `  window ${chunkIdx} @ ${segStartSec.toFixed(0)}s: no_speech=${w.noSpeech.toFixed(2)}${isNoSpeech ? ' → DROPPED (instrumental)' : ''}`
+            );
+          }
 
           // Offset this window's segment timestamps to absolute time + collect.
           let lastEnd = null;
@@ -1047,8 +1049,11 @@ export default function WebGpuCreatorPanel() {
       // "(...)") regardless of RMS — Whisper never emits those for real lyrics.
       const isAnnotation = (s) => {
         const t = (s || '').trim();
-        // wrapped in * [ ] ( ) — e.g. *Music*, [Applause], (guitar solo)
-        return /^[*[(].*[*\])]$/.test(t) || /^\*.*\*$/.test(t);
+        // Whisper marks non-lyrical audio with * [ ] sound-effect annotations
+        // (*Music*, [Applause]). These often arrive SPLIT across word-chunks
+        // ("*Country" then "music*"), so match any word CONTAINING * or [ or ] —
+        // real lyrics never contain those characters.
+        return /[*[\]]/.test(t);
       };
       {
         const before = words.length;
