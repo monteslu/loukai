@@ -1,2 +1,0 @@
-# The 4 fp16 models (~84MB each) are placed at publish time, not committed to git.
-*.onnx

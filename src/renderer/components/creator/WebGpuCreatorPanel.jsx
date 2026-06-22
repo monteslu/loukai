@@ -530,28 +530,36 @@ export default function WebGpuCreatorPanel() {
         const t0 = performance.now();
         let modeLabel;
         if (modelDef.kind === 'ft') {
-          modeLabel = 'htdemucs_ft (best)';
-          log('loading htdemucs_ft ensemble (4 models) from loukai …');
-          const cpuNodes = await fetch('/webgpu-models/ft_cpu_nodes.json')
-            .then((r) => (r.ok ? r.json() : null))
-            .catch(() => null);
-          const sessions = await createEnsembleSessions({
-            ort,
-            modelUrl: (stem) => `/webgpu-models/htdemucs_ft_${stem}_safe16.onnx`,
-            cpuNodes,
-            onLog: (m) => log(m),
-          });
-          log(`separating on webgpu — htdemucs_ft ensemble (${STEMS.length} stems) …`);
-          const r = await runEnsemble({
-            ort,
-            sessions,
-            proc: demucs,
-            left: audio.left,
-            right: audio.right,
-            onStemProgress: (idx, frac) => setStemProgress((p) => ({ ...p, [STEMS[idx]]: frac })),
-          });
-          result = r.stems;
-        } else {
+          // Try the ft ensemble; if its models can't be fetched (e.g. the HF repo
+          // isn't reachable), fall back to fast htdemucs rather than failing the run.
+          try {
+            log('loading htdemucs_ft ensemble (4 models) from loukai …');
+            const cpuNodes = await fetch('/webgpu-models/ft_cpu_nodes.json')
+              .then((r) => (r.ok ? r.json() : null))
+              .catch(() => null);
+            const sessions = await createEnsembleSessions({
+              ort,
+              modelUrl: (stem) => `/webgpu-models/htdemucs_ft_${stem}_safe16.onnx`,
+              cpuNodes,
+              onLog: (m) => log(m),
+            });
+            log(`separating on webgpu — htdemucs_ft ensemble (${STEMS.length} stems) …`);
+            const r = await runEnsemble({
+              ort,
+              sessions,
+              proc: demucs,
+              left: audio.left,
+              right: audio.right,
+              onStemProgress: (idx, frac) => setStemProgress((p) => ({ ...p, [STEMS[idx]]: frac })),
+            });
+            result = r.stems;
+            modeLabel = 'htdemucs_ft (best)';
+          } catch (e) {
+            log(`htdemucs_ft unavailable (${e.message}) — falling back to fast htdemucs`);
+            modelDef = DEMUCS_MODELS.find((m) => m.kind === 'single') || DEMUCS_MODELS[0];
+          }
+        }
+        if (modelDef.kind !== 'ft' && !result) {
           modeLabel = 'htdemucs (fast)';
           log('loading htdemucs (single model) from loukai …');
           const modelBuf = await fetch('/webgpu-models/htdemucs.onnx').then((res) => {
@@ -621,9 +629,9 @@ export default function WebGpuCreatorPanel() {
         const { detectSpeechRegions } = vadMod;
         if (!libs.current.vadSession) {
           log('loading VAD (Silero) …');
-          const vbuf = await fetch('/webgpu-models/silero_vad.onnx').then((r) =>
-            r.ok ? r.arrayBuffer() : Promise.reject(new Error(`vad ${r.status}`))
-          );
+          const vbuf = await fetch(
+            '/webgpu-models/onnx-community/silero-vad/resolve/main/onnx/model.onnx'
+          ).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`vad ${r.status}`))));
           libs.current.vadSession = await ort.InferenceSession.create(new Uint8Array(vbuf), {
             executionProviders: ['wasm'],
           });

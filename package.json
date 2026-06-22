@@ -92,9 +92,7 @@
     "tar": "^7.5.9",
     "ws": "^8.13.0",
     "yauzl": "^3.0.0",
-    "yazl": "^3.3.1",
-    "loukai-htdemucs-ft": "file:packages/loukai-htdemucs-ft",
-    "loukai-vad": "file:packages/loukai-vad"
+    "yazl": "^3.3.1"
   },
   "build": {
     "appId": "com.loukai.app",
