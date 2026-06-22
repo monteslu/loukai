@@ -126,7 +126,31 @@ export function runPythonScript(
 
     proc.on('close', (code) => {
       try {
-        const result = JSON.parse(stdout.trim());
+        // The result is a single JSON object on stdout — but third-party libs (e.g.
+        // torch.hub's model download) can ALSO print to stdout, so stdout isn't pure
+        // JSON. Extract the JSON object robustly: try the whole thing, else scan lines
+        // for the last one that parses as an object with success/error/stems.
+        const parseResult = (raw) => {
+          const trimmed = raw.trim();
+          try {
+            return JSON.parse(trimmed);
+          } catch {
+            /* fall through to line scan */
+          }
+          const lines = trimmed.split('\n');
+          for (let i = lines.length - 1; i >= 0; i--) {
+            const line = lines[i].trim();
+            if (line.startsWith('{') && line.endsWith('}')) {
+              try {
+                return JSON.parse(line);
+              } catch {
+                /* keep scanning */
+              }
+            }
+          }
+          throw new Error('no JSON object found in stdout');
+        };
+        const result = parseResult(stdout);
 
         if (result.error) {
           // Include full traceback if available
