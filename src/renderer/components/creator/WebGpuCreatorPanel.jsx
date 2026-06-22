@@ -100,13 +100,17 @@ function groupWordsIntoLines(
   { maxGap = 1.0, maxWords = 10, maxDur = 8, duration = Infinity, maxLineDur = 10 } = {}
 ) {
   const lines = [];
+  const dropped = []; // lines removed by grouping (so the caller can report them)
   let cur = null;
   // A "word" with no letters/digits (e.g. ".." or "♪") is punctuation/noise, not a
   // lyric — Whisper emits these as hallucinations over fades/instrumental. Drop them.
   const hasContent = (s) => /[\p{L}\p{N}]/u.test(s);
   const push = (c) => {
     const text = c.text.trim();
-    if (!hasContent(text)) return; // skip punctuation/symbol-only lines
+    if (!hasContent(text)) {
+      dropped.push({ text, start: c.start, reason: 'punctuation/symbol-only' });
+      return; // skip punctuation/symbol-only lines
+    }
     let end = Math.min(c.end, duration); // never past the song end
     if (end - c.start > maxLineDur) end = c.start + maxLineDur; // cap runaway length
     if (end <= c.start) end = c.start + 0.5;
@@ -135,6 +139,7 @@ function groupWordsIntoLines(
     }
   }
   if (cur) push(cur);
+  lines.dropped = dropped; // non-breaking: expose what grouping culled
   return lines;
 }
 
@@ -272,14 +277,13 @@ export default function WebGpuCreatorPanel() {
     // All from /webgpu-assets/* — never a CDN. Self-contained ESM bundles
     // (ort.webgpu.bundle.min.mjs has no sub-imports), so dynamic import works.
     // transformers.js is imported with Node globals hidden (see importTransformers).
-    let ort, demucs, tf, ftEnsemble, vadMod, crepeMod;
+    let ort, demucs, tf, ftEnsemble, crepeMod;
     try {
-      [ort, demucs, tf, ftEnsemble, vadMod, crepeMod] = await Promise.all([
+      [ort, demucs, tf, ftEnsemble, crepeMod] = await Promise.all([
         import(/* @vite-ignore */ `${base}/ort.webgpu.bundle.min.mjs`),
         import(/* @vite-ignore */ `${base}/demucs/index.js`),
         importTransformers(`${base}/transformers.min.js`),
         import(/* @vite-ignore */ `${base}/ft-ensemble.js`),
-        import(/* @vite-ignore */ `${base}/vad-gate.js`),
         import(/* @vite-ignore */ `${base}/crepe-pitch.js`),
       ]);
     } catch (e) {
@@ -334,7 +338,6 @@ export default function WebGpuCreatorPanel() {
       pipeline: tf.pipeline,
       tf, // full transformers.js module (for WhisperTextStreamer)
       ftEnsemble,
-      vadMod,
       crepeMod,
     };
     return libs.current;
@@ -558,8 +561,7 @@ export default function WebGpuCreatorPanel() {
     setStemProgress({});
     setRtf(null);
     try {
-      const { ort, demucs, ftEnsemble, pipeline, tf, vadMod, crepeMod, DemucsProcessor } =
-        await loadLibs();
+      const { ort, demucs, ftEnsemble, pipeline, tf, crepeMod, DemucsProcessor } = await loadLibs();
       const { STEMS, createEnsembleSessions, runEnsemble } = ftEnsemble;
 
       // Lyrics-only mode: an existing .stem.mp4 → re-transcribe its vocals track and
@@ -685,36 +687,39 @@ export default function WebGpuCreatorPanel() {
       const mono = toMono16k(result.vocals.left, result.vocals.right, audio.sampleRate);
       const audioMin = (mono.length / 16000 / 60).toFixed(1);
 
-      // --- VAD: detect speech regions (to suppress Whisper hallucination on the
-      // instrumental sections of the vocals stem — Demucs bleed isn't silent, and
-      // Whisper invents "thank you" etc. on it). Used to FILTER out transcribed lines
-      // that fall entirely outside speech. Best-effort: skip on failure.
-      let speechRegions = null;
-      try {
-        const { detectSpeechRegions } = vadMod;
-        if (!libs.current.vadSession) {
-          log('loading VAD (Silero) …');
-          const vbuf = await fetch(
-            '/webgpu-models/onnx-community/silero-vad/resolve/main/onnx/model.onnx'
-          ).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`vad ${r.status}`))));
-          libs.current.vadSession = await ort.InferenceSession.create(new Uint8Array(vbuf), {
-            executionProviders: ['wasm'],
-          });
-        }
-        log('detecting speech regions (VAD on EP: wasm) …');
-        const vt0 = performance.now();
-        speechRegions = await detectSpeechRegions(ort, libs.current.vadSession, mono, {
-          onProgress: (f) => setTranscribeInfo(`VAD ${Math.round(f * 100)}%`),
-        });
-        setTranscribeInfo('');
-        const speechSec = speechRegions.reduce((a, r) => a + (r.end - r.start), 0);
-        log(
-          `VAD: ${speechRegions.length} speech regions, ${speechSec.toFixed(0)}s of ${(mono.length / 16000).toFixed(0)}s is vocals (${((performance.now() - vt0) / 1000).toFixed(1)}s)`
-        );
-      } catch (e) {
-        log(`VAD skipped (${e.message}) — transcribing without speech-gating`);
-        speechRegions = null;
+      // --- Vocals energy profile (replaces Silero VAD) ---
+      // To suppress Whisper hallucinations in the instrumental intro/outro, we need
+      // an honest "is anyone actually singing here?" signal. For SUNG audio the best
+      // signal is the VOCALS STEM's own loudness: it's near-silent during
+      // instrumentals (only Demucs bleed), loud during singing. A speech VAD
+      // (Silero) under-detects singing; raw RMS energy of the vocals stem doesn't.
+      // Build a coarse RMS-per-100ms profile once; the edge filter queries it.
+      const WIN_SEC = 0.1;
+      const winLen = Math.max(1, Math.round(WIN_SEC * 16000));
+      const nWin = Math.ceil(mono.length / winLen);
+      const rms = new Float32Array(nWin);
+      let peakRms = 1e-9;
+      for (let w = 0; w < nWin; w++) {
+        let sum = 0;
+        const s = w * winLen;
+        const e = Math.min(mono.length, s + winLen);
+        for (let i = s; i < e; i++) sum += mono[i] * mono[i];
+        const r = Math.sqrt(sum / Math.max(1, e - s));
+        rms[w] = r;
+        if (r > peakRms) peakRms = r;
       }
+      // "silent" = below a small fraction of the track's peak vocal level (relative,
+      // so it adapts to quiet vs loud masters). Returns true if vocals are audibly
+      // present at time t (seconds).
+      const SILENT_FRAC = 0.08;
+      const silentThresh = peakRms * SILENT_FRAC;
+      const vocalsAudibleAt = (t) => {
+        const w = Math.min(nWin - 1, Math.max(0, Math.floor((t * 16000) / winLen)));
+        return rms[w] > silentThresh;
+      };
+      log(
+        `vocals energy profile: peak=${peakRms.toFixed(4)}, silence threshold=${silentThresh.toFixed(4)} (${Math.round(SILENT_FRAC * 100)}% of peak)`
+      );
 
       const tStart = performance.now();
       log(`transcribing ${audioMin} min of vocals on ${device} …`);
@@ -781,32 +786,38 @@ export default function WebGpuCreatorPanel() {
       log(
         `Whisper raw: ${rawWordCount} words, ${rawTextLen} chars, last word @ ${lastWordT.toFixed(0)}s of ${audio.duration.toFixed(0)}s${promptText ? ' (prompt ON)' : ''}`
       );
-      // VAD post-filter — ONLY at the song's instrumental bookends. Whisper
-      // hallucinations ("thank you", "..") cluster in the intro + outro/fade; the
-      // body of the song is essentially all singing, and Silero (a SPEECH vad)
-      // under-detects sustained/quiet/harmonized vocals, so filtering the whole
-      // track culls real lyrics. So we only DROP words in the first/last EDGE_FRAC
-      // (3%) of the track that fall outside any detected speech region; everything in
-      // the middle is kept untouched.
+      // Hallucination trim — ONLY at the song's instrumental bookends. Whisper
+      // invents phrases ("thank you", "..") over the intro + outro/fade. We drop a
+      // word in the first/last EDGE_FRAC (3%) of the track ONLY IF the vocals stem is
+      // actually near-silent at that moment (no one's singing → it's a hallucination).
+      // The entire middle is kept untouched, and a word in the edge zone DURING real
+      // singing is kept. Uses the vocals RMS profile (honest for sung audio).
       const EDGE_FRAC = 0.03;
-      if (speechRegions && speechRegions.length) {
+      {
         const dur = audio.duration;
         const headEnd = dur * EDGE_FRAC;
         const tailStart = dur * (1 - EDGE_FRAC);
-        const inSpeech = (t) => speechRegions.some((r) => t >= r.start - 0.5 && t <= r.end + 0.5);
         const before = words.length;
+        const culled = [];
         words = words.filter((w) => {
           const ts = w.timestamp || [w.start, w.end];
           const mid = ts[0] != null && ts[1] != null ? (ts[0] + ts[1]) / 2 : ts[0];
           if (mid == null) return true;
           // Only the edges are gated; the middle is always kept.
           if (mid > headEnd && mid < tailStart) return true;
-          return inSpeech(mid);
+          // In the edge zone: keep if vocals are audible, cull if near-silent.
+          if (vocalsAudibleAt(mid)) return true;
+          culled.push({ text: (w.text || '').trim(), t: Number(mid.toFixed(2)) });
+          return false;
         });
-        if (before - words.length > 0) {
+        if (culled.length) {
           log(
-            `VAD trimmed ${before - words.length} word(s) in the intro/outro (first/last ${Math.round(EDGE_FRAC * 100)}%) outside speech`
+            `trimmed ${culled.length} hallucinated word(s) in the intro/outro (first/last ${Math.round(EDGE_FRAC * 100)}%, vocals silent):`
           );
+          for (const c of culled) log(`    ✂ "${c.text}" @ ${c.t}s`);
+          console.table(culled);
+        } else if (before) {
+          log('no intro/outro hallucinations to trim (vocals audible throughout edges)');
         }
       }
       log(`after VAD: ${words.length} words`);
@@ -820,6 +831,12 @@ export default function WebGpuCreatorPanel() {
       log(
         `after grouping: ${lines.length} lines, ${groupedWordCount} words (last line ends @ ${(lines[lines.length - 1]?.end ?? 0).toFixed(0)}s)`
       );
+      if (lines.dropped?.length) {
+        log(`grouping dropped ${lines.dropped.length} non-lyric line(s):`);
+        for (const d of lines.dropped)
+          log(`    ✂ "${d.text}" @ ${d.start.toFixed(1)}s (${d.reason})`);
+        console.table(lines.dropped);
+      }
       setLyrics(lines);
       log(
         `transcription done in ${tSec.toFixed(1)}s ` +
