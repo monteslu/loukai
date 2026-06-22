@@ -131,6 +131,13 @@ export async function runConversion(
   const stemsDir = join(tempDir, 'stems');
   mkdirSync(stemsDir, { recursive: true });
 
+  // --- Per-stage timing (so web vs Python perf is directly comparable) ---
+  const t0All = Date.now();
+  const timings = {};
+  const stamp = (stage, since) => {
+    timings[stage] = (Date.now() - since) / 1000;
+  };
+
   try {
     const safeFileName = (artist ? `${artist} - ${title}` : title).replace(/[<>:"/\\|?*]/g, '_');
 
@@ -200,6 +207,7 @@ export async function runConversion(
       onProgress('demucs', `[${STEPS.demucs}] Loading Demucs...`, 5);
       checkCancelled();
 
+      const tDemucs = Date.now();
       demucsResult = await runDemucs(
         wavPath,
         stemsDir,
@@ -210,6 +218,7 @@ export async function runConversion(
         onConsoleOutput,
         setCurrentProcess
       );
+      stamp('separation', tDemucs);
 
       checkCancelled();
 
@@ -264,6 +273,7 @@ export async function runConversion(
       log(`🎤 Whisper prompt: ${initialPrompt}`);
     }
 
+    const tWhisper = Date.now();
     let whisperResult = await runWhisper(
       vocalsWavPath,
       {
@@ -283,6 +293,7 @@ export async function runConversion(
       onConsoleOutput,
       setCurrentProcess
     );
+    stamp('transcription', tWhisper);
 
     checkCancelled();
 
@@ -359,6 +370,7 @@ export async function runConversion(
       checkCancelled();
 
       const crepeProgressRange = crepeEnd - crepeStart;
+      const tCrepe = Date.now();
       const crepeResult = await runCrepe(
         vocalsWavPath,
         null,
@@ -373,6 +385,7 @@ export async function runConversion(
         onConsoleOutput,
         setCurrentProcess
       );
+      stamp('pitch', tCrepe);
 
       pitchData = crepeResult;
 
@@ -506,10 +519,29 @@ export async function runConversion(
 
     conversionInProgress = false;
 
+    // ⏱️ TIMING SUMMARY — directly comparable to the WebGPU creator's.
+    const totalSec = (Date.now() - t0All) / 1000;
+    const audioSec = demucsResult?.duration || whisperResult?.duration || 0;
+    const x = (s) => (s && audioSec ? `${(audioSec / s).toFixed(1)}× rt` : '—');
+    log('⏱️ TIMING (PYTHON/native creator):');
+    log(`    audio length:   ${audioSec ? audioSec.toFixed(1) + 's' : '?'}`);
+    if (timings.separation != null)
+      log(
+        `    separation:     ${timings.separation.toFixed(1)}s  (${x(timings.separation)})  [demucs]`
+      );
+    if (timings.transcription != null)
+      log(
+        `    transcription:  ${timings.transcription.toFixed(1)}s  (${x(timings.transcription)})  [whisper ${whisperModel}]`
+      );
+    if (timings.pitch != null)
+      log(`    pitch (CREPE):  ${timings.pitch.toFixed(1)}s  (${x(timings.pitch)})`);
+    log(`    TOTAL:          ${totalSec.toFixed(1)}s  (${x(totalSec)})  device=${device}`);
+
     return {
       success: true,
       outputPath,
       duration: demucsResult?.duration || 0,
+      timings: { ...timings, total: totalSec, audioSec, device },
       stems: lyricsOnlyMode ? [] : Object.keys(stemPaths || {}),
       hasLyrics: Boolean(whisperResult?.words?.length),
       hasPitch: Boolean(pitchData),

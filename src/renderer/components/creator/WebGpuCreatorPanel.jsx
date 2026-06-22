@@ -595,6 +595,9 @@ export default function WebGpuCreatorPanel() {
     setLyrics([]);
     setStemProgress({});
     setRtf(null);
+    // ⏱️ per-stage timing (directly comparable to the Python/native creator's summary)
+    const perf = { audioSec: 0, separation: 0, transcription: 0, pitch: 0 };
+    const runT0 = performance.now();
     try {
       const { ort, demucs, ftEnsemble, pipeline, crepeMod, DemucsProcessor, tf } = await loadLibs();
       const { STEMS, createEnsembleSessions, runEnsemble } = ftEnsemble;
@@ -681,6 +684,8 @@ export default function WebGpuCreatorPanel() {
         }
         const sec = (performance.now() - t0) / 1000;
         const realtime = audio.duration / sec;
+        perf.separation = sec;
+        perf.audioSec = audio.duration;
         setRtf(realtime);
         log(
           `separation done in ${sec.toFixed(1)}s — ${realtime.toFixed(2)}× realtime [${modeLabel}]`
@@ -980,6 +985,8 @@ export default function WebGpuCreatorPanel() {
         setTranscribeInfo('');
       }
       const tSec = (performance.now() - tStart) / 1000;
+      perf.transcription = tSec;
+      if (!perf.audioSec) perf.audioSec = audio.duration;
 
       // In segment mode, each chunk is {text:'a whole line', timestamp:[s,e]}. Split it
       // into pseudo-words (evenly spaced across the segment) so the line-grouper +
@@ -1173,7 +1180,8 @@ export default function WebGpuCreatorPanel() {
           onProgress: (f) => setTranscribeInfo(`pitch ${Math.round(f * 100)}%`),
         });
         setTranscribeInfo('');
-        log(`CREPE pitch done in ${((performance.now() - ct0) / 1000).toFixed(1)}s`);
+        perf.pitch = (performance.now() - ct0) / 1000;
+        log(`CREPE pitch done in ${perf.pitch.toFixed(1)}s`);
         const k = detectKey(pitch);
         detectedKey = k.key;
         pitchData = {
@@ -1187,6 +1195,29 @@ export default function WebGpuCreatorPanel() {
         log(`detected key: ${detectedKey} (confidence ${k.confidence.toFixed(2)})`);
       } catch (e) {
         log(`pitch/key detection skipped (${e.message})`);
+      }
+
+      // ⏱️ TIMING SUMMARY — directly comparable to the Python/native creator's.
+      {
+        const totalSec = (performance.now() - runT0) / 1000;
+        const a = perf.audioSec || audio.duration || 0;
+        const x = (s) => (s && a ? `${(a / s).toFixed(1)}× rt` : '—');
+        const ep = gpu === 'available' ? 'webgpu' : 'wasm';
+        log('⏱️ TIMING (WebGPU/in-browser creator):');
+        log(`    audio length:   ${a ? a.toFixed(1) + 's' : '?'}`);
+        if (perf.separation)
+          log(
+            `    separation:     ${perf.separation.toFixed(1)}s  (${x(perf.separation)})  [${demucsModel} on ${ep}]`
+          );
+        if (perf.transcription)
+          log(
+            `    transcription:  ${perf.transcription.toFixed(1)}s  (${x(perf.transcription)})  [${asrModel.split('/').pop()} ${whisperDtype} on ${ep}]`
+          );
+        if (perf.pitch)
+          log(`    pitch (CREPE):  ${perf.pitch.toFixed(1)}s  (${x(perf.pitch)})  [${ep}]`);
+        log(
+          `    TOTAL:          ${totalSec.toFixed(1)}s  (${x(totalSec)})  (excludes encode/save)`
+        );
       }
 
       // --- Save as .stem.mp4 (encode 4 stems → POST → backend muxes via ffmpeg) ---
