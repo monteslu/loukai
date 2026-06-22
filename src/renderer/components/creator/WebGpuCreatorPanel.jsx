@@ -188,7 +188,31 @@ export default function WebGpuCreatorPanel() {
         }
         const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
         setGpu(adapter ? 'available' : 'unavailable');
-        log(adapter ? 'WebGPU available ✓' : 'WebGPU adapter null — WASM fallback');
+        if (adapter) {
+          // Log WHICH adapter so we can tell a real discrete GPU from a fallback /
+          // integrated one (explains separation speed). adapter.info is the modern
+          // field; requestAdapterInfo() the older one.
+          let info = adapter.info;
+          if (!info && adapter.requestAdapterInfo) {
+            try {
+              info = await adapter.requestAdapterInfo();
+            } catch {
+              /* not supported */
+            }
+          }
+          const desc = info
+            ? [info.vendor, info.architecture, info.device, info.description]
+                .filter(Boolean)
+                .join(' / ')
+            : '(adapter info unavailable)';
+          log(`WebGPU available ✓ — adapter: ${desc}`);
+          const feats = adapter.features ? [...adapter.features].length : 0;
+          log(
+            `WebGPU limits: maxBufferSize=${adapter.limits?.maxBufferSize ?? '?'}, features=${feats}`
+          );
+        } else {
+          log('WebGPU adapter null — WASM fallback');
+        }
       } catch (e) {
         setGpu('unavailable');
         log(`WebGPU check failed: ${e.message}`);
@@ -574,7 +598,7 @@ export default function WebGpuCreatorPanel() {
             onLog: (phase, m) => log(`[${phase}] ${m}`),
           });
           await proc.loadModel(modelBuf);
-          log('separating on webgpu — htdemucs (single) …');
+          log(`separating — htdemucs (single) on EP: ${gpu === 'available' ? 'webgpu' : 'wasm'} …`);
           result = await proc.separate(audio.left, audio.right);
         }
         const sec = (performance.now() - t0) / 1000;
@@ -636,14 +660,15 @@ export default function WebGpuCreatorPanel() {
             executionProviders: ['wasm'],
           });
         }
-        log('detecting speech regions (VAD) …');
+        log('detecting speech regions (VAD on EP: wasm) …');
+        const vt0 = performance.now();
         speechRegions = await detectSpeechRegions(ort, libs.current.vadSession, mono, {
           onProgress: (f) => setTranscribeInfo(`VAD ${Math.round(f * 100)}%`),
         });
         setTranscribeInfo('');
         const speechSec = speechRegions.reduce((a, r) => a + (r.end - r.start), 0);
         log(
-          `VAD: ${speechRegions.length} speech regions, ${speechSec.toFixed(0)}s of ${(mono.length / 16000).toFixed(0)}s is vocals`
+          `VAD: ${speechRegions.length} speech regions, ${speechSec.toFixed(0)}s of ${(mono.length / 16000).toFixed(0)}s is vocals (${((performance.now() - vt0) / 1000).toFixed(1)}s)`
         );
       } catch (e) {
         log(`VAD skipped (${e.message}) — transcribing without speech-gating`);
@@ -777,11 +802,13 @@ export default function WebGpuCreatorPanel() {
           });
         }
         setStatus('pitch');
-        log('detecting pitch + key (CREPE) …');
+        log(`detecting pitch + key (CREPE on EP: ${gpu === 'available' ? 'webgpu' : 'wasm'}) …`);
+        const ct0 = performance.now();
         const pitch = await detectPitch(ort, libs.current.crepeSession, mono, {
           onProgress: (f) => setTranscribeInfo(`pitch ${Math.round(f * 100)}%`),
         });
         setTranscribeInfo('');
+        log(`CREPE pitch done in ${((performance.now() - ct0) / 1000).toFixed(1)}s`);
         const k = detectKey(pitch);
         detectedKey = k.key;
         pitchData = {
