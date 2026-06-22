@@ -927,7 +927,6 @@ export default function WebGpuCreatorPanel() {
 
       let out;
       try {
-        const rawDump = []; // RAW Whisper output per segment, BEFORE any processing (debug)
         for (let pi = 0; pi < plan.length; pi++) {
           const { start, end } = plan[pi];
           chunkIdx += 1;
@@ -936,28 +935,9 @@ export default function WebGpuCreatorPanel() {
           const window = mono.subarray(s0, s1);
           setTranscribeInfo(`segment ${chunkIdx}/${plan.length} @ ${start.toFixed(0)}s …`);
           const w = await transcribeWindow(window);
-          // Capture the VERBATIM Whisper output for this segment (window-relative chunk
-          // times offset to absolute) + the segment's no_speech, before any filtering.
-          rawDump.push({
-            seg: chunkIdx,
-            window: [Number(start.toFixed(2)), Number(end.toFixed(2))],
-            no_speech: w.noSpeech != null ? Number(w.noSpeech.toFixed(4)) : null,
-            chunks: (w.chunks || []).map((c) => {
-              const ts = c.timestamp || [c.start, c.end];
-              return {
-                text: c.text,
-                t: [
-                  ts[0] != null ? Number((ts[0] + start).toFixed(2)) : null,
-                  ts[1] != null ? Number((ts[1] + start).toFixed(2)) : null,
-                ],
-              };
-            }),
-          });
-          // NOTE: we do NOT gate on no_speech here — the raw data shows Whisper reports
-          // no_speech=0 even over a pure guitar solo it hallucinates as "# ... #", so the
-          // signal is useless for this. Instrumental hallucinations are caught downstream
-          // by the annotation strip (* [ ] # ♪ ♫). Keep every segment's words; no overlap
-          // means no dedup needed — just collect in order.
+          // Collect this segment's words in order (cuts land in vocal dips → no overlap,
+          // no dedup needed). Hallucinations over instrumental gaps are removed below by
+          // the annotation strip + sustained-silence cull.
           const segs = (w.chunks || []).filter((c) => (c.text || '').trim());
           for (const c of segs) {
             const ts = c.timestamp || [c.start, c.end];
@@ -977,21 +957,8 @@ export default function WebGpuCreatorPanel() {
             setLyrics(groupWordsIntoLines(flat, { duration: audio.duration }));
           }
           log(
-            `  segment ${chunkIdx} @ ${start.toFixed(0)}-${end.toFixed(0)}s: ${segs.length} seg(s)` +
-              (w.noSpeech != null ? `, no_speech=${w.noSpeech.toFixed(2)} (hint)` : '')
+            `  segment ${chunkIdx} @ ${start.toFixed(0)}-${end.toFixed(0)}s: ${segs.length} seg(s)`
           );
-        }
-
-        // RAW DUMP: emit verbatim Whisper output as a single JSON STRING (loukai's
-        // console serializer flattens objects to "[object Object]", so stringify).
-        // Copy this from DevTools OR the Electron/node terminal to compare engines.
-        try {
-          console.log(
-            '📋 RAW_WHISPER_WEB ' +
-              JSON.stringify({ engine: 'web-transformersjs', segments: rawDump })
-          );
-        } catch {
-          /* ignore */
         }
 
         // allChunks already holds every segment's words in time order (no overlap → no
