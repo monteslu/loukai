@@ -6,7 +6,7 @@ import { QuickSearch } from '../shared/components/QuickSearch.jsx';
 import { MixerPanel } from '../shared/components/MixerPanel.jsx';
 import { EffectsPanel } from '../shared/components/EffectsPanel.jsx';
 import { LibraryPanel } from '../shared/components/LibraryPanel.jsx';
-import WebGpuCreatorPanel from '../shared/components/WebGpuCreatorPanel.jsx';
+import CreatorImportPanel from './components/CreatorImportPanel.jsx';
 import { RequestsList } from '../shared/components/RequestsList.jsx';
 import { SongEditor } from '../shared/components/SongEditor.jsx';
 import { SongInfoBar } from '../shared/components/SongInfoBar.jsx';
@@ -588,7 +588,7 @@ export function App() {
         <div
           className={`${currentTab === 'create' ? 'flex' : 'hidden'} flex-col h-full gap-4 p-4 overflow-auto`}
         >
-          <WebGpuCreatorPanel />
+          <CreatorImportPanel />
         </div>
       </main>
     </div>

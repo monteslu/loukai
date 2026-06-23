@@ -2021,6 +2021,58 @@ class WebServer {
       });
     });
 
+    // Import an already-created .stem.mp4 (e.g. from the offsite WebGPU creator at
+    // karaoke-creator.loukai.com) into the library. Validates karaoke metadata,
+    // copies into the songs folder, optionally runs LRCLIB lookup + LLM correction.
+    const importHandler = multer({
+      storage: multer.diskStorage({
+        destination: (_req, _file, cb) => cb(null, wsd),
+        filename: (_req, _file, cb) =>
+          cb(null, `${crypto.randomBytes(8).toString('hex')}.stem.mp4`),
+      }),
+      limits: { fileSize: 500 * 1024 * 1024, files: 1 },
+      fileFilter: (_req, file, cb) => cb(null, file.fieldname === 'file'),
+    }).single('file');
+
+    this.app.post('/admin/library/import-stem', (req, res) => {
+      importHandler(req, res, async (err) => {
+        const tmpPath = req.file?.path;
+        const cleanup = () => {
+          if (tmpPath) {
+            try {
+              fs.rmSync(tmpPath, { force: true });
+            } catch {
+              /* ignore */
+            }
+          }
+        };
+        try {
+          if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+          if (!tmpPath) return res.status(400).json({ error: 'no file uploaded' });
+          // Default ON; the client sends 'false' to skip correction.
+          const correctLyrics = String(req.body.correctLyrics ?? 'true') !== 'false';
+          const result = await creatorService.importStemFile({
+            tmpPath,
+            originalName: req.file.originalname,
+            correctLyrics,
+            settingsManager: this.mainApp.settings,
+            songsFolder: this.mainApp.settings?.getSongsFolder?.(),
+          });
+          cleanup();
+          try {
+            await libraryService.syncLibrary(this.mainApp);
+          } catch (e) {
+            console.warn('library sync after import failed:', e.message);
+          }
+          res.json(result);
+        } catch (e) {
+          cleanup();
+          console.error('stem import failed:', e);
+          res.status(400).json({ error: e.message || 'Import failed' });
+        }
+      });
+    });
+
     // Lyrics-only update (web admin): rewrite the kara atom (+key) on an existing
     // library .stem.mp4 by filename — no re-upload of the audio. The file must
     // resolve inside the songs folder (traversal-guarded).

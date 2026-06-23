@@ -16,7 +16,7 @@ import { getAudioInfo, isVideoFile } from '../../main/creator/audioInfo.js';
 import * as creatorJob from '../../main/creator/creatorJob.js';
 import { repairStemFile, repairStemFiles } from '../../main/creator/stemBuilder.js';
 import { basename, join } from 'path';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, copyFileSync } from 'fs';
 import { Atoms as M4AAtoms, StemMp4Writer } from 'stem-mp4';
 
 /**
@@ -383,10 +383,104 @@ export async function updateStemLyrics({ inputPath, lyrics, key, pitch }) {
   return { outputPath: inputPath, fileName: basename(inputPath) };
 }
 
+/**
+ * Import an already-created .stem.mp4 (e.g. from the offsite WebGPU creator) into
+ * the library. Validates it has karaoke metadata, copies it into the songs folder,
+ * and — when `correctLyrics` is set — runs LRCLIB lookup + LLM correction on its
+ * existing lyrics and rewrites the kara atom. The audio/stems are never touched.
+ *
+ * @param {Object} opts
+ * @param {string} opts.tmpPath - path to the uploaded temp file
+ * @param {string} [opts.originalName] - the upload's original filename (for the saved name)
+ * @param {boolean} [opts.correctLyrics=true] - look up reference lyrics + LLM-correct
+ * @param {Object} opts.settingsManager - for LLM settings + songs folder
+ * @param {string} opts.songsFolder
+ * @returns {Promise<{success, fileName, outputPath, hadKaraoke, corrected, llmStats}>}
+ */
+export async function importStemFile({
+  tmpPath,
+  originalName,
+  correctLyrics = true,
+  settingsManager,
+  songsFolder,
+}) {
+  if (!songsFolder) throw new Error('songs folder is not set');
+  if (!tmpPath || !existsSync(tmpPath)) throw new Error('uploaded file not found');
+
+  // 1) Validate it's a real karaoke stem file: must parse + have a kara atom.
+  let audioInfo;
+  try {
+    audioInfo = await getAudioInfo(tmpPath);
+  } catch (e) {
+    throw new Error(`not a readable MP4: ${e.message}`);
+  }
+  if (!audioInfo.audioStreamCount || audioInfo.audioStreamCount < 2) {
+    throw new Error('not a stem file (needs multiple audio tracks: master + stems)');
+  }
+  let kara = null;
+  try {
+    kara = await M4AAtoms.readKaraAtom(tmpPath);
+  } catch {
+    /* no kara atom */
+  }
+  const hadKaraoke = Boolean(kara && Array.isArray(kara.lines) && kara.lines.length);
+  if (!hadKaraoke) {
+    throw new Error('file has no karaoke metadata (kara atom) — not a Loukai stem file');
+  }
+
+  // 2) Copy into the songs folder with a clean filename derived from tags.
+  const title = (audioInfo.title || '').trim();
+  const artist = (audioInfo.artist || '').trim();
+  const base =
+    (artist && title ? `${artist} - ${title}` : title) ||
+    (originalName || 'imported').replace(/\.(stem\.)?mp4$/i, '');
+  const safe = base.replace(/[<>:"/\\|?*]/g, '_');
+  const outputPath = join(songsFolder, `${safe}.stem.mp4`);
+  copyFileSync(tmpPath, outputPath);
+
+  // 3) Optional: LRCLIB lookup + LLM correction on the existing lyrics, rewrite kara.
+  let corrected = false;
+  let llmStats = null;
+  if (correctLyrics && settingsManager && title) {
+    try {
+      const r = await searchLyrics(title, artist);
+      const ref = (r?.plainLyrics || '').trim();
+      if (ref) {
+        const llmSettings = llmService.getLLMSettingsRaw(settingsManager);
+        const hasValidConfig = llmSettings.provider === 'lmstudio' || llmSettings.apiKey;
+        if (llmSettings.enabled && hasValidConfig) {
+          const llmResult = await llmService.correctLyrics(
+            { lines: kara.lines, words: kara.words },
+            ref,
+            llmSettings
+          );
+          if (llmResult?.output?.lines?.length) {
+            await M4AAtoms.writeKaraAtom(outputPath, { lines: llmResult.output.lines });
+            llmStats = llmResult.stats;
+            corrected = true;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ import lyric correction failed, kept original:', e.message);
+    }
+  }
+
+  return {
+    success: true,
+    fileName: basename(outputPath),
+    outputPath,
+    hadKaraoke,
+    corrected,
+    llmStats,
+  };
+}
+
 export default {
   getStatus,
   saveWebGpuStems,
   updateStemLyrics,
+  importStemFile,
   findLyrics,
   getWhisperContext,
   getFileInfo,
