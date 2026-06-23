@@ -82,6 +82,10 @@ export default function WebGpuCreatorPanel() {
   const [llmTest, setLlmTest] = useState(null);
   const fileRef = useRef(null);
   const selectedFileRef = useRef(null); // the chosen File (from input OR drop)
+  // Separated stems from the LAST run, kept so "Re-transcribe" can re-run Whisper with
+  // changed settings WITHOUT paying the ~50s Demucs separation again. { fileName, audio,
+  // result } — result holds the {vocals,...} stems.
+  const reuseStemsRef = useRef(null);
   const libs = useRef({}); // cached dynamic imports
   const logEnd = useRef(null);
 
@@ -306,6 +310,7 @@ export default function WebGpuCreatorPanel() {
     const file = droppedFile || fileRef.current?.files?.[0];
     if (!file) return;
     selectedFileRef.current = file;
+    reuseStemsRef.current = null; // new file → old separated stems are stale
     setFileName(file.name);
     setFileLoading(true);
     let title = '';
@@ -376,6 +381,7 @@ export default function WebGpuCreatorPanel() {
   // Reset for the next song (after a completed create).
   function handleCreateAnother() {
     selectedFileRef.current = null;
+    reuseStemsRef.current = null;
     if (fileRef.current) fileRef.current.value = '';
     setFileName('');
     setCompletedFile(null);
@@ -543,10 +549,14 @@ export default function WebGpuCreatorPanel() {
     return out;
   }
 
-  async function run() {
+  // `reuseStems` (from the Re-transcribe button): reuse the previous run's separated
+  // stems for THIS file and skip decode + Demucs, re-running only Whisper onward.
+  async function run(reuseStems = false) {
     const file = selectedFileRef.current || fileRef.current?.files?.[0];
     if (!file) return;
-    setStatus('separating');
+    const canReuse =
+      reuseStems && reuseStemsRef.current && reuseStemsRef.current.fileName === file.name;
+    setStatus(canReuse ? 'transcribing' : 'separating');
     setError(null);
     setLyrics([]);
     setStemProgress({});
@@ -564,7 +574,15 @@ export default function WebGpuCreatorPanel() {
 
       let audio;
       let result;
-      if (lyricsOnly) {
+      if (canReuse) {
+        // Re-transcribe: reuse the previous run's decoded audio + separated stems.
+        audio = reuseStemsRef.current.audio;
+        result = reuseStemsRef.current.result;
+        setRtf(null);
+        log(
+          `re-transcribe: reusing separated stems (${audio.duration.toFixed(0)}s) — skipping separation`
+        );
+      } else if (lyricsOnly) {
         log(`lyrics-only: extracting vocals from ${file.name} …`);
         audio = await extractVocalsFromStem(file);
         result = { vocals: { left: audio.left, right: audio.right } };
@@ -575,8 +593,8 @@ export default function WebGpuCreatorPanel() {
         audio = await decodeAudio(file);
       }
 
-      // --- Demucs stem separation (in-browser, WebGPU) --- (skipped in lyrics-only)
-      if (!lyricsOnly) {
+      // --- Demucs stem separation (in-browser, WebGPU) --- (skipped when reusing stems)
+      if (!lyricsOnly && !canReuse) {
         // The selected DEMUCS_MODELS entry's `kind` picks the runner:
         //   'single' = one htdemucs (demucs-web) — fast (~8× realtime).
         //   'ft'     = htdemucs_ft 4-model fine-tuned ensemble — PyTorch-grade, ~2-3×
@@ -646,7 +664,12 @@ export default function WebGpuCreatorPanel() {
         log(
           `separation done in ${sec.toFixed(1)}s — ${realtime.toFixed(2)}× realtime [${modeLabel}]`
         );
-      } // end separation (skipped in lyrics-only)
+      } // end separation (skipped when reusing stems)
+
+      // Stash the decoded audio + separated stems so a later "Re-transcribe" can re-run
+      // Whisper with changed settings without redoing the ~50s separation. (On a reuse
+      // run this just re-points at the same objects.)
+      reuseStemsRef.current = { fileName: file.name, audio, result };
 
       // --- Whisper transcription of the vocals stem (in-browser) ---
       setStatus('transcribing');
@@ -1876,6 +1899,14 @@ export default function WebGpuCreatorPanel() {
               {completedFile && (
                 <button onClick={handleOpenInEditor} className={STYLES.btnPrimary}>
                   ✏️ Open in Editor
+                </button>
+              )}
+              {/* Re-transcribe: re-run Whisper (+ culls + save) with the CURRENT settings,
+                  reusing the already-separated stems — skips the ~50s Demucs step. Useful
+                  to iterate on Whisper model / language / de-loop without re-separating. */}
+              {reuseStemsRef.current && (
+                <button onClick={() => run(true)} className={STYLES.btnSecondary} disabled={busy}>
+                  🔁 Re-transcribe
                 </button>
               )}
               <button onClick={handleCreateAnother} className={STYLES.btnSecondary}>
