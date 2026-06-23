@@ -1017,6 +1017,40 @@ export default function WebGpuCreatorPanel() {
       //      touched. (Loud NON-lyrical vocal sounds over a solo are not silence and
       //      survive here — those are left to LLM/reference correction.)
       const isAnnotation = (s) => /[*[\]#♪♫]/.test((s || '').trim());
+      // Stuck-decoder loop cull — the strongest tell. Whisper can lock onto a repeated
+      // word/phrase (the "Hey Jude" outro → "better, better, better…" ~400×) and emit it
+      // until max-length, and the dead giveaway is the TIMESTAMPS: those words start only
+      // ~0.02-0.1s apart, which is physically impossible for sung lyrics. openai-whisper
+      // suppresses this via a compression-ratio threshold; transformers.js doesn't, so we
+      // detect the collision directly: once words start arriving < minStartGap apart we're
+      // in a loop — drop them until the timeline advances again. Energy/text-independent,
+      // so it also catches loops where the repeated token drifts slightly.
+      {
+        const minStartGap = 0.08; // s; consecutive word starts closer than this = a loop
+        const startOf = (w) => (w.timestamp ? w.timestamp[0] : w.start) ?? null;
+        const kept = [];
+        let prevStart = null; // start of the IMMEDIATELY previous word (kept or dropped)
+        let dropped = 0;
+        for (const w of words) {
+          const s = startOf(w);
+          // Compare to the previous word's start regardless of whether it was kept —
+          // a stuck loop advances ~0.02s per token, so every step collides; comparing to
+          // the last KEPT word would let one survivor through every minStartGap.
+          const collide = s != null && prevStart != null && s - prevStart < minStartGap;
+          if (s != null) prevStart = s;
+          if (collide) {
+            dropped++;
+            continue;
+          }
+          kept.push(w);
+        }
+        if (dropped) {
+          log(
+            `dropped ${dropped} time-collided word(s) (<${minStartGap}s apart → stuck decoder loop)`
+          );
+          words = kept;
+        }
+      }
       {
         const before = words.length;
         const culled = [];
@@ -1040,6 +1074,37 @@ export default function WebGpuCreatorPanel() {
           for (const c of culled) log(`    ✂ "${c.text}" @ ${c.t}s (${c.why})`);
         } else if (before) {
           log('no hallucinations to trim');
+        }
+      }
+      // Isolated-word-after-big-gap cull — the outro fade tell. A word stranded by a
+      // large gap (>= isoGap) on BOTH sides is almost always a stuck-decoder ghost over
+      // the fade ("…Judas… …dude…" 14s apart, long after the song body). Real lyrics
+      // arrive in phrases, never single words 8s+ from any neighbor. (First/last word
+      // only needs one big side; energy-independent, so it works even if the outro choir
+      // keeps the stem from going silent.)
+      {
+        const isoGap = 8; // s
+        const startOf = (w) => (w.timestamp ? w.timestamp[0] : w.start) ?? null;
+        const endOf = (w) => (w.timestamp ? w.timestamp[1] : w.end) ?? startOf(w);
+        const stranded = [];
+        words = words.filter((w, i) => {
+          const s = startOf(w);
+          if (s == null) return true;
+          const prevEnd = i > 0 ? endOf(words[i - 1]) : null;
+          const nextStart = i < words.length - 1 ? startOf(words[i + 1]) : null;
+          const gapBefore = prevEnd != null ? s - prevEnd : Infinity;
+          const gapAfter = nextStart != null ? nextStart - (endOf(w) ?? s) : Infinity;
+          if (gapBefore >= isoGap && gapAfter >= isoGap) {
+            stranded.push({ text: (w.text || '').trim(), t: Number(s.toFixed(1)) });
+            return false;
+          }
+          return true;
+        });
+        if (stranded.length) {
+          log(
+            `dropped ${stranded.length} stranded word(s) (isolated >${isoGap}s from neighbors → fade ghost):`
+          );
+          for (const c of stranded) log(`    ✂ "${c.text}" @ ${c.t}s`);
         }
       }
       log(`after VAD: ${words.length} words`);
