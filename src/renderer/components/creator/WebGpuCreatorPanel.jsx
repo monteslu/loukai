@@ -1120,6 +1120,37 @@ export default function WebGpuCreatorPanel() {
         silentFrac: SILENT_FRAC,
       });
       if (droppedMark) lines.dropped = droppedMark;
+      // Non-overlap invariant. Whisper is single-speaker — it can't transcribe two
+      // simultaneous voices, so two lyric lines can NEVER legitimately occupy the same
+      // instant. Any overlap is an artifact: a SMALL one is independent snapping of
+      // adjacent line bounds (snapToVocalEnergy nudges line N's end forward and N+1's
+      // start back until they cross by a few hundred ms); a LARGE one is a stretched
+      // (maxLineDur) or residual-loop line. Both are wrong, so enforce the invariant as
+      // the final step: sort by start, then clamp each line's end to where the next line
+      // begins so exactly one line is active at a time (the karaoke invariant). Only fires
+      // on REAL overlap (end > nextStart), never on lines that merely touch.
+      {
+        const dm = lines.dropped;
+        lines.sort((a, b) => a.start - b.start);
+        let small = 0;
+        let large = 0;
+        for (let i = 0; i < lines.length - 1; i++) {
+          const next = lines[i + 1];
+          const overlap = lines[i].end - next.start;
+          if (overlap > 0) {
+            lines[i].end = Math.max(lines[i].start + 0.1, next.start);
+            if (overlap > 1) large++;
+            else small++;
+          }
+        }
+        if (dm) lines.dropped = dm;
+        if (small || large) {
+          log(
+            `enforced non-overlap on ${small + large} line(s) (single-speaker → one line at a time` +
+              `${large ? `; ${large} large >1s` : ''})`
+          );
+        }
+      }
       const groupedWordCount = lines.reduce(
         (n, l) => n + l.text.split(/\s+/).filter(Boolean).length,
         0
