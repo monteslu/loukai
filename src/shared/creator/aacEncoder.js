@@ -1,97 +1,62 @@
 /**
- * WAV -> AAC-in-MP4 encoder for the WebGPU creator, using ffmpeg-wasm in the
- * browser/renderer.
+ * WAV -> AAC-in-MP4 encoder for the WebGPU creator.
  *
  * stem-mp4 0.5.x is a pure-JS container muxer: it takes PRE-ENCODED AAC-in-MP4
  * tracks (stemsAac/mixdownAac), not WAV. So loukai encodes the separated stems
  * here, in the renderer, where they are already PCM. This replaces the native
  * ffmpeg the old creator relied on.
  *
- * We drive @ffmpeg/core's SINGLE-THREAD module factory DIRECTLY (no
- * @ffmpeg/ffmpeg Worker wrapper). Single-thread => no SharedArrayBuffer, so it
- * needs no COOP/COEP cross-origin isolation (the web admin is cross-origin). All
- * assets load same-origin from /webgpu-assets/* (vendored by webgpuAssets.js),
- * never a CDN, matching the rest of the WebGPU creator.
+ * ffmpeg-core's exec() is a BLOCKING wasm call, so it runs in a Web Worker
+ * (aacWorker.js) to keep the creator UI responsive. The worker is driven over
+ * rawr (JSON-RPC): we just await peer.methods.encode(wav, bitrate). Single-thread
+ * core => no SharedArrayBuffer / COOP-COEP. The worker is a same-origin module
+ * worker (Vite-bundled), CSP-safe under script-src 'self'.
  */
 
-import { assetBase } from './creatorAudio.js';
+import rawr from 'rawr';
+import { dom as domTransport } from 'rawr/transports/worker';
 
-let _corePromise = null;
+let _peer = null;
+let _worker = null;
 
-/**
- * Load + cache the ffmpeg-core module. Returns the Emscripten module instance,
- * which exposes `.exec(...args)` and `.FS.{writeFile,readFile,unlink}`.
- */
-function getCore() {
-  if (_corePromise) return _corePromise;
-  _corePromise = (async () => {
-    const base = assetBase();
-    const coreUrl = `${base}/ffmpeg-core.js`;
-    const wasmUrl = `${base}/ffmpeg-core.wasm`;
-    // ESM factory (default export). Same-origin dynamic import.
-    const mod = await import(/* @vite-ignore */ coreUrl);
-    const createFFmpegCore = mod.default || mod;
-    // locateFile points the core at the vendored wasm (same dir, explicit anyway).
-    const core = await createFFmpegCore({
-      locateFile: (path) => (path.endsWith('.wasm') ? wasmUrl : `${base}/${path}`),
-    });
-    return core;
-  })();
-  return _corePromise;
+function getPeer() {
+  if (_peer) return _peer;
+  // Vite bundles aacWorker.js into a module-worker chunk served under /app/.
+  _worker = new Worker(new URL('../../renderer/components/creator/aacWorker.js', import.meta.url), {
+    type: 'module',
+  });
+  // Generous timeout: first call also fetches + instantiates the 32MB core.
+  _peer = rawr({ transport: domTransport(_worker), timeout: 120000 });
+  return _peer;
 }
 
 /**
- * Encode a single WAV blob/bytes to a single-track AAC-in-MP4 (.m4a) Uint8Array.
+ * Encode a WAV blob/bytes to a single-track AAC-in-MP4 (.m4a) Uint8Array.
  *
  * @param {Blob|Uint8Array|ArrayBuffer} wav - WAV (PCM) input
  * @param {Object} [opts]
  * @param {number} [opts.bitrate=192000] - AAC bitrate (bits/sec)
- * @param {string} [opts.tag] - short label for the temp filenames (debug only)
  * @returns {Promise<Uint8Array>} the .m4a bytes (AAC-LC in an MP4 container)
  */
-export async function encodeWavToAac(wav, { bitrate = 192000, tag = 's' } = {}) {
-  const core = await getCore();
+export async function encodeWavToAac(wav, { bitrate = 192000 } = {}) {
   let bytes;
   if (wav instanceof Uint8Array) bytes = wav;
   else if (wav instanceof ArrayBuffer) bytes = new Uint8Array(wav);
   else bytes = new Uint8Array(await wav.arrayBuffer()); // Blob
 
-  // Unique-ish names so concurrent encodes on the shared FS never collide.
-  const inName = `in_${tag}.wav`;
-  const outName = `out_${tag}.m4a`;
-  core.FS.writeFile(inName, bytes);
-  try {
-    // -c:a aac -> MP4 container (NOT raw ADTS) so stem-mp4's muxer accepts it.
-    // -b:a sets the target bitrate. All 5 stems MUST use identical params so the
-    // shared-mdat sample tables line up in the multi-track output. (The core
-    // prepends its own ./ffmpeg -nostdin -y, so we don't pass those.)
-    const rc = core.exec(
-      '-i',
-      inName,
-      '-c:a',
-      'aac',
-      '-b:a',
-      String(bitrate),
-      '-movflags',
-      '+faststart',
-      outName
-    );
-    if (rc !== 0 && rc !== undefined) {
-      throw new Error(`ffmpeg-core exited ${rc} encoding ${tag}`);
-    }
-    const out = core.FS.readFile(outName);
-    return out instanceof Uint8Array ? out.slice() : new Uint8Array(out);
-  } finally {
-    try {
-      core.FS.unlink(inName);
-    } catch {
-      /* ignore */
-    }
-    try {
-      core.FS.unlink(outName);
-    } catch {
-      /* ignore */
-    }
+  const peer = getPeer();
+  // rawr serializes args via structured clone; pass the bytes through and get the
+  // encoded .m4a back. (The transferable fast-path is a future optimization.)
+  const result = await peer.methods.encode(bytes, bitrate);
+  return result instanceof Uint8Array ? result : new Uint8Array(result);
+}
+
+/** Tear down the worker (optional; e.g. on unmount). */
+export function disposeAacEncoder() {
+  if (_worker) {
+    _worker.terminate();
+    _worker = null;
+    _peer = null;
   }
 }
 
