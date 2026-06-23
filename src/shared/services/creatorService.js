@@ -16,7 +16,7 @@ import { getAudioInfo, isVideoFile } from '../../main/creator/ffmpegService.js';
 import * as creatorJob from '../../main/creator/creatorJob.js';
 import { repairStemFile, repairStemFiles } from '../../main/creator/stemBuilder.js';
 import { basename, join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { Atoms as M4AAtoms, StemMp4Writer } from 'stem-mp4';
 
 /**
@@ -311,20 +311,22 @@ export async function saveWebGpuStems({
   if (composer) fullMeta.composer = composer;
   if (tempo) fullMeta.tempo = tempo;
 
-  // stem-mp4 StemMp4Writer.write encodes the WAVs to AAC, muxes the 5-track NI-Stems
-  // container (master + 4 stems), and writes the kara (lyrics) atom — all in one call.
+  // The renderer already encoded each stem to AAC-in-MP4 (ffmpeg-wasm); `stems.*`
+  // are temp-file paths to those .m4a blobs. stem-mp4 0.5.x is a pure-JS container
+  // muxer that takes PRE-ENCODED AAC (no ffmpeg), so read the bytes and pass them.
+  const readAac = (p) => readFileSync(p);
   await StemMp4Writer.write({
     outputPath,
-    stemsWavFiles: {
-      drums: stems.drums,
-      bass: stems.bass,
-      other: stems.other,
-      vocals: stems.vocals,
+    stemsAac: {
+      drums: readAac(stems.drums),
+      bass: readAac(stems.bass),
+      other: readAac(stems.other),
+      vocals: readAac(stems.vocals),
     },
-    mixdownWav: stems.master, // the raw original mix = NI-Stems master track
+    mixdownAac: readAac(stems.master), // raw original mix = NI-Stems master track
     metadata: fullMeta,
     lyricsData: lyricsData || undefined, // corrected lines if LLM ran, else raw
-    codec: 'aac',
+    encoderDelaySamples: 1024, // ffmpeg native aac priming (renderer used -c:a aac)
   });
 
   // CREPE-derived musical key + pitch track (parity with the native creator). Both

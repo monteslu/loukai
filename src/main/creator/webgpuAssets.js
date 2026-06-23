@@ -51,6 +51,11 @@ const STATIC_WEBGPU = join(dirname(fileURLToPath(import.meta.url)), '../../../st
 const ORT_VER = '1.27.0';
 const DEMUCS_VER = '1.0.2';
 const TF_VER = '3.8.1';
+// ffmpeg-wasm SINGLE-THREAD core (no SharedArrayBuffer / COOP-COEP needed, so it
+// works in the cross-origin web admin). Used to encode the separated stems
+// WAV -> AAC-in-MP4 before stem-mp4 muxes them. Drive the core module directly
+// (no @ffmpeg/ffmpeg Worker wrapper) to match loukai's same-origin import model.
+const FFMPEG_CORE_VER = '0.12.10';
 
 const ASSETS = {
   // onnxruntime-web — self-contained WebGPU ESM bundle. NOTE the bundle/standalone
@@ -73,6 +78,10 @@ const ASSETS = {
   'demucs/constants.js': `https://cdn.jsdelivr.net/npm/demucs-web@${DEMUCS_VER}/src/constants.js`,
   // transformers.js — bundled dist.
   'transformers.min.js': `https://cdn.jsdelivr.net/npm/@huggingface/transformers@${TF_VER}/dist/transformers.min.js`,
+  // ffmpeg-wasm single-thread core (factory ESM + its wasm). The .wasm is ~32 MB;
+  // fetched once + LAN-cached like the ONNX models.
+  'ffmpeg-core.js': `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${FFMPEG_CORE_VER}/dist/esm/ffmpeg-core.js`,
+  'ffmpeg-core.wasm': `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${FFMPEG_CORE_VER}/dist/esm/ffmpeg-core.wasm`,
 };
 
 const MIME = {

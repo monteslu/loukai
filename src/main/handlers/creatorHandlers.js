@@ -104,7 +104,8 @@ export function registerCreatorHandlers(mainApp) {
   // Save a WebGPU-Creator result (separated + transcribed in-browser) as a
   // .stem.mp4. The renderer (player window) uses THIS IPC path — it has no admin
   // HTTP session (the web admin uses POST /admin/webgpu-creator/save instead).
-  // stems = { master, drums, bass, other, vocals } as WAV Uint8Array/ArrayBuffer.
+  // stems = { master, drums, bass, other, vocals } as AAC-in-MP4 Uint8Array
+  // (the renderer encodes WAV -> AAC via ffmpeg-wasm before sending).
   ipcMain.handle(
     'creator:saveWebGpuStems',
     async (_event, { stems, metadata, lyrics, pitch, referenceLyrics }) => {
@@ -114,7 +115,7 @@ export function registerCreatorHandlers(mainApp) {
       try {
         for (const name of ['master', 'drums', 'bass', 'other', 'vocals']) {
           if (!stems?.[name]) throw new Error(`missing stem: ${name}`);
-          const p = join(tmpDir, `${name}.wav`);
+          const p = join(tmpDir, `${name}.m4a`);
           writeFileSync(p, Buffer.from(stems[name]));
           paths[name] = p;
         }

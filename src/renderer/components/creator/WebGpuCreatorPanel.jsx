@@ -8,6 +8,7 @@ import {
   encodeWav,
   groupWordsIntoLines,
 } from '../../../shared/creator/creatorAudio.js';
+import { encodeWavToAac } from '../../../shared/creator/aacEncoder.js';
 import { STYLES, Spinner, ErrorDisplay, SongTitle, StemProgressBars } from './creatorUi.jsx';
 
 /**
@@ -1416,12 +1417,18 @@ export default function WebGpuCreatorPanel() {
         vocals: encodeWav(result.vocals.left, result.vocals.right, sr),
       };
 
+      // Encode each stem WAV -> AAC-in-MP4 here in the renderer (ffmpeg-wasm).
+      // stem-mp4 0.5.x muxes PRE-ENCODED AAC tracks; it no longer encodes. All
+      // stems use identical params so the multi-track sample tables align.
+      log('encoding stems to AAC (ffmpeg-wasm)…');
+      const aacBytes = {};
+      for (const k of Object.keys(wavBlobs)) {
+        aacBytes[k] = await encodeWavToAac(wavBlobs[k], { tag: k });
+      }
+
       if (window.kaiAPI?.creator?.saveWebGpuStems) {
-        // Electron player: IPC (no admin HTTP session here). Send WAVs as bytes.
-        const stems = {};
-        for (const k of Object.keys(wavBlobs)) {
-          stems[k] = new Uint8Array(await wavBlobs[k].arrayBuffer());
-        }
+        // Electron player: IPC (no admin HTTP session here). Send AAC bytes.
+        const stems = aacBytes;
         const r = await window.kaiAPI.creator.saveWebGpuStems({
           stems,
           metadata: {
@@ -1457,7 +1464,9 @@ export default function WebGpuCreatorPanel() {
         if (detectedKey) fd.append('key', detectedKey);
         if (pitchData) fd.append('pitch', JSON.stringify(pitchData));
         if (refLyrics) fd.append('referenceLyrics', refLyrics);
-        for (const [k, blob] of Object.entries(wavBlobs)) fd.append(k, blob, `${k}.wav`);
+        for (const [k, bytes] of Object.entries(aacBytes)) {
+          fd.append(k, new Blob([bytes], { type: 'audio/mp4' }), `${k}.m4a`);
+        }
         const saveRes = await fetch('/admin/webgpu-creator/save', {
           method: 'POST',
           body: fd,
