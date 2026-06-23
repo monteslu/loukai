@@ -17,7 +17,7 @@ import { log } from '../logger.js';
  */
 
 import { spawn } from 'child_process';
-import { getFFmpegPath } from './systemChecker.js';
+import { getFFmpegPath } from './ffmpegService.js';
 import { Atoms as M4AAtoms } from 'stem-mp4';
 
 /**
