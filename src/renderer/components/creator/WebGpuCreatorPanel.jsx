@@ -808,6 +808,17 @@ export default function WebGpuCreatorPanel() {
         return_timestamps: useWordTs ? 'word' : true,
         ...(language && language !== 'auto' ? { language } : {}),
         ...(promptIds ? { prompt_ids: promptIds } : promptText ? { prompt: promptText } : {}),
+        // Anti-loop: Whisper's decoder collapses on repetitive audio (the "Hey Jude"
+        // coda → "na"×444 / "better"×220 stamped into a 0.4s window) — a model failure,
+        // not a timing bug. openai-whisper guards this with a compression-ratio reject;
+        // transformers.js doesn't, but it DOES honor these two logits processors
+        // (verified present in the 3.8.1 bundle):
+        //  • repetition_penalty downweights already-emitted tokens so it stops repeating;
+        //  • no_repeat_ngram_size 3 forbids any 3-gram from recurring — this breaks the
+        //    pathological loop while still allowing the REAL coda ("na-na-na-na, hey Jude"
+        //    repeats fine because "hey Jude" changes the n-gram each phrase).
+        repetition_penalty: 1.2,
+        no_repeat_ngram_size: 3,
       };
 
       // no_speech_prob — Whisper's REAL "is anyone speaking?" signal, the same one the
