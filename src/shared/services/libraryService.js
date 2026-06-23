@@ -179,29 +179,42 @@ export async function syncLibrary(mainApp, progressCallback) {
       currentFilesMap.set(item.path, item);
     }
 
-    // Step 3: Check cached files to see which ones are still valid
+    // Step 3: Check cached files to see which ones are still valid. A file is only
+    // "still valid" (reuse cached metadata) if it exists AND is unchanged on disk;
+    // a RE-CREATED file (same path, newer mtime) is treated as new so its updated
+    // metadata/lyrics get re-parsed. Without this, overwriting a song keeps the
+    // stale cached lyrics and the UI never reflects the new ones.
     const stillValid = [];
     const removedPaths = [];
+    let changed = 0;
 
     for (const cachedFile of cachedFiles) {
       const filePath = cachedFile.file || cachedFile.path;
       const fsItem = currentFilesMap.get(filePath);
 
       if (fsItem) {
-        // File still exists in filesystem with correct pairing
-        stillValid.push(cachedFile);
-        currentFilesMap.delete(filePath); // Mark as processed
+        const fsMtime = fsItem.mtimeMs || 0;
+        const cachedMtime = cachedFile.mtimeMs || 0;
+        // Re-parse if the file changed on disk (newer mtime). If we have no mtime
+        // info on either side, fall back to the old behaviour (assume unchanged).
+        if (fsMtime && cachedMtime && fsMtime > cachedMtime) {
+          changed++;
+          // leave fsItem in currentFilesMap → it gets re-parsed as a "new" file
+        } else {
+          stillValid.push(cachedFile);
+          currentFilesMap.delete(filePath); // unchanged → reuse cached metadata
+        }
       } else {
         // File is gone or invalid
         removedPaths.push(filePath);
       }
     }
 
-    // Step 4: Remaining items in currentFilesMap are NEW files that need metadata parsing
+    // Step 4: Remaining items in currentFilesMap are NEW or CHANGED files to parse.
     const newFiles = Array.from(currentFilesMap.values());
 
     console.log(
-      `🔄 Sync: ${newFiles.length} new, ${removedPaths.length} removed, ${totalFiles} total`
+      `🔄 Sync: ${newFiles.length - changed} new, ${changed} changed, ${removedPaths.length} removed, ${totalFiles} total`
     );
 
     // Start with files that are still valid (already have metadata)
@@ -219,8 +232,12 @@ export async function syncLibrary(mainApp, progressCallback) {
       }
     }
 
-    // Update cache
-    mainApp.cachedLibrary = updatedFiles;
+    // Update cache AND notify clients. updateLibraryCache refreshes the webServer
+    // cache + Fuse index and emits 'library-refreshed' over socket.io, which is
+    // what makes the web-admin LibraryPanel reload automatically. The bare
+    // `mainApp.cachedLibrary = ...` assignment did neither, so after a creator save
+    // the song list only updated on a manual Sync. Route through it.
+    await updateLibraryCache(mainApp, updatedFiles);
 
     return {
       success: true,

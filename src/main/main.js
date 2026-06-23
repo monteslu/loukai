@@ -1560,7 +1560,17 @@ class KaiPlayerApp {
           }
           // M4A/MP4 files
           else if (lowerName.endsWith('.m4a') || lowerName.endsWith('.mp4')) {
-            fileInfos.push({ path: fullPath, type: 'm4a' });
+            // Capture mtime so sync can detect a RE-CREATED file (same path,
+            // new contents) and re-parse it — otherwise overwriting a song keeps
+            // the stale cached metadata/lyrics.
+            let mtimeMs = 0;
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              mtimeMs = (await fsPromises.stat(fullPath)).mtimeMs;
+            } catch {
+              /* ignore */
+            }
+            fileInfos.push({ path: fullPath, type: 'm4a', mtimeMs });
           }
         }
       }
@@ -1637,6 +1647,9 @@ class KaiPlayerApp {
               stems: metadata.stems,
               stemCount: metadata.stemCount,
               tags: metadata.tags,
+              // Stamp mtime so a later sync can detect a re-created (overwritten)
+              // file and re-parse it instead of reusing this cached entry.
+              mtimeMs: fileInfo.mtimeMs || 0,
             });
           }
         }
@@ -1905,6 +1918,14 @@ class KaiPlayerApp {
             // eslint-disable-next-line no-await-in-loop
             const metadata = await self.extractM4AMetadata(fullPath);
             if (metadata && metadata.hasKaraoke) {
+              // mtime so a later sync can detect a re-created (overwritten) file.
+              let mtimeMs = 0;
+              try {
+                // eslint-disable-next-line no-await-in-loop
+                mtimeMs = (await fsPromises.stat(fullPath)).mtimeMs;
+              } catch {
+                /* ignore */
+              }
               files.push({
                 name: fullPath,
                 path: fullPath,
@@ -1919,6 +1940,7 @@ class KaiPlayerApp {
                 stems: metadata.stems,
                 stemCount: metadata.stemCount,
                 tags: metadata.tags,
+                mtimeMs,
               });
             }
             processedCount++;
