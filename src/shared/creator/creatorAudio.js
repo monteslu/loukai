@@ -73,9 +73,64 @@ export function encodeWav(left, right, sampleRate = 44100) {
 // pauses between words, or a max line length — each line's start/end is taken from its
 // first/last word so line timing is accurate. `duration` (audio length) clamps the
 // final line; `maxLineDur` caps any single line's displayed length.
+/**
+ * Cull "thank you" / "thanks for watching" hallucinations — Whisper's single most
+ * common ghost (trained on endless video outros), clustering over the dead
+ * intro/outro instrumental. The discriminator is position, NOT a phrase blacklist
+ * or a fixed time cutoff: a thanks word is a ghost only when it falls OUTSIDE the
+ * lyric body (the span of the first..last NON-thanks word). So a song that sings
+ * "thank you" within its body (e.g. Alanis "Thank U") keeps every one, while
+ * Sweet Emotion's intro/outro "thank you"s are removed.
+ *
+ * @param {Array} words - [{text, timestamp:[s,e]} | {text, start, end}]
+ * @returns {{ words: Array, removed: string[] }}
+ */
+export function cullOutroThanks(words) {
+  const startOf = (w) => (w.timestamp ? w.timestamp[0] : w.start) ?? null;
+  const THANKS = /^(thank|thanks|thank[- ]?you|you|for|watching|so|much)[.,!?]*$/i;
+  const STRONG = /^(thank|thanks|watching)[.,!?]*$/i; // a "strong" thanks token
+  const isThanks = (w) => THANKS.test((w.text || '').trim());
+
+  let bodyStart = Infinity;
+  let bodyEnd = -Infinity;
+  for (const w of words) {
+    if (isThanks(w)) continue;
+    const s = startOf(w);
+    if (s == null) continue;
+    if (s < bodyStart) bodyStart = s;
+    if (s > bodyEnd) bodyEnd = s;
+  }
+  // No non-thanks words at all → can't tell ghost from lyric; keep everything.
+  if (bodyEnd < bodyStart) return { words, removed: [] };
+
+  const outside = (s) => s != null && (s < bodyStart || s > bodyEnd);
+  const removed = [];
+  // Pass 1: remove strong thanks tokens stranded outside the body.
+  let kept = words.filter((w) => {
+    const s = startOf(w);
+    if (STRONG.test((w.text || '').trim()) && outside(s)) {
+      removed.push(`${(w.text || '').trim()}@${s.toFixed(0)}s`);
+      return false;
+    }
+    return true;
+  });
+  // Pass 2: the weak companions ("you"/"for"/...) also stranded outside go too.
+  if (removed.length) {
+    kept = kept.filter((w) => {
+      const s = startOf(w);
+      if (isThanks(w) && outside(s)) {
+        removed.push(`${(w.text || '').trim()}@${s.toFixed(0)}s`);
+        return false;
+      }
+      return true;
+    });
+  }
+  return { words: kept, removed };
+}
+
 export function groupWordsIntoLines(
   words,
-  { maxGap = 1.0, maxWords = 10, maxDur = 8, duration = Infinity, maxLineDur = 10 } = {}
+  { maxGap = 1.5, maxWords = 12, maxDur = 9, duration = Infinity, maxLineDur = 10 } = {}
 ) {
   const lines = [];
   const dropped = []; // lines removed by grouping (so the caller can report them)
@@ -83,6 +138,9 @@ export function groupWordsIntoLines(
   // A "word" with no letters/digits (e.g. ".." or "♪") is punctuation/noise, not a
   // lyric — Whisper emits these as hallucinations over fades/instrumental. Drop them.
   const hasContent = (s) => /[\p{L}\p{N}]/u.test(s);
+  // Normalized word key for collapsing a stuck-decoder run (e.g. "Oh." x31): strip
+  // punctuation + case so "Oh." and "Oh" compare equal.
+  const wordKey = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
   const push = (c) => {
     const text = c.text.trim();
     if (!hasContent(text)) {
@@ -94,17 +152,41 @@ export function groupWordsIntoLines(
     if (end <= c.start) end = c.start + 0.5;
     lines.push({ text, start: c.start, end });
   };
+  // Collapse a stuck-decoder run first: ≥4 consecutive identical words (e.g.
+  // "Oh." "Oh." ... x31 from a decoder collapse) become a single word spanning
+  // the run. Real lyrics don't repeat the SAME word 4+ times back-to-back with no
+  // other word between; loops do. This kills the worst hallucination before grouping.
+  const collapsed = [];
   for (const w of words) {
     const text = (w.text || '').trim();
     if (!text) continue;
+    const prev = collapsed[collapsed.length - 1];
+    if (prev && wordKey(prev.text) && wordKey(prev.text) === wordKey(text)) {
+      prev.run = (prev.run || 1) + 1;
+      const [, e] = w.timestamp || [w.start, w.end];
+      if (e != null) prev.end = e; // extend the run's end
+      continue;
+    }
     const [start, end] = w.timestamp || [w.start, w.end];
+    collapsed.push({ text, start, end, run: 1 });
+  }
+  for (const w of collapsed) {
+    // A long identical-word run is a loop artifact, not a lyric — drop it entirely.
+    if ((w.run || 1) >= 4) {
+      dropped.push({ text: `${w.text} x${w.run}`, start: w.start, reason: 'identical-run loop' });
+      continue;
+    }
+    const { text, start, end } = w;
     if (start == null) continue;
     if (!cur) {
       cur = { text, start, end, n: 1 };
     } else {
       const gap = start - cur.end;
+      // Only treat a sentence-ending period as a line break once the line is
+      // substantial. Whisper sprinkles spurious mid-phrase periods ("Sweet motion."
+      // "wears.") that would otherwise fracture a clean line into fragments.
+      const endsSentence = /[.!?]$/.test(cur.text) && cur.n >= 4;
       const tooLong = cur.n >= maxWords || end - cur.start > maxDur;
-      const endsSentence = /[.!?]$/.test(cur.text);
       if (gap > maxGap || tooLong || endsSentence) {
         push(cur);
         cur = { text, start, end, n: 1 };

@@ -7,6 +7,7 @@ import {
   DEMUCS_MODELS,
   encodeWav,
   groupWordsIntoLines,
+  cullOutroThanks,
 } from '../../../shared/creator/creatorAudio.js';
 import { encodeWavToAac } from '../../../shared/creator/aacEncoder.js';
 import { STYLES, Spinner, ErrorDisplay, SongTitle, StemProgressBars } from './creatorUi.jsx';
@@ -1145,6 +1146,19 @@ export default function WebGpuCreatorPanel() {
             `dropped ${stranded.length} stranded word(s) (isolated >${isoGap}s from neighbors → fade ghost):`
           );
           for (const c of stranded) log(`    ✂ "${c.text}" @ ${c.t}s`);
+        }
+      }
+      // "Thank you" / "thanks for watching" cull — Whisper's most common ghost,
+      // clustering over the dead intro/outro. cullOutroThanks removes only the ones
+      // OUTSIDE the lyric body, so songs that sing "thank you" within the body
+      // (Alanis "Thank U") keep every one. (See creatorAudio.js for the rationale.)
+      {
+        const r = cullOutroThanks(words);
+        if (r.removed.length) {
+          words = r.words;
+          log(
+            `dropped ${r.removed.length} "thank you" hallucination word(s) outside lyric body: ${r.removed.join(' ')}`
+          );
         }
       }
       log(`after VAD: ${words.length} words`);
