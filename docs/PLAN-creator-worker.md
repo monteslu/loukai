@@ -129,10 +129,13 @@ same conductor.
 
 ## Honest caveats
 
-- **Pegs the host CPU/GPU.** Separation is ~60s of heavy GPU. It WILL affect a
-  currently-playing song. Mitigate: a "creating may affect playback" notice, and/
-  or queue creation for between songs. Fine for the "setting up before the party"
-  case; rough for hot-swapping mid-session.
+- **Pegs the host CPU/GPU.** Separation is ~60s of heavy GPU (the Steam Deck has
+  the same GPU as the dev box — it WILL run fine, but WILL briefly stutter a song
+  playing through the host at the same time). DECISION: **do NOT queue/defer.** Run
+  creation immediately on request; just (a) show a "creating may affect playback"
+  notice and (b) surface creation progress prominently so a hiccup is explained.
+  Deferring until between songs would be worse UX than a short stutter when someone
+  wants the song now. Accept the tradeoff.
 - **Linux/Steam Deck WebGPU** already handled: main.js sets `enable-unsafe-webgpu`
   + `enable-features=Vulkan` + `ozone-platform=x11` (electron#41763). A hidden/
   background renderer inherits these process-wide flags.
