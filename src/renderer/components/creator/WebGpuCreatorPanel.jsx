@@ -70,6 +70,11 @@ export default function WebGpuCreatorPanel() {
   const [songTags, setSongTags] = useState({});
   const [referenceLyrics, setReferenceLyrics] = useState('');
   const [lookingUp, setLookingUp] = useState(false);
+  // Outcome of the last reference-lyrics lookup, surfaced in the UI so a failed /
+  // empty lookup is obvious (lyrics are optional — this never blocks Create, but
+  // the user should SEE that none were found before they create without them).
+  // 'idle' | 'found' | 'none' | 'error'
+  const [lyricStatus, setLyricStatus] = useState('idle');
   const [llmStats, setLlmStats] = useState(null);
   // LLM settings (powers correction). Loaded from backend on mount; saved/tested
   // via the same dual-path (IPC in Electron, REST in web admin).
@@ -289,13 +294,16 @@ export default function WebGpuCreatorPanel() {
       const plain = r?.plainLyrics || r?.lyrics?.plainLyrics || '';
       if (plain) {
         setReferenceLyrics(plain);
+        setLyricStatus('found');
         log(
           `found lyrics (${plain.split('\n').length} lines) — will guide transcription + correction`
         );
       } else {
+        setLyricStatus('none');
         log('no lyrics found for that title/artist');
       }
     } catch (e) {
+      setLyricStatus('error');
       log(`lyric lookup failed: ${e.message}`);
     } finally {
       setLookingUp(false);
@@ -396,6 +404,7 @@ export default function WebGpuCreatorPanel() {
     setSongAlbum('');
     setSongTags({});
     setReferenceLyrics('');
+    setLyricStatus('idle');
     setLogLines([]);
     setError(null);
     setStatus('idle');
@@ -1091,11 +1100,20 @@ export default function WebGpuCreatorPanel() {
           );
           words = kept;
         }
+        log(`[cull] after collision: ${words.length} words`);
       }
       {
         const before = words.length;
         const culled = [];
-        words = words.filter((w) => {
+        const startOf = (w) => (w.timestamp ? w.timestamp[0] : w.start) ?? null;
+        const endOf = (w) => (w.timestamp ? w.timestamp[1] : w.end) ?? startOf(w);
+        // A word is "mid-phrase" if it has a close neighbor (<=1.2s) on BOTH sides —
+        // those are inside a sung line and must never be culled as instrumental, even
+        // if the (htdemucs) vocals stem is momentarily weak on a trailing word like
+        // "cares"/"gent"/"wears". Only words isolated on at least one side are eligible
+        // for the instrumental-gap cull (true intro/outro/solo hallucinations).
+        const NEIGHBOR = 1.2;
+        words = words.filter((w, i, arr) => {
           const text = (w.text || '').trim();
           const ts = w.timestamp || [w.start, w.end];
           const mid = ts[0] != null && ts[1] != null ? (ts[0] + ts[1]) / 2 : ts[0];
@@ -1104,7 +1122,11 @@ export default function WebGpuCreatorPanel() {
             return false;
           }
           if (mid == null) return true;
-          if (inSilentGap(mid)) {
+          const s = startOf(w);
+          const gapBefore = i > 0 ? s - endOf(arr[i - 1]) : Infinity;
+          const gapAfter = i < arr.length - 1 ? startOf(arr[i + 1]) - endOf(w) : Infinity;
+          const midPhrase = gapBefore <= NEIGHBOR && gapAfter <= NEIGHBOR;
+          if (!midPhrase && inSilentGap(mid)) {
             culled.push({ text, t: Number(mid.toFixed(2)), why: 'instrumental gap' });
             return false;
           }
@@ -1116,6 +1138,7 @@ export default function WebGpuCreatorPanel() {
         } else if (before) {
           log('no hallucinations to trim');
         }
+        log(`[cull] after annotation/inSilentGap: ${words.length} words`);
       }
       // Isolated-word-after-big-gap cull — the outro fade tell. A word stranded by a
       // large gap (>= isoGap) on BOTH sides is almost always a stuck-decoder ghost over
@@ -1147,6 +1170,7 @@ export default function WebGpuCreatorPanel() {
           );
           for (const c of stranded) log(`    ✂ "${c.text}" @ ${c.t}s`);
         }
+        log(`[cull] after isolated-word: ${words.length} words`);
       }
       // "Thank you" / "thanks for watching" cull — Whisper's most common ghost,
       // clustering over the dead intro/outro. cullOutroThanks removes only the ones
@@ -1643,10 +1667,31 @@ export default function WebGpuCreatorPanel() {
                 </label>
               </div>
               <label className={STYLES.label}>
-                Reference lyrics (optional — improves accuracy + enables LLM correction)
+                <span className="flex items-center gap-2 flex-wrap">
+                  Reference lyrics (optional — improves accuracy + enables LLM correction)
+                  {lyricStatus === 'found' && (
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                      ✓ lyrics found
+                    </span>
+                  )}
+                  {lyricStatus === 'none' && (
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                      ⚠ no lyrics found — will transcribe without a reference
+                    </span>
+                  )}
+                  {lyricStatus === 'error' && (
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                      ⚠ lyric lookup failed — will transcribe without a reference
+                    </span>
+                  )}
+                </span>
                 <textarea
                   value={referenceLyrics}
-                  onChange={(e) => setReferenceLyrics(e.target.value)}
+                  onChange={(e) => {
+                    setReferenceLyrics(e.target.value);
+                    // Typed-in lyrics count as "have a reference"; clear a stale warning.
+                    setLyricStatus(e.target.value.trim() ? 'found' : 'idle');
+                  }}
                   disabled={busy}
                   rows={3}
                   placeholder="Paste known lyrics, or use Find lyrics →"
