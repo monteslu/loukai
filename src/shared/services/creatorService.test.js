@@ -18,7 +18,7 @@ vi.mock('../../main/creator/lrclibService.js', () => ({
   prepareWhisperContext: vi.fn(),
 }));
 
-vi.mock('../../main/creator/ffmpegService.js', () => ({
+vi.mock('../../main/creator/audioInfo.js', () => ({
   getAudioInfo: vi.fn(),
   isVideoFile: vi.fn(),
 }));
@@ -37,9 +37,9 @@ describe('creatorService', () => {
     searchLyrics = lrclibService.searchLyrics;
     prepareWhisperContext = lrclibService.prepareWhisperContext;
 
-    const ffmpegService = await import('../../main/creator/ffmpegService.js');
-    getAudioInfo = ffmpegService.getAudioInfo;
-    isVideoFile = ffmpegService.isVideoFile;
+    const audioInfo = await import('../../main/creator/audioInfo.js');
+    getAudioInfo = audioInfo.getAudioInfo;
+    isVideoFile = audioInfo.isVideoFile;
 
     creatorService = await import('./creatorService.js');
   });

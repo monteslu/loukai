@@ -1921,9 +1921,10 @@ class WebServer {
     });
 
     // ---- WebGPU Creator: save in-browser result as .stem.mp4 ----
-    // The WebGPU tab separates + transcribes in the browser (no Python). It POSTs
-    // the 4 stem WAVs + lyrics JSON here; the backend muxes them into a NI-Stems
-    // .stem.mp4 (ffmpeg + kara/stem atoms via buildStemM4a) in the songs library.
+    // The WebGPU tab separates + transcribes AND encodes stems to AAC in the
+    // browser (ffmpeg-wasm, no Python, no native ffmpeg). It POSTs the 5 AAC .m4a
+    // stems + lyrics JSON here; the backend muxes them into a NI-Stems .stem.mp4
+    // via stem-mp4's pure-JS StemMp4Writer (kara/stem atoms) in the songs library.
     const wsd = path.join(getCacheDir(), 'webgpu-creator');
     try {
       fs.mkdirSync(wsd, { recursive: true });

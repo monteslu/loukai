@@ -16,171 +16,13 @@ import { log } from '../logger.js';
  * Vocal pitch tracking for auto-tune/scoring is done at runtime.
  */
 
-import { spawn } from 'child_process';
-import { getFFmpegPath } from './ffmpegService.js';
 import { Atoms as M4AAtoms } from 'stem-mp4';
 
-/**
- * Build a .stem.mp4 file from individual stem files
- *
- * @param {Object} options - Build options
- * @param {string} options.outputPath - Output .stem.mp4 path
- * @param {Object} options.stems - Map of stem name to path
- * @param {Object} options.metadata - Song metadata (title, artist, duration)
- * @param {Object} options.lyrics - Whisper transcription result with word timestamps
- * @param {Object} options.pitch - CREPE pitch detection result
- * @param {string[]} options.tags - Tags array for filtering (e.g., ['ai_corrected'])
- * @returns {Promise<void>}
- */
-export async function buildStemM4a(options) {
-  const { outputPath, stems, metadata, lyrics, pitch, llmCorrections, tags } = options;
-
-  // For now, use ffmpeg to mux stems into a single file
-  // The stem.m4a format requires custom atom injection
-  // We'll use the first stem as the main track and embed others as metadata
-
-  const ffmpegPath = getFFmpegPath();
-
-  // Build ffmpeg command to combine stems
-  // Using -map to include multiple audio streams
-  const args = [];
-
-  // NI Stems track order: master, drums, bass, other, vocals
-  const niStemOrder = ['master', 'drums', 'bass', 'other', 'vocals'];
-  const stemNames = niStemOrder.filter((name) => stems[name]);
-
-  // Add input files in correct order
-  for (const name of stemNames) {
-    args.push('-i', stems[name]);
-  }
-
-  // Map all inputs to output
-  for (let i = 0; i < stemNames.length; i++) {
-    args.push('-map', `${i}:a`);
-  }
-
-  // Set metadata - copy ALL original ID3 tags
-  const id3Tags = metadata.tags || {};
-
-  // Standard ID3 tags to preserve
-  const tagMapping = {
-    title: metadata.title || id3Tags.title,
-    artist: metadata.artist || id3Tags.artist,
-    album: id3Tags.album,
-    album_artist: id3Tags.album_artist || id3Tags.albumartist,
-    composer: id3Tags.composer,
-    genre: id3Tags.genre,
-    date: id3Tags.date || id3Tags.year,
-    track: id3Tags.track || id3Tags.tracknumber,
-    disc: id3Tags.disc || id3Tags.discnumber,
-    comment: id3Tags.comment,
-    copyright: id3Tags.copyright,
-    publisher: id3Tags.publisher,
-    encoded_by: id3Tags.encoded_by,
-    language: id3Tags.language,
-    lyrics: id3Tags.lyrics || id3Tags.unsyncedlyrics,
-    bpm: id3Tags.bpm || id3Tags.tbpm,
-    initialkey: pitch?.detected_key?.key || id3Tags.initialkey || id3Tags.key,
-    isrc: id3Tags.isrc,
-    barcode: id3Tags.barcode,
-    catalog: id3Tags.catalog,
-    compilation: id3Tags.compilation,
-    grouping: id3Tags.grouping,
-  };
-
-  // Add all non-empty tags
-  for (const [key, value] of Object.entries(tagMapping)) {
-    if (value) {
-      args.push('-metadata', `${key}=${value}`);
-    }
-  }
-
-  // Also pass through any additional ID3 tags we might have missed
-  for (const [key, value] of Object.entries(id3Tags)) {
-    const lowerKey = key.toLowerCase();
-    // Skip if already handled above
-    if (!tagMapping[lowerKey] && value) {
-      args.push('-metadata', `${key}=${value}`);
-    }
-  }
-
-  args.push('-metadata', 'encoder=Loukai Creator');
-
-  // Log key if detected
-  if (pitch?.detected_key?.key) {
-    log(`🎵 Writing key to metadata: ${pitch.detected_key.key}`);
-  }
-
-  // Copy codecs (stems are already AAC)
-  args.push('-c', 'copy');
-
-  // Add stream labels for stems
-  for (let i = 0; i < stemNames.length; i++) {
-    const stemName = stemNames[i];
-    // Use metadata to label streams
-    args.push(`-metadata:s:a:${i}`, `title=${stemName}`);
-  }
-
-  // Per NI Stems spec: Track 1 (master) should be "enabled"/default,
-  // Tracks 2-5 (stems) should be "disabled" so normal players only play master
-  args.push('-disposition:a:0', 'default'); // Master track is default
-  for (let i = 1; i < stemNames.length; i++) {
-    args.push(`-disposition:a:${i}`, '0'); // Clear disposition flags for stem tracks
-  }
-
-  // Output format
-  args.push('-f', 'mp4');
-  args.push('-y'); // Overwrite output
-  args.push(outputPath);
-
-  // Run ffmpeg
-  await new Promise((resolve, reject) => {
-    const proc = spawn(ffmpegPath, args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    let stderr = '';
-    proc.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`FFmpeg failed (code ${code}): ${stderr.slice(-500)}`));
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(new Error(`Failed to run FFmpeg: ${err.message}`));
-    });
-  });
-
-  // Add NI Stems metadata so Mixxx/Traktor recognize this as a stem file
-  // Per NI Stems spec, stems array should have exactly 4 entries (NOT including master)
-  // Track order: drums, bass, other, vocals (corresponding to tracks 2-5)
-  const stemPartsOnly = stemNames.filter((name) => name !== 'master');
-  log(
-    `🎛️ Writing NI Stems metadata for ${stemPartsOnly.length} stem parts: ${stemPartsOnly.join(', ')}`
-  );
-  await M4AAtoms.addNiStemsMetadata(outputPath, stemPartsOnly);
-
-  // Verify stem atom was written (debug)
-  const { stat } = await import('fs/promises');
-  const afterStemSize = (await stat(outputPath)).size;
-  log(`📊 File size after stem atom: ${afterStemSize} bytes`);
-
-  // Now inject kara atom for karaoke data using stem-mp4 library
-  await injectKaraokeAtoms(outputPath, {
-    lyrics,
-    pitch,
-    metadata,
-    stems: stemNames,
-    llmCorrections,
-    tags,
-  });
-}
+// NOTE: the old native-ffmpeg buildStemM4a (WAV/AAC -> multi-track mux via the
+// ffmpeg binary) was removed. The WebGPU creator encodes stems to AAC in the
+// renderer (ffmpeg-wasm) and stem-mp4's pure-JS StemMp4Writer does the mux; see
+// creatorService.saveWebGpuStems. This module now only injects atoms + repairs
+// NI-Stems metadata, all via the pure-JS stem-mp4 library (no ffmpeg).
 
 /**
  * Inject karaoke atoms into an MP4 file using stem-mp4 library
@@ -485,7 +327,6 @@ export async function repairStemFiles(filePaths, options = {}) {
 }
 
 export default {
-  buildStemM4a,
   injectLyricsIntoStemFile,
   repairStemFile,
   repairStemFiles,

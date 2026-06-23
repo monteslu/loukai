@@ -12,7 +12,7 @@
 import { getCacheDir } from '../../main/creator/systemChecker.js';
 import { searchLyrics, prepareWhisperContext } from '../../main/creator/lrclibService.js';
 import * as llmService from '../../main/creator/llmService.js';
-import { getAudioInfo, isVideoFile } from '../../main/creator/ffmpegService.js';
+import { getAudioInfo, isVideoFile } from '../../main/creator/audioInfo.js';
 import * as creatorJob from '../../main/creator/creatorJob.js';
 import { repairStemFile, repairStemFiles } from '../../main/creator/stemBuilder.js';
 import { basename, join } from 'path';
