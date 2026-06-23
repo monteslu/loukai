@@ -1,5 +1,30 @@
 # Plan: unified host-side creation worker
 
+## The front door: "drop any MP4" ingest classifier (player AND web admin)
+
+Before the worker, there's a unified entry point both UIs share. Hand in ANY
+`.mp4`/`.m4a` (created here, downloaded, from a friend) and one classifier decides
+what it is and routes it:
+
+1. **Not a stems file** (single audio track, no NI-Stems) → it's a plain song →
+   offer to CREATE a karaoke file from it (→ worker), or reject.
+2. **Stems + karaoke** (multi-track + `kara` atom with lines) → complete karaoke
+   file → IMPORT to library (optionally offer lyric correction).
+3. **Stems, no lyrics** → karaoke file missing lyrics → offer ADD LYRICS
+   (transcribe via the worker, or paste/lookup).
+4. **Has lyrics, want better** → offer CORRECTIONS (LRCLIB lookup + LLM).
+
+**The classifier already exists**: `creatorService.getFileInfo` returns
+`hasStems` / `hasLyrics` / `stemNames` / `audioStreamCount` (+ auto-LRCLIB lookup).
+But it takes a server-side PATH. For a dropped/uploaded file the bytes aren't on
+the server yet, so the unified flow needs a **browser-side classifier** (pure JS:
+stem-mp4 `Extractor.getTrackCount` + `Atoms.readKaraAtom` on the dropped bytes —
+both already run in-browser) so BOTH UIs classify locally with no round-trip, then
+only hit the server to ACT (import / correct / transcribe). Same classifier + same
+ingest UI component in player and admin. The `.stem.mp4` import built this session
+(`/admin/library/import-stem` + `CreatorImportPanel`) is the "case 2" action; this
+generalizes the front door over all four cases.
+
 ## The core idea
 
 Extract the WebGPU creation compute (Demucs separation + Whisper transcription +
