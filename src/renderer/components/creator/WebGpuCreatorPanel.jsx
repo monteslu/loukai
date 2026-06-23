@@ -364,8 +364,13 @@ export default function WebGpuCreatorPanel() {
     setSongArtist(artist);
     setSongAlbum(album);
     // Auto lyric lookup (don't auto-lookup for a .stem.mp4 re-transcribe unless empty).
-    if (title) await lookupLyrics(title, artist);
-    setFileLoading(false);
+    // finally{} guarantees the loading flag clears even if the lookup throws, so the
+    // Create button never gets stuck disabled.
+    try {
+      if (title) await lookupLyrics(title, artist);
+    } finally {
+      setFileLoading(false);
+    }
   }
 
   // Reset for the next song (after a completed create).
@@ -1793,10 +1798,21 @@ export default function WebGpuCreatorPanel() {
           </div>
         )}
 
-        {/* Create button + status — always visible below the tabs */}
+        {/* Create button + status — always visible below the tabs. Disabled while a file
+            is loading (reading tags) or a lyric lookup is in flight; lit once that
+            finishes, whether or not lyrics were found (lyrics are optional — Whisper
+            transcribes from the audio regardless). */}
         <div className="flex flex-col gap-2">
-          <button onClick={run} disabled={busy || !fileName} className={STYLES.btnPrimary}>
-            {busy ? 'Working…' : 'Create Karaoke ⚡'}
+          <button
+            onClick={run}
+            disabled={busy || !fileName || fileLoading || lookingUp}
+            className={STYLES.btnPrimary}
+          >
+            {busy
+              ? 'Working…'
+              : fileLoading || lookingUp
+                ? 'Looking up lyrics…'
+                : 'Create Karaoke ⚡'}
           </button>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             First run downloads htdemucs (~172 MB) + the chosen Whisper model via loukai (cached
