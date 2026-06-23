@@ -467,7 +467,7 @@ export function App() {
           }`}
           onClick={() => setCurrentTab('create')}
         >
-          🎼 Create
+          ⚡ Create
         </button>
       </div>
 
