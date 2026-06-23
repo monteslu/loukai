@@ -66,12 +66,14 @@ export default function CreatorImportPanel() {
       <div className={card}>
         <h3 className="text-lg font-semibold mb-1">Create karaoke files</h3>
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          For best results, create karaoke files in the <strong>Loukai desktop app</strong> — it
-          runs the GPU-accelerated creator locally for the fastest, most reliable results.
+          Karaoke creation is GPU-heavy, so it can&apos;t run here in your browser. For best
+          results, create files in the <strong>Loukai desktop app</strong> — the work happens on the
+          machine running Loukai, using its GPU.
         </p>
         <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
-          No desktop app? Use the free online creator (it runs on your machine&apos;s GPU in the
-          browser), then import the finished file below.
+          On a device without the app? Use the free online creator — it runs on{' '}
+          <strong>that device&apos;s</strong> GPU in the browser. Then import the finished file
+          below to add it to this library.
         </p>
         <a
           href={ONLINE_CREATOR_URL}
