@@ -545,11 +545,15 @@ See [LICENSE](./LICENSE) for full text.
 
 ## Acknowledgments
 
-- **Butterchurn** - Audio visualization engine
-- **CDGraphics** - CDG format support
+- **Butterchurn** & **Butterchurn Presets** (MIT) - Audio visualization engine and MilkDrop preset pack
+- **CDGraphics** (ISC) - CDG format support
+- **CREPE** / **torchcrepe** (MIT) - Pitch detection model
+- **Material Icons** (Apache-2.0) - UI icon font
 - **React** - UI framework
 - **Electron** - Desktop framework
 - **Vite** - Build tool
+
+See [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md) for bundled-asset attributions and license texts.
 
 ---
 

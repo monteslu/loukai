@@ -21,8 +21,9 @@ let _worker = null;
 
 function getPeer() {
   if (_peer) return _peer;
-  // Vite bundles aacWorker.js into a module-worker chunk served under /app/.
-  _worker = new Worker(new URL('../../renderer/components/creator/aacWorker.js', import.meta.url), {
+  // Vite bundles aacWorker.js into a module-worker chunk (emitted by both the
+  // player and web-admin builds since the panel is shared).
+  _worker = new Worker(new URL('../components/aacWorker.js', import.meta.url), {
     type: 'module',
   });
   // Generous timeout: first call also fetches + instantiates the 32MB core.

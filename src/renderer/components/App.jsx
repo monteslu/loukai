@@ -18,7 +18,7 @@ import { TabNavigation } from './TabNavigation.jsx';
 import { ServerTab } from './ServerTab.jsx';
 import { VisualizationSettings } from '../../shared/components/VisualizationSettings.jsx';
 import { toggleCanvasFullscreen } from '../hooks/useKeyboardShortcuts.js';
-import WebGpuCreatorPanel from './creator/WebGpuCreatorPanel.jsx';
+import WebGpuCreatorPanel from '../../shared/components/WebGpuCreatorPanel.jsx';
 
 export function App({ bridge }) {
   const [requests, setRequests] = useState([]);

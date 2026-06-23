@@ -6,6 +6,7 @@ import { QuickSearch } from '../shared/components/QuickSearch.jsx';
 import { MixerPanel } from '../shared/components/MixerPanel.jsx';
 import { EffectsPanel } from '../shared/components/EffectsPanel.jsx';
 import { LibraryPanel } from '../shared/components/LibraryPanel.jsx';
+import WebGpuCreatorPanel from '../shared/components/WebGpuCreatorPanel.jsx';
 import { RequestsList } from '../shared/components/RequestsList.jsx';
 import { SongEditor } from '../shared/components/SongEditor.jsx';
 import { SongInfoBar } from '../shared/components/SongInfoBar.jsx';
@@ -458,6 +459,16 @@ export function App() {
         >
           ✏️ Edit
         </button>
+        <button
+          className={`relative px-6 py-3 border-b-2 transition-colors font-medium flex items-center gap-2 ${
+            currentTab === 'create'
+              ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400 bg-gray-50 dark:bg-gray-900'
+              : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
+          }`}
+          onClick={() => setCurrentTab('create')}
+        >
+          🎛️ Create
+        </button>
       </div>
 
       <main className="flex-1 min-h-0 overflow-hidden flex flex-col">
@@ -572,6 +583,12 @@ export function App() {
           className={`${currentTab === 'editor' ? 'flex' : 'hidden'} flex-col h-full gap-4 p-4 overflow-auto`}
         >
           <SongEditor bridge={bridge} />
+        </div>
+
+        <div
+          className={`${currentTab === 'create' ? 'flex' : 'hidden'} flex-col h-full gap-4 p-4 overflow-auto`}
+        >
+          <WebGpuCreatorPanel />
         </div>
       </main>
     </div>

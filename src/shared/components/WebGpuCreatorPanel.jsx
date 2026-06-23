@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as StemExtractor from 'stem-mp4/extractor';
-import { planVocalSegments, snapToVocalEnergy } from '../../../shared/creator/vocalSegmentation.js';
+import { planVocalSegments, snapToVocalEnergy } from '../creator/vocalSegmentation.js';
 import {
   assetBase,
   WHISPER_MODELS,
@@ -8,8 +8,8 @@ import {
   encodeWav,
   groupWordsIntoLines,
   cullOutroThanks,
-} from '../../../shared/creator/creatorAudio.js';
-import { encodeWavToAac } from '../../../shared/creator/aacEncoder.js';
+} from '../creator/creatorAudio.js';
+import { encodeWavToAac } from '../creator/aacEncoder.js';
 import { STYLES, Spinner, ErrorDisplay, SongTitle, StemProgressBars } from './creatorUi.jsx';
 
 /**
