@@ -1151,6 +1151,52 @@ export default function WebGpuCreatorPanel() {
           );
         }
       }
+      // Junk-line filter — implausible line TIMING is a hallucination tell, at both
+      // extremes. Real sung lines run ~1-8s at ~0.3-0.8s per word. Drop a line that is:
+      //  • a sub-second flash (< minLineDur) AND not a lone short interjection
+      //    ("Hey!"/"Yeah!" can be brief — keep a single short word), OR
+      //  • too DENSE (> maxWordsPerSec — residual loop crammed into a moment), OR
+      //  • too SPARSE (multi-word but > maxSecPerWord on average — the intro/outro
+      //    garble where a few wrong words get smeared across many seconds).
+      // Runs AFTER the non-overlap clamp so clamp-created shorties are caught too.
+      {
+        const minLineDur = 1.0;
+        const maxWordsPerSec = 8;
+        const maxSecPerWord = 3.0;
+        const junked = [];
+        lines = lines.filter((l) => {
+          const dur = (l.end ?? l.start) - l.start;
+          const nWords = (l.text || '').trim().split(/\s+/).filter(Boolean).length;
+          if (nWords === 0) {
+            junked.push({ text: l.text, t: l.start, why: 'empty' });
+            return false;
+          }
+          if (dur < minLineDur && nWords > 1) {
+            junked.push({ text: l.text, t: l.start, why: `flash ${dur.toFixed(2)}s` });
+            return false;
+          }
+          if (dur > 0) {
+            const wps = nWords / dur;
+            if (wps > maxWordsPerSec) {
+              junked.push({ text: l.text, t: l.start, why: `too dense ${wps.toFixed(1)} w/s` });
+              return false;
+            }
+            if (nWords > 1 && dur / nWords > maxSecPerWord) {
+              junked.push({
+                text: l.text,
+                t: l.start,
+                why: `smeared ${(dur / nWords).toFixed(1)} s/word`,
+              });
+              return false;
+            }
+          }
+          return true;
+        });
+        if (junked.length) {
+          log(`dropped ${junked.length} junk line(s) (implausible timing):`);
+          for (const j of junked) log(`    ✂ "${j.text}" @ ${j.t.toFixed(1)}s (${j.why})`);
+        }
+      }
       const groupedWordCount = lines.reduce(
         (n, l) => n + l.text.split(/\s+/).filter(Boolean).length,
         0
@@ -1838,7 +1884,10 @@ export default function WebGpuCreatorPanel() {
               {lyrics.map((l, i) => (
                 <div key={i} className="text-gray-700 dark:text-gray-300">
                   {l.start != null && (
-                    <span className="text-gray-400 mr-2">[{l.start.toFixed(2)}]</span>
+                    <span className="text-gray-400 mr-2">
+                      [{l.start.toFixed(2)}
+                      {l.end != null ? `→${l.end.toFixed(2)}` : ''}]
+                    </span>
                   )}
                   {l.text}
                 </div>
