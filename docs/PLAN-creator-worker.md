@@ -145,7 +145,36 @@ same conductor.
 
 ## Status
 
-Plan only. Everything it builds on shipped this session (rawr worker pattern,
-shared `WebGpuCreatorPanel`, `creatorAudio` pure functions, the import endpoint).
+**SHIPPED (host-side path) — the phone now commands the host to create.** Implemented
+this session, end to end:
+
+- **Observable single job.** `creatorJob` is now driven by the save flow + host-create
+  (`creatorService.saveWebGpuStems`, the `/admin/creator/host-create` route). It
+  broadcasts `creator:job` to the player renderer (IPC) AND every web admin (socket)
+  via `creatorJob.onChange` → `main.setupStateListeners`. `getStatus()` returns the
+  descriptor for pull-on-mount. 409-when-busy on both surfaces. `useCreatorJob` +
+  `CreatorJobBanner` surface it everywhere.
+- **Compute extracted.** `WebGpuCreatorPanel.run()`'s compute moved into the
+  framework-free `shared/creator/createKaraoke.js` (separation → transcription + full
+  cull stack → grouping → CREPE). The panel is now a thin caller. The lib loader moved
+  to `shared/creator/creatorLibs.js` (shared by panel + headless).
+- **Headless host engine.** `shared/creator/hostCreate.js` + the renderer-root
+  `useHostCreateListener` run the SAME compute on IPC command, independent of the
+  Create tab being mounted.
+- **Long-job relay.** `main.runHostCreate(jobId, audioBytes, opts, onProgress)` forwards
+  the payload (fixes the `sendToRendererAndWait` arg-drop), streams progress, has an
+  idle watchdog + window-gone reject so a dead renderer can't pin the job `running`.
+- **Phone UI.** The web Create tab (`CreatorImportPanel`) offers "Create on this host"
+  when a player is present (`hostAvailable` from `/admin/creator/status`), uploads to
+  `/admin/creator/host-create`, and shows live progress via the job broadcast.
+
+Chosen approach vs. this doc's original: a **main-thread controller module**
+(`createKaraoke`) driven by IPC, NOT a Web Worker — WebGPU+transformers.js in a worker
+was unproven and the code had main-thread hacks (Node-global hiding). The worker remains
+a possible future optimization (keep heavy work off the UI thread), not a blocker.
+
+NOT YET DONE: offsite (`karaoke-creator.loukai.com`) reusing the same engine; transferable
+fast-path for the audio/stem buffers over IPC (currently structured-clone copies).
+
 Relates to `[[project_webgpu_edge_compute]]`, `[[project_karaoke_creator_offsite]]`,
 `[[project_webgpu_creator_parity]]`.
