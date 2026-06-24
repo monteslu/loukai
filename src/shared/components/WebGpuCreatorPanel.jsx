@@ -1,15 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import * as StemExtractor from 'stem-mp4/extractor';
-import { planVocalSegments, snapToVocalEnergy } from '../creator/vocalSegmentation.js';
-import {
-  assetBase,
-  WHISPER_MODELS,
-  DEMUCS_MODELS,
-  encodeWav,
-  groupWordsIntoLines,
-  cullOutroThanks,
-} from '../creator/creatorAudio.js';
+import { assetBase, WHISPER_MODELS, DEMUCS_MODELS, encodeWav } from '../creator/creatorAudio.js';
 import { encodeWavToAac } from '../creator/aacEncoder.js';
+import { createKaraoke } from '../creator/createKaraoke.js';
 import {
   STYLES,
   Spinner,
@@ -561,19 +554,6 @@ export default function WebGpuCreatorPanel() {
     };
   }
 
-  // Downmix to mono 16k for Whisper.
-  function toMono16k(left, right, sampleRate) {
-    const n = left.length;
-    const mono = new Float32Array(n);
-    for (let i = 0; i < n; i++) mono[i] = (left[i] + right[i]) * 0.5;
-    if (sampleRate === 16000) return mono;
-    const ratio = sampleRate / 16000;
-    const outLen = Math.floor(n / ratio);
-    const out = new Float32Array(outLen);
-    for (let i = 0; i < outLen; i++) out[i] = mono[Math.floor(i * ratio)] || 0;
-    return out;
-  }
-
   // `reuseStems` (from the Re-transcribe button): reuse the previous run's separated
   // stems for THIS file and skip decode + Demucs, re-running only Whisper onward.
   async function run(reuseStems = false) {
@@ -586,23 +566,19 @@ export default function WebGpuCreatorPanel() {
     setLyrics([]);
     setStemProgress({});
     setRtf(null);
-    // ⏱️ per-stage timing (directly comparable to the Python/native creator's summary)
-    const perf = { audioSec: 0, separation: 0, transcription: 0, pitch: 0 };
-    const runT0 = performance.now();
     try {
-      const { ort, demucs, ftEnsemble, pipeline, crepeMod, DemucsProcessor, tf } = await loadLibs();
-      const { STEMS, createEnsembleSessions, runEnsemble } = ftEnsemble;
+      const libs = await loadLibs();
 
       // Lyrics-only mode: an existing .stem.mp4 → re-transcribe its vocals track and
       // rewrite the lyrics atom, skipping separation entirely.
       const lyricsOnly = /\.stem\.mp4$/i.test(file.name);
 
       let audio;
-      let result;
+      let reuseInput = null;
       if (canReuse) {
         // Re-transcribe: reuse the previous run's decoded audio + separated stems.
         audio = reuseStemsRef.current.audio;
-        result = reuseStemsRef.current.result;
+        reuseInput = reuseStemsRef.current.result;
         setRtf(null);
         log(
           `re-transcribe: reusing separated stems (${audio.duration.toFixed(0)}s) — skipping separation`
@@ -610,7 +586,7 @@ export default function WebGpuCreatorPanel() {
       } else if (lyricsOnly) {
         log(`lyrics-only: extracting vocals from ${file.name} …`);
         audio = await extractVocalsFromStem(file);
-        result = { vocals: { left: audio.left, right: audio.right } };
+        reuseInput = { vocals: { left: audio.left, right: audio.right } };
         setRtf(null);
         log(`vocals extracted (${audio.duration.toFixed(0)}s) — skipping separation`);
       } else {
@@ -618,171 +594,10 @@ export default function WebGpuCreatorPanel() {
         audio = await decodeAudio(file);
       }
 
-      // --- Demucs stem separation (in-browser, WebGPU) --- (skipped when reusing stems)
-      if (!lyricsOnly && !canReuse) {
-        // The selected DEMUCS_MODELS entry's `kind` picks the runner:
-        //   'single' = one htdemucs (demucs-web) — fast (~8× realtime).
-        //   'ft'     = htdemucs_ft 4-model fine-tuned ensemble — PyTorch-grade, ~2-3×
-        //              realtime (4× the compute); fp16 with the variance prologue pinned
-        //              to CPU (forceCpuNodeNames) so fp16 doesn't NaN.
-        let modelDef = DEMUCS_MODELS.find((m) => m.id === demucsModel) || DEMUCS_MODELS[0];
-        if (modelDef.kind === 'ft' && !ftAvailable) {
-          log('htdemucs_ft (best) models not installed — using fast htdemucs');
-          modelDef = DEMUCS_MODELS.find((m) => m.kind === 'single') || DEMUCS_MODELS[0];
-        }
-        setStemProgress({});
-        const t0 = performance.now();
-        let modeLabel;
-        if (modelDef.kind === 'ft') {
-          // Try the ft ensemble; if its models can't be fetched (e.g. the HF repo
-          // isn't reachable), fall back to fast htdemucs rather than failing the run.
-          try {
-            log('loading htdemucs_ft ensemble (4 models) from loukai …');
-            const cpuNodes = await fetch('/webgpu-models/ft_cpu_nodes.json')
-              .then((r) => (r.ok ? r.json() : null))
-              .catch(() => null);
-            const sessions = await createEnsembleSessions({
-              ort,
-              modelUrl: (stem) => `/webgpu-models/htdemucs_ft_${stem}_safe16.onnx`,
-              cpuNodes,
-              onLog: (m) => log(m),
-            });
-            log(`separating on webgpu — htdemucs_ft ensemble (${STEMS.length} stems) …`);
-            const r = await runEnsemble({
-              ort,
-              sessions,
-              proc: demucs,
-              left: audio.left,
-              right: audio.right,
-              onStemProgress: (idx, frac) => setStemProgress((p) => ({ ...p, [STEMS[idx]]: frac })),
-            });
-            result = r.stems;
-            modeLabel = 'htdemucs_ft (best)';
-          } catch (e) {
-            log(`htdemucs_ft unavailable (${e.message}) — falling back to fast htdemucs`);
-            modelDef = DEMUCS_MODELS.find((m) => m.kind === 'single') || DEMUCS_MODELS[0];
-          }
-        }
-        if (modelDef.kind !== 'ft' && !result) {
-          modeLabel = 'htdemucs (fast)';
-          log('loading htdemucs (single model) from loukai …');
-          const modelBuf = await fetch('/webgpu-models/htdemucs.onnx').then((res) => {
-            if (!res.ok) throw new Error(`model fetch ${res.status}`);
-            return res.arrayBuffer();
-          });
-          const proc = new DemucsProcessor({
-            ort,
-            sessionOptions: { executionProviders: gpu === 'available' ? ['webgpu'] : ['wasm'] },
-            onProgress: ({ progress }) =>
-              setStemProgress(STEMS.reduce((a, s) => ({ ...a, [s]: progress || 0 }), {})),
-            onLog: (phase, m) => log(`[${phase}] ${m}`),
-          });
-          await proc.loadModel(modelBuf);
-          log(`separating — htdemucs (single) on EP: ${gpu === 'available' ? 'webgpu' : 'wasm'} …`);
-          result = await proc.separate(audio.left, audio.right);
-        }
-        const sec = (performance.now() - t0) / 1000;
-        const realtime = audio.duration / sec;
-        perf.separation = sec;
-        perf.audioSec = audio.duration;
-        setRtf(realtime);
-        log(
-          `separation done in ${sec.toFixed(1)}s — ${realtime.toFixed(2)}× realtime [${modeLabel}]`
-        );
-      } // end separation (skipped when reusing stems)
-
-      // Stash the decoded audio + separated stems so a later "Re-transcribe" can re-run
-      // Whisper with changed settings without redoing the ~50s separation. (On a reuse
-      // run this just re-points at the same objects.)
-      reuseStemsRef.current = { fileName: file.name, audio, result };
-
-      // --- Whisper transcription of the vocals stem (in-browser) ---
-      setStatus('transcribing');
-      const want = asrModel;
-      const device = gpu === 'available' ? 'webgpu' : 'wasm';
-      // CRITICAL dtype: transformers.js DEFAULTS WebGPU to fp32, which loads the
-      // huge fp32 ONNX (v3-turbo's decoder is 2.5GB) → unusably slow / OOM. q4f16
-      // is 4-bit weights + fp16 compute: tiny (v3-turbo ~564MB) and FAST on WebGPU
-      // (measured ~13× realtime vs fp32 not finishing in 4 min). On wasm, q8.
-      // fp16 matches PyTorch text quality (fp16==fp32 measured); q4f16 (4-bit) is
-      // smaller/faster but loses accuracy. User-selectable. On wasm, q8.
-      const dtype = device === 'webgpu' ? whisperDtype : 'q8';
-      log(`loading Whisper model · ${want} · ${device}/${dtype} (first run downloads it) …`);
-      const seenFiles = new Set();
-      let asr;
-      try {
-        asr = await pipeline('automatic-speech-recognition', want, {
-          device,
-          dtype,
-          progress_callback: (p) => {
-            if (p.status === 'progress' && p.file && p.total) {
-              const pct = Math.round((p.loaded / p.total) * 100);
-              if (pct % 25 === 0 && !seenFiles.has(p.file + pct)) {
-                seenFiles.add(p.file + pct);
-                log(`  ↓ ${p.file} ${pct}%`);
-              }
-            }
-          },
-        });
-      } catch (e) {
-        throw new Error(
-          `Whisper model "${want}" failed to load (${String(e.message).slice(0, 100)}). ` +
-            `If it's large-v3-turbo, your GPU may be out of memory — try a smaller model.`
-        );
-      }
-      const mono = toMono16k(result.vocals.left, result.vocals.right, audio.sampleRate);
-      const audioMin = (mono.length / 16000 / 60).toFixed(1);
-
-      // --- Vocals energy profile (replaces Silero VAD) ---
-      // To suppress Whisper hallucinations in the instrumental intro/outro, we need
-      // an honest "is anyone actually singing here?" signal. For SUNG audio the best
-      // signal is the VOCALS STEM's own loudness: it's near-silent during
-      // instrumentals (only Demucs bleed), loud during singing. A speech VAD
-      // (Silero) under-detects singing; raw RMS energy of the vocals stem doesn't.
-      // Build a coarse RMS-per-100ms profile once; the edge filter queries it.
-      const WIN_SEC = 0.1;
-      const winLen = Math.max(1, Math.round(WIN_SEC * 16000));
-      const nWin = Math.ceil(mono.length / winLen);
-      const rms = new Float32Array(nWin);
-      let peakRms = 1e-9;
-      for (let w = 0; w < nWin; w++) {
-        let sum = 0;
-        const s = w * winLen;
-        const e = Math.min(mono.length, s + winLen);
-        for (let i = s; i < e; i++) sum += mono[i] * mono[i];
-        const r = Math.sqrt(sum / Math.max(1, e - s));
-        rms[w] = r;
-        if (r > peakRms) peakRms = r;
-      }
-      // "silent" = below a small fraction of the track's peak vocal level (relative,
-      // so it adapts to quiet vs loud masters). Returns true if vocals are audibly
-      // present at time t (seconds).
-      const SILENT_FRAC = 0.08;
-      const silentThresh = peakRms * SILENT_FRAC;
-      // True if time t sits inside a SUSTAINED instrumental gap — vocals below the
-      // silence threshold continuously for >= minGapSec. This is how we drop Whisper's
-      // hallucinations over instrumental breaks (e.g. a guitar solo) the way
-      // openai-whisper naturally emits nothing there — WITHOUT touching real verses,
-      // which stay well above threshold. Gold-validated: 1.5s catches the solo, never
-      // nips a real line (brief breath gaps are < 1.5s). Loud non-lyrical vocal sounds
-      // over a solo (~45% peak) are NOT silence and are left to LLM/reference correction.
-      const inSilentGap = (t, minGapSec = 1.5) => {
-        const c = Math.min(nWin - 1, Math.max(0, Math.floor((t * 16000) / winLen)));
-        if (rms[c] > silentThresh) return false; // over audible vocals → keep
-        let lo = c;
-        let hi = c;
-        while (lo > 0 && rms[lo] <= silentThresh) lo--;
-        while (hi < nWin - 1 && rms[hi] <= silentThresh) hi++;
-        return (hi - lo) * WIN_SEC >= minGapSec;
-      };
-      log(
-        `vocals energy profile: peak=${peakRms.toFixed(4)}, silence threshold=${silentThresh.toFixed(4)} (${Math.round(SILENT_FRAC * 100)}% of peak)`
-      );
-
-      // Whisper context (vocab hints) — build the SAME initialPrompt the native
-      // creator does (title + distinctive lyric words), via the shared backend
-      // prepareWhisperContext, so the web transcription is prompted IDENTICALLY to
-      // Python (for a fair comparison). Best-effort.
+      // Whisper context (vocab hints) — build the SAME initialPrompt the native creator
+      // does (title + distinctive lyric words), via the shared backend
+      // prepareWhisperContext. Built HERE in the panel (it needs the UI's title/artist
+      // + reference lyrics) and passed into the compute. Best-effort.
       let whisperPrompt = null;
       {
         const bn = file.name.replace(/\.[^.]+$/, '');
@@ -803,599 +618,56 @@ export default function WebGpuCreatorPanel() {
         }
       }
 
-      const tStart = performance.now();
-      log(`transcribing ${audioMin} min of vocals on ${device} …`);
-      // Live feedback (the native tab streams whisper progress; we do the same via
-      // transformers.js's WhisperTextStreamer — VERIFIED to fire, unlike the plain
-      // callback_function). on_chunk_start ticks per 30s chunk; the text callback
-      // streams progress. The sequential seek-loop below drives its own per-window
-      // progress (one asr() call per window), so no WhisperTextStreamer here. A 1s
-      // heartbeat keeps elapsed time moving in the status line.
-      let chunkIdx = 0;
-      const hb = setInterval(() => {
-        const el = ((performance.now() - tStart) / 1000).toFixed(0);
-        setTranscribeInfo(`transcribing window ${chunkIdx} · ${el}s`);
-      }, 1000);
-      // NOTE: we do NOT pass a `prompt` to the chunked pipeline. transformers.js
-      // expects tokenized `prompt_ids` (not a raw string), and feeding a string
-      // prompt into the long-form/chunked decode destabilizes it — it can lock onto
-      // the prompt and drop real lyrics mid-song. The reference lyrics still help via
-      // the post-transcription LLM correction. (If we want true prompting later, do
-      // it with tokenizer-produced prompt_ids.)
-      const promptText = whisperPrompt;
-      const useWordTs = timestampMode === 'word';
-      // Prompt parity with the native creator: tokenize the SAME initialPrompt and pass
-      // it as Whisper prompt_ids (the correct transformers.js mechanism — a raw string
-      // is mishandled by the chunked decode). If tokenizing isn't supported we skip it
-      // rather than risk destabilizing the decode.
-      let promptIds = null;
-      if (promptText) {
-        try {
-          if (typeof asr.tokenizer?.get_prompt_ids === 'function') {
-            promptIds = asr.tokenizer.get_prompt_ids(promptText);
-          } else if (typeof asr.tokenizer?._build_translation === 'undefined') {
-            // No prompt tokenizer API — pass the string; transformers.js will tokenize
-            // it internally if it supports `prompt`. (Logged so we can see the path.)
-            promptIds = null;
-          }
-        } catch (e) {
-          log(`prompt tokenize failed (${e.message}) — transcribing without prompt`);
+      // Run the framework-free compute. The panel just maps its callbacks to React
+      // state; the SAME createKaraoke() runs headlessly when a phone commands the host.
+      const created = await createKaraoke(
+        { audio, stems: reuseInput, lyricsOnly },
+        {
+          asrModel,
+          demucsModel,
+          ftAvailable,
+          device: gpu === 'available' ? 'webgpu' : 'wasm',
+          whisperDtype,
+          timestampMode,
+          language,
+          enableCrepe,
+          whisperPrompt,
+        },
+        libs,
+        {
+          onPhase: (p) => setStatus(p),
+          onLog: (m) => log(m),
+          onStemProgress: (p) => setStemProgress((prev) => ({ ...prev, ...p })),
+          onTranscribeInfo: (info) => setTranscribeInfo(info),
+          onLyricsPreview: (ls) => setLyrics(ls),
+          onRtf: (x) => setRtf(x),
         }
-      }
-      // SEQUENTIAL seek-loop transcription — matches openai-whisper's long-form
-      // algorithm (what the Python creator uses), NOT transformers.js's fixed-grid
-      // chunking. Each pass transcribes a 30s window, then advances the window start
-      // to the model's PREDICTED last-segment-end (snapping to a phrase boundary) so
-      // no lyric line ever straddles a chunk seam. Window content is fed to the model
-      // un-chunked (≤30s → zero-padded internally).
-      log(`transcribing with silence-aware vocal segmentation${promptText ? ', prompt ON' : ''}`);
-      const SR16 = 16000;
-      const totalSamples = mono.length;
-      const allChunks = [];
-      const baseOpts = {
-        return_timestamps: useWordTs ? 'word' : true,
-        ...(language && language !== 'auto' ? { language } : {}),
-        ...(promptIds ? { prompt_ids: promptIds } : promptText ? { prompt: promptText } : {}),
-        // Anti-loop: Whisper's decoder collapses on repetitive audio (the "Hey Jude"
-        // coda → "na"×444 / "better"×220 stamped into a 0.4s window) — a model failure,
-        // not a timing bug. openai-whisper guards this with a compression-ratio reject;
-        // transformers.js doesn't, but it DOES honor these two logits processors
-        // (verified present in the 3.8.1 bundle):
-        //  • repetition_penalty downweights already-emitted tokens so it stops repeating;
-        //  • no_repeat_ngram_size 3 forbids any 3-gram from recurring — this breaks the
-        //    pathological loop while still allowing the REAL coda ("na-na-na-na, hey Jude"
-        //    repeats fine because "hey Jude" changes the n-gram each phrase).
-        repetition_penalty: 1.2,
-        no_repeat_ngram_size: 3,
-      };
-
-      // no_speech_prob — Whisper's REAL "is anyone speaking?" signal, the same one the
-      // Python runner uses to drop instrumental sections. The decoder ONNX outputs
-      // `logits` every step; transformers.js's pipeline discards them, but it accepts a
-      // `logits_processor` that is called per step with the live logits. We attach a
-      // NON-DESTRUCTIVE processor that, at the FIRST decode step (the <|startoftranscript|>
-      // position), reads softmax(logits)[<|nospeech|>] and stashes it — then returns the
-      // logits UNCHANGED so transcription is unaffected. (Token ids are tokenizer-verified
-      // for large-v3-turbo: SOT=50258, <|nospeech|>=50363.)
-      const NO_SPEECH_TOKEN = 50363;
-      const LogitsProcessor = tf?.LogitsProcessor;
-      const makeNoSpeechCapture = () => {
-        if (!LogitsProcessor) return null;
-        const cap = new (class extends LogitsProcessor {
-          constructor() {
-            super();
-            this.prob = null;
-          }
-          _call(inputIds, logits) {
-            // Capture once, at the first decode step (the <|startoftranscript|>
-            // position) — that's where Whisper computes no_speech. logits is a
-            // Tensor [batch, vocab]; read row 0. Non-destructive (returns unchanged).
-            try {
-              if (this.prob === null) {
-                const row = logits.dims?.length === 2 ? logits[0] : logits; // [vocab]
-                const data = row.data ?? row;
-                const vocab = row.dims ? row.dims[row.dims.length - 1] : data.length;
-                let mx = -Infinity;
-                for (let i = 0; i < vocab; i++) if (data[i] > mx) mx = data[i];
-                let sum = 0;
-                for (let i = 0; i < vocab; i++) sum += Math.exp(data[i] - mx);
-                this.prob = Math.exp(data[NO_SPEECH_TOKEN] - mx) / sum;
-              }
-            } catch {
-              /* if shape surprises us, just don't gate this window (fail-safe) */
-            }
-            return logits; // non-destructive
-          }
-        })();
-        return cap;
-      };
-
-      // Transcribe ONE ≤30s window via the reliable pipeline call, with the no_speech
-      // capture attached. Returns the decoded chunks + the window's no_speech_prob.
-      const transcribeWindow = async (window) => {
-        const cap = makeNoSpeechCapture();
-        const w = await asr(window, {
-          ...baseOpts,
-          ...(cap ? { logits_processor: [cap] } : {}),
-        });
-        return { chunks: w.chunks || [], text: w.text || '', noSpeech: cap?.prob ?? null };
-      };
-
-      // Plan transcription segments on the VOCALS STEM's own silence (not a blind time
-      // grid): cuts land at vocal-silence so a sung phrase is never split at a seam,
-      // each segment is ≤30s, and consecutive segments step back `overlapSec` so
-      // boundary words are seen in both (reconciled after). Uses the RMS profile above.
-      const plan = planVocalSegments(rms, {
-        hopSec: WIN_SEC,
-        durationSec: audio.duration,
-        minSegSec: 20, // always take 20s, then cut at the best dip in the next 10s
-        maxSegSec: 30,
-        overlapSec: 0, // cuts land in vocal DIPS → no word is split → no overlap needed
-        dipSec: 0.5,
-      });
-      log(`planned ${plan.length} vocal-aware segment(s) (20s + best-dip cut, ≤30s, clean cuts)`);
-
-      let out;
-      try {
-        for (let pi = 0; pi < plan.length; pi++) {
-          const { start, end } = plan[pi];
-          chunkIdx += 1;
-          const s0 = Math.max(0, Math.floor(start * SR16));
-          const s1 = Math.min(totalSamples, Math.ceil(end * SR16));
-          const window = mono.subarray(s0, s1);
-          setTranscribeInfo(`segment ${chunkIdx}/${plan.length} @ ${start.toFixed(0)}s …`);
-          const w = await transcribeWindow(window);
-          // Collect this segment's words in order (cuts land in vocal dips → no overlap,
-          // no dedup needed). Hallucinations over instrumental gaps are removed below by
-          // the annotation strip + sustained-silence cull.
-          const segs = (w.chunks || []).filter((c) => (c.text || '').trim());
-          for (const c of segs) {
-            const ts = c.timestamp || [c.start, c.end];
-            const a = ts[0] != null ? ts[0] + start : null;
-            const b = ts[1] != null ? ts[1] + start : null;
-            if (a == null) continue;
-            allChunks.push({ text: c.text, timestamp: [a, b != null ? b : a + 0.4] });
-          }
-
-          // Live update from what we have so far.
-          if (allChunks.length) {
-            const flat = allChunks.map((c) => ({
-              text: c.text,
-              start: c.timestamp[0],
-              end: c.timestamp[1],
-            }));
-            setLyrics(groupWordsIntoLines(flat, { duration: audio.duration }));
-          }
-          log(
-            `  segment ${chunkIdx} @ ${start.toFixed(0)}-${end.toFixed(0)}s: ${segs.length} seg(s)`
-          );
-        }
-
-        // allChunks already holds every segment's words in time order (no overlap → no
-        // dedup needed). Sort defensively in case segment ordering ever changes.
-        allChunks.sort((a, b) => (a.timestamp[0] ?? 0) - (b.timestamp[0] ?? 0));
-        out = { chunks: allChunks, text: allChunks.map((c) => c.text).join('') };
-      } finally {
-        clearInterval(hb);
-        setTranscribeInfo('');
-      }
-      const tSec = (performance.now() - tStart) / 1000;
-      perf.transcription = tSec;
-      if (!perf.audioSec) perf.audioSec = audio.duration;
-
-      // In segment mode, each chunk is {text:'a whole line', timestamp:[s,e]}. Split it
-      // into pseudo-words (evenly spaced across the segment) so the line-grouper +
-      // word-timed kara atom still work. Word mode passes chunks through unchanged.
-      let words = out.chunks || [];
-      if (!useWordTs) {
-        const expanded = [];
-        for (const seg of words) {
-          const [s, e] = seg.timestamp || [seg.start, seg.end];
-          const toks = (seg.text || '').trim().split(/\s+/).filter(Boolean);
-          if (s == null || !toks.length) continue;
-          const dur = (e ?? s) - s;
-          const step = toks.length > 0 ? dur / toks.length : 0;
-          toks.forEach((tok, i) => {
-            expanded.push({
-              text: (i ? ' ' : '') + tok,
-              timestamp: [s + i * step, s + (i + 1) * step],
-            });
-          });
-        }
-        words = expanded;
-      }
-      // DIAGNOSTIC: where do lyrics disappear? Log counts at each stage.
-      const rawWordCount = words.length;
-      const rawTextLen = (out.text || '').length;
-      const lastWordT = words.length
-        ? (words[words.length - 1].timestamp?.[1] ?? words[words.length - 1].end ?? 0)
-        : 0;
-      log(
-        `Whisper raw: ${rawWordCount} words, ${rawTextLen} chars, last word @ ${lastWordT.toFixed(0)}s of ${audio.duration.toFixed(0)}s${promptText ? ' (prompt ON)' : ''}`
-      );
-      // ========================================================================
-      // FULL DIAGNOSTIC DUMP to devtools console (open DevTools to inspect).
-      // This is the ground truth of what Whisper actually returned, so we can see
-      // WHERE lyrics go missing.
-      // ========================================================================
-      {
-        const CH = 30; // Whisper's hard 30s chunk size
-        const nb = Math.ceil(audio.duration / CH);
-        const buckets = new Array(nb).fill(0);
-        const wordRows = words.map((w, i) => {
-          const t0 = w.timestamp?.[0] ?? w.start ?? null;
-          const t1 = w.timestamp?.[1] ?? w.end ?? null;
-          if (t0 != null) buckets[Math.min(nb - 1, Math.floor(t0 / CH))]++;
-          return { i, text: (w.text || '').trim(), start: t0, end: t1 };
-        });
-        // Gaps > 4s between consecutive words = where transcription went silent.
-        const gaps = [];
-        for (let i = 1; i < wordRows.length; i++) {
-          const g = (wordRows[i].start ?? 0) - (wordRows[i - 1].end ?? 0);
-          if (g > 4) {
-            gaps.push({
-              gapSec: Number(g.toFixed(1)),
-              from: `${(wordRows[i - 1].end ?? 0).toFixed(1)}s "${wordRows[i - 1].text}"`,
-              to: `${(wordRows[i].start ?? 0).toFixed(1)}s "${wordRows[i].text}"`,
-            });
-          }
-        }
-        const bucketStr = buckets.map((b, i) => `${i * CH}s:${b}`).join(' ');
-        log(`words per 30s chunk: [${bucketStr}]`);
-        if (gaps.length) {
-          log(`⚠ ${gaps.length} large gap(s) (>4s) in transcription — possible dropped sections:`);
-          for (const g of gaps) log(`    ↔ ${g.gapSec}s gap: ${g.from} → ${g.to}`);
-        }
-        // Flat-TEXT dumps (loukai's console serializer flattens objects to
-        // "[object Object]", so console.table/group are useless — print strings).
-
-        console.log(
-          '🎤 WHISPER DIAG | dur=' + audio.duration.toFixed(1) + 's words=' + words.length
-        );
-        console.log('🎤 FULL TEXT: ' + (out.text || ''));
-        console.log('🎤 buckets/30s: ' + bucketStr);
-        for (const g of gaps) {
-          console.log(`🎤 GAP ${g.gapSec}s: ${g.from} -> ${g.to}`);
-        }
-        // Per-word timeline as one big string (chunked into 10s windows for readability).
-        const byTen = {};
-        for (const r of wordRows) {
-          const b = Math.floor((r.start ?? 0) / 10) * 10;
-          (byTen[b] ||= []).push(`${(r.start ?? 0).toFixed(1)}|${r.text}`);
-        }
-        for (const k of Object.keys(byTen)
-          .map(Number)
-          .sort((a, b) => a - b)) {
-          console.log(`🎤 ${k}-${k + 10}s (${byTen[k].length}w): ${byTen[k].join('  ')}`);
-        }
-      }
-      // Hallucination trim. Two gold-validated signals (no run lost a real lyric):
-      //  (1) ANNOTATION strip, EVERYWHERE — Whisper marks non-lyrical audio with
-      //      "*Music*"/"[Applause]"/♪/# tokens (incl. split "*Country" then "music*").
-      //      Any word containing * [ ] # ♪ ♫ is dropped; real lyrics never have those.
-      //  (2) SUSTAINED-SILENCE cull, EVERYWHERE — drop a word that falls inside an
-      //      instrumental gap where the vocals stem is silent for >= 1.5s continuously
-      //      (a guitar solo / long break / intro / outro fade). This is how
-      //      openai-whisper naturally emits nothing there. Real verses sit far above
-      //      the silence threshold, and brief breath gaps are < 1.5s, so neither is
-      //      touched. (Loud NON-lyrical vocal sounds over a solo are not silence and
-      //      survive here — those are left to LLM/reference correction.)
-      const isAnnotation = (s) => /[*[\]#♪♫]/.test((s || '').trim());
-      // Stuck-decoder loop cull — the strongest tell. Whisper can lock onto a repeated
-      // word/phrase (the "Hey Jude" outro → "better, better, better…" ~400×) and emit it
-      // until max-length, and the dead giveaway is the TIMESTAMPS: those words start only
-      // ~0.02-0.1s apart, which is physically impossible for sung lyrics. openai-whisper
-      // suppresses this via a compression-ratio threshold; transformers.js doesn't, so we
-      // detect the collision directly: once words start arriving < minStartGap apart we're
-      // in a loop — drop them until the timeline advances again. Energy/text-independent,
-      // so it also catches loops where the repeated token drifts slightly.
-      {
-        const minStartGap = 0.08; // s; consecutive word starts closer than this = a loop
-        const startOf = (w) => (w.timestamp ? w.timestamp[0] : w.start) ?? null;
-        const kept = [];
-        let prevStart = null; // start of the IMMEDIATELY previous word (kept or dropped)
-        let dropped = 0;
-        for (const w of words) {
-          const s = startOf(w);
-          // Compare to the previous word's start regardless of whether it was kept —
-          // a stuck loop advances ~0.02s per token, so every step collides; comparing to
-          // the last KEPT word would let one survivor through every minStartGap.
-          const collide = s != null && prevStart != null && s - prevStart < minStartGap;
-          if (s != null) prevStart = s;
-          if (collide) {
-            dropped++;
-            continue;
-          }
-          kept.push(w);
-        }
-        if (dropped) {
-          log(
-            `dropped ${dropped} time-collided word(s) (<${minStartGap}s apart → stuck decoder loop)`
-          );
-          words = kept;
-        }
-        log(`[cull] after collision: ${words.length} words`);
-      }
-      {
-        const before = words.length;
-        const culled = [];
-        const startOf = (w) => (w.timestamp ? w.timestamp[0] : w.start) ?? null;
-        const endOf = (w) => (w.timestamp ? w.timestamp[1] : w.end) ?? startOf(w);
-        // A word is "mid-phrase" if it has a close neighbor (<=1.2s) on BOTH sides —
-        // those are inside a sung line and must never be culled as instrumental, even
-        // if the (htdemucs) vocals stem is momentarily weak on a trailing word like
-        // "cares"/"gent"/"wears". Only words isolated on at least one side are eligible
-        // for the instrumental-gap cull (true intro/outro/solo hallucinations).
-        const NEIGHBOR = 1.2;
-        words = words.filter((w, i, arr) => {
-          const text = (w.text || '').trim();
-          const ts = w.timestamp || [w.start, w.end];
-          const mid = ts[0] != null && ts[1] != null ? (ts[0] + ts[1]) / 2 : ts[0];
-          if (isAnnotation(text)) {
-            culled.push({ text, t: mid == null ? -1 : Number(mid.toFixed(2)), why: 'annotation' });
-            return false;
-          }
-          if (mid == null) return true;
-          const s = startOf(w);
-          const gapBefore = i > 0 ? s - endOf(arr[i - 1]) : Infinity;
-          const gapAfter = i < arr.length - 1 ? startOf(arr[i + 1]) - endOf(w) : Infinity;
-          const midPhrase = gapBefore <= NEIGHBOR && gapAfter <= NEIGHBOR;
-          if (!midPhrase && inSilentGap(mid)) {
-            culled.push({ text, t: Number(mid.toFixed(2)), why: 'instrumental gap' });
-            return false;
-          }
-          return true;
-        });
-        if (culled.length) {
-          log(`trimmed ${culled.length} hallucinated word(s) (annotation / instrumental gap):`);
-          for (const c of culled) log(`    ✂ "${c.text}" @ ${c.t}s (${c.why})`);
-        } else if (before) {
-          log('no hallucinations to trim');
-        }
-        log(`[cull] after annotation/inSilentGap: ${words.length} words`);
-      }
-      // Isolated-word-after-big-gap cull — the outro fade tell. A word stranded by a
-      // large gap (>= isoGap) on BOTH sides is almost always a stuck-decoder ghost over
-      // the fade ("…Judas… …dude…" 14s apart, long after the song body). Real lyrics
-      // arrive in phrases, never single words 8s+ from any neighbor. (First/last word
-      // only needs one big side; energy-independent, so it works even if the outro choir
-      // keeps the stem from going silent.)
-      {
-        const isoGap = 8; // s
-        const startOf = (w) => (w.timestamp ? w.timestamp[0] : w.start) ?? null;
-        const endOf = (w) => (w.timestamp ? w.timestamp[1] : w.end) ?? startOf(w);
-        const stranded = [];
-        words = words.filter((w, i) => {
-          const s = startOf(w);
-          if (s == null) return true;
-          const prevEnd = i > 0 ? endOf(words[i - 1]) : null;
-          const nextStart = i < words.length - 1 ? startOf(words[i + 1]) : null;
-          const gapBefore = prevEnd != null ? s - prevEnd : Infinity;
-          const gapAfter = nextStart != null ? nextStart - (endOf(w) ?? s) : Infinity;
-          if (gapBefore >= isoGap && gapAfter >= isoGap) {
-            stranded.push({ text: (w.text || '').trim(), t: Number(s.toFixed(1)) });
-            return false;
-          }
-          return true;
-        });
-        if (stranded.length) {
-          log(
-            `dropped ${stranded.length} stranded word(s) (isolated >${isoGap}s from neighbors → fade ghost):`
-          );
-          for (const c of stranded) log(`    ✂ "${c.text}" @ ${c.t}s`);
-        }
-        log(`[cull] after isolated-word: ${words.length} words`);
-      }
-      // "Thank you" / "thanks for watching" cull — Whisper's most common ghost,
-      // clustering over the dead intro/outro. cullOutroThanks removes only the ones
-      // OUTSIDE the lyric body, so songs that sing "thank you" within the body
-      // (Alanis "Thank U") keep every one. (See creatorAudio.js for the rationale.)
-      {
-        const r = cullOutroThanks(words);
-        if (r.removed.length) {
-          words = r.words;
-          log(
-            `dropped ${r.removed.length} "thank you" hallucination word(s) outside lyric body: ${r.removed.join(' ')}`
-          );
-        }
-      }
-      log(`after VAD: ${words.length} words`);
-      let lines = words.length
-        ? groupWordsIntoLines(words, { duration: audio.duration })
-        : [{ text: (out.text || '').trim(), start: 0, end: audio.duration }];
-      // Final alignment pass: snap each line's start/end to the actual vocal onset/
-      // offset (Whisper timestamps drift on singing). Preserves the `.dropped` marker.
-      const droppedMark = lines.dropped;
-      lines = snapToVocalEnergy(lines, rms, {
-        hopSec: WIN_SEC,
-        searchSec: 0.5,
-        silentFrac: SILENT_FRAC,
-      });
-      if (droppedMark) lines.dropped = droppedMark;
-      // Non-overlap invariant. Whisper is single-speaker — it can't transcribe two
-      // simultaneous voices, so two lyric lines can NEVER legitimately occupy the same
-      // instant. Any overlap is an artifact: a SMALL one is independent snapping of
-      // adjacent line bounds (snapToVocalEnergy nudges line N's end forward and N+1's
-      // start back until they cross by a few hundred ms); a LARGE one is a stretched
-      // (maxLineDur) or residual-loop line. Both are wrong, so enforce the invariant as
-      // the final step: sort by start, then clamp each line's end to where the next line
-      // begins so exactly one line is active at a time (the karaoke invariant). Only fires
-      // on REAL overlap (end > nextStart), never on lines that merely touch.
-      {
-        const dm = lines.dropped;
-        lines.sort((a, b) => a.start - b.start);
-        let small = 0;
-        let large = 0;
-        for (let i = 0; i < lines.length - 1; i++) {
-          const next = lines[i + 1];
-          const overlap = lines[i].end - next.start;
-          if (overlap > 0) {
-            lines[i].end = Math.max(lines[i].start + 0.1, next.start);
-            if (overlap > 1) large++;
-            else small++;
-          }
-        }
-        if (dm) lines.dropped = dm;
-        if (small || large) {
-          log(
-            `enforced non-overlap on ${small + large} line(s) (single-speaker → one line at a time` +
-              `${large ? `; ${large} large >1s` : ''})`
-          );
-        }
-      }
-      // Junk-line filter — implausible line TIMING is a hallucination tell, at both
-      // extremes. Real sung lines run ~1-8s at ~0.3-0.8s per word. Drop a line that is:
-      //  • a sub-second flash (< minLineDur) AND not a lone short interjection
-      //    ("Hey!"/"Yeah!" can be brief — keep a single short word), OR
-      //  • too DENSE (> maxWordsPerSec — residual loop crammed into a moment), OR
-      //  • too SPARSE (multi-word but > maxSecPerWord on average — the intro/outro
-      //    garble where a few wrong words get smeared across many seconds).
-      // Runs AFTER the non-overlap clamp so clamp-created shorties are caught too.
-      {
-        const minLineDur = 1.0;
-        const maxWordsPerSec = 8;
-        const maxSecPerWord = 3.0;
-        const junked = [];
-        lines = lines.filter((l) => {
-          const dur = (l.end ?? l.start) - l.start;
-          const nWords = (l.text || '').trim().split(/\s+/).filter(Boolean).length;
-          if (nWords === 0) {
-            junked.push({ text: l.text, t: l.start, why: 'empty' });
-            return false;
-          }
-          if (dur < minLineDur && nWords > 1) {
-            junked.push({ text: l.text, t: l.start, why: `flash ${dur.toFixed(2)}s` });
-            return false;
-          }
-          if (dur > 0) {
-            const wps = nWords / dur;
-            if (wps > maxWordsPerSec) {
-              junked.push({ text: l.text, t: l.start, why: `too dense ${wps.toFixed(1)} w/s` });
-              return false;
-            }
-            if (nWords > 1 && dur / nWords > maxSecPerWord) {
-              junked.push({
-                text: l.text,
-                t: l.start,
-                why: `smeared ${(dur / nWords).toFixed(1)} s/word`,
-              });
-              return false;
-            }
-          }
-          return true;
-        });
-        if (junked.length) {
-          log(`dropped ${junked.length} junk line(s) (implausible timing):`);
-          for (const j of junked) log(`    ✂ "${j.text}" @ ${j.t.toFixed(1)}s (${j.why})`);
-        }
-      }
-      const groupedWordCount = lines.reduce(
-        (n, l) => n + l.text.split(/\s+/).filter(Boolean).length,
-        0
-      );
-      log(
-        `after grouping: ${lines.length} lines, ${groupedWordCount} words (last line ends @ ${(lines[lines.length - 1]?.end ?? 0).toFixed(0)}s)`
-      );
-      if (lines.dropped?.length) {
-        log(`grouping dropped ${lines.dropped.length} non-lyric line(s):`);
-        for (const d of lines.dropped)
-          log(`    ✂ "${d.text}" @ ${d.start.toFixed(1)}s (${d.reason})`);
-        console.table(lines.dropped);
-      }
-      setLyrics(lines);
-      log(
-        `transcription done in ${tSec.toFixed(1)}s ` +
-          `(${((parseFloat(audioMin) * 60) / tSec).toFixed(2)}× realtime) — ` +
-          `${words.length} words → ${lines.length} lyric lines`
       );
 
-      // NOTE: LLM lyric correction is NOT done here in the UI. The renderer sends the
-      // RAW transcription + reference lyrics to the BACKEND save, which runs the
-      // correction server-side (resolving LLM settings the same way the native creator
-      // does). This keeps one code path identical to Python and avoids the web UI
-      // touching LLM endpoints. We just gather the reference lyrics to send along.
-      const correctedWords = words;
+      const result = created.stems;
+      const lines = created.lyrics.lines;
+      const correctedWords = created.lyrics.words;
+      const detectedKey = created.key;
+      const pitchData = created.pitch;
       setLlmStats(null);
       const refLyrics = referenceLyrics.trim(); // sent to backend; it looks up if empty
 
-      // --- CREPE pitch → musical key (parity: native uses CREPE for key detection;
-      // pitch track stored best-effort). Reuses the 16k mono vocals. Best-effort.
-      // Skipped when the user disables pitch detection in Settings. ---
-      let detectedKey = null;
-      let pitchData = null;
-      try {
-        if (!enableCrepe) {
-          log('pitch detection (CREPE) disabled in settings — skipping');
-          throw new Error('crepe-disabled'); // jump to the catch, leaves pitch/key null
-        }
-        const { detectPitch, detectKey } = crepeMod;
-        if (!libs.current.crepeSession) {
-          log('loading CREPE (pitch) …');
-          const cbuf = await fetch('/webgpu-models/crepe_tiny.onnx').then((r) =>
-            r.ok ? r.arrayBuffer() : Promise.reject(new Error(`crepe ${r.status}`))
-          );
-          libs.current.crepeSession = await ort.InferenceSession.create(new Uint8Array(cbuf), {
-            executionProviders: gpu === 'available' ? ['webgpu'] : ['wasm'],
-            graphOptimizationLevel: 'all',
-          });
-        }
-        setStatus('pitch');
-        log(`detecting pitch + key (CREPE on EP: ${gpu === 'available' ? 'webgpu' : 'wasm'}) …`);
-        const ct0 = performance.now();
-        const pitch = await detectPitch(ort, libs.current.crepeSession, mono, {
-          onProgress: (f) => setTranscribeInfo(`pitch ${Math.round(f * 100)}%`),
-        });
-        setTranscribeInfo('');
-        perf.pitch = (performance.now() - ct0) / 1000;
-        log(`CREPE pitch done in ${perf.pitch.toFixed(1)}s`);
-        const k = detectKey(pitch);
-        detectedKey = k.key;
-        pitchData = {
-          sampleRate: Math.round(1 / pitch.hopSec),
-          data: Array.from(pitch.frequency, (f, i) => ({
-            time: pitch.times[i],
-            frequency: f,
-            confidence: pitch.confidence[i],
-          })),
-        };
-        log(`detected key: ${detectedKey} (confidence ${k.confidence.toFixed(2)})`);
-      } catch (e) {
-        log(`pitch/key detection skipped (${e.message})`);
-      }
+      // Stash decoded audio + separated stems so a later "Re-transcribe" can re-run
+      // Whisper with changed settings without redoing the ~50s separation.
+      reuseStemsRef.current = { fileName: file.name, audio, result };
 
-      // ⏱️ TIMING SUMMARY — directly comparable to the Python/native creator's.
+      // ⏱️ TIMING summary (one copyable line for DevTools / Electron terminal).
       {
-        const totalSec = (performance.now() - runT0) / 1000;
-        const a = perf.audioSec || audio.duration || 0;
-        const x = (s) => (s && a ? `${(a / s).toFixed(1)}× rt` : '—');
-        const ep = gpu === 'available' ? 'webgpu' : 'wasm';
-        log('⏱️ TIMING (WebGPU/in-browser creator):');
-        log(`    audio length:   ${a ? a.toFixed(1) + 's' : '?'}`);
-        if (perf.separation)
-          log(
-            `    separation:     ${perf.separation.toFixed(1)}s  (${x(perf.separation)})  [${demucsModel} on ${ep}]`
-          );
-        if (perf.transcription)
-          log(
-            `    transcription:  ${perf.transcription.toFixed(1)}s  (${x(perf.transcription)})  [${asrModel.split('/').pop()} ${whisperDtype} on ${ep}]`
-          );
-        if (perf.pitch)
-          log(`    pitch (CREPE):  ${perf.pitch.toFixed(1)}s  (${x(perf.pitch)})  [${ep}]`);
-        log(
-          `    TOTAL:          ${totalSec.toFixed(1)}s  (${x(totalSec)})  (excludes encode/save)`
-        );
-        // Also as ONE copyable line (loukai console flattens objects → use a string),
-        // so it's unmissable in DevTools or the Electron terminal next to 📋.
-
+        const t = created.timing;
         console.log(
           '⏱️ TIMING_WEB ' +
             JSON.stringify({
-              audioSec: Number(a.toFixed(1)),
-              separation: Number(perf.separation.toFixed(1)),
-              transcription: Number(perf.transcription.toFixed(1)),
-              pitch: Number(perf.pitch.toFixed(1)),
-              total: Number(totalSec.toFixed(1)),
-              ep,
+              audioSec: Number((t.audioSec || 0).toFixed(1)),
+              separation: Number((t.separation || 0).toFixed(1)),
+              transcription: Number((t.transcription || 0).toFixed(1)),
+              pitch: Number((t.pitch || 0).toFixed(1)),
+              total: Number((t.total || 0).toFixed(1)),
+              ep: gpu === 'available' ? 'webgpu' : 'wasm',
               demucs: demucsModel,
               whisper: asrModel.split('/').pop(),
               dtype: whisperDtype,
