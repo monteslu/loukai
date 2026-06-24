@@ -87,7 +87,7 @@ export async function hostCreate({ audioBytes, opts = {} }, onProgress = () => {
   };
   const stemsAac = {};
   for (const k of Object.keys(wavBlobs)) {
-    stemsAac[k] = await encodeWavToAac(wavBlobs[k], { tag: k });
+    stemsAac[k] = await encodeWavToAac(wavBlobs[k]);
   }
 
   emitLog('host create compute complete — handing stems back to main');

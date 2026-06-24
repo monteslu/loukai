@@ -301,7 +301,10 @@ export async function saveWebGpuStems({
     let llmStats = null;
     let lyricsData = lyrics && lyrics.lines ? { lines: lyrics.lines } : null;
     if (settingsManager && lyricsData?.lines?.length) {
-      creatorJob.updateProgress({ step: 'correcting', progress: 10 });
+      // Only drive the bar here when WE own the job. When the caller owns it
+      // (manageJob:false, e.g. host-create), it drives its own coarse progress and
+      // these lower values would make the bar jump backward.
+      if (manageJob) creatorJob.updateProgress({ step: 'correcting', progress: 10 });
       try {
         // Use the provided reference lyrics, else look up LRCLIB (in-flow, like native).
         let ref = (referenceLyrics || '').trim();
@@ -346,7 +349,7 @@ export async function saveWebGpuStems({
     // The renderer already encoded each stem to AAC-in-MP4 (ffmpeg-wasm); `stems.*`
     // are temp-file paths to those .m4a blobs. stem-mp4 0.5.x is a pure-JS container
     // muxer that takes PRE-ENCODED AAC (no ffmpeg), so read the bytes and pass them.
-    creatorJob.updateProgress({ step: 'muxing', progress: 60 });
+    if (manageJob) creatorJob.updateProgress({ step: 'muxing', progress: 60 });
     const readAac = (p) => readFileSync(p);
     await StemMp4Writer.write({
       outputPath,

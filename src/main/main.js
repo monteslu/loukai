@@ -2058,30 +2058,64 @@ class KaiPlayerApp {
         return reject(new Error('no player window available to run host creation'));
       }
       const responseChannel = `creator:hostCreate:response:${jobId}`;
+      const wc = this.mainWindow.webContents;
+
+      // Watchdog: if the renderer goes silent for this long, give up so the job can't
+      // pin creatorJob 'running' forever (which would 409 ALL future creations). The
+      // timer RESETS on every progress tick, so a long-but-alive job isn't killed —
+      // only a truly stalled/dead renderer trips it.
+      const IDLE_MS = 5 * 60 * 1000;
+      let settled = false;
+      let timer = null;
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        ipcMain.removeListener('creator:hostCreate:progress', progressListener);
+        ipcMain.removeListener(responseChannel, responseListener);
+        wc.removeListener('render-process-gone', onGone);
+        wc.removeListener('destroyed', onGone);
+      };
+      const finish = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        fn(arg);
+      };
+      const arm = () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(
+          () => finish(reject, new Error('host creation timed out (renderer went silent)')),
+          IDLE_MS
+        );
+      };
 
       const progressListener = (_event, payload) => {
-        if (payload?.jobId === jobId) {
-          try {
-            onProgress(payload.progress || {});
-          } catch {
-            /* progress is best-effort */
-          }
+        if (payload?.jobId !== jobId) return;
+        arm(); // alive → reset the watchdog
+        try {
+          onProgress(payload.progress || {});
+        } catch {
+          /* progress is best-effort */
         }
       };
 
       const responseListener = (_event, result) => {
-        ipcMain.removeListener('creator:hostCreate:progress', progressListener);
-        ipcMain.removeListener(responseChannel, responseListener);
-        if (result?.success) resolve(result);
-        else reject(new Error(result?.error || 'host creation failed in renderer'));
+        if (result?.success) finish(resolve, result);
+        else finish(reject, new Error(result?.error || 'host creation failed in renderer'));
       };
+
+      // The player window dying mid-job must reject (not hang) so finishJob('error') runs.
+      const onGone = () => finish(reject, new Error('player window closed during host creation'));
 
       ipcMain.on('creator:hostCreate:progress', progressListener);
       ipcMain.once(responseChannel, responseListener);
+      wc.once('render-process-gone', onGone);
+      wc.once('destroyed', onGone);
+      arm();
 
       // Forward the FULL payload (the bug sendToRendererAndWait has — dropping args —
       // is exactly what we must not repeat here).
-      this.mainWindow.webContents.send('creator:hostCreate', { jobId, audioBytes, opts });
+      wc.send('creator:hostCreate', { jobId, audioBytes, opts });
     });
   }
 
