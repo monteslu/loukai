@@ -19,18 +19,24 @@ import { useEffect, useState } from 'react';
  */
 export function useCreatorJob({ bridge } = {}) {
   const [job, setJob] = useState(null);
+  // Whether a player renderer is present to run host-side creation (web admin only;
+  // the player itself runs locally so this is always implicitly true there).
+  const [hostAvailable, setHostAvailable] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const ipc = typeof window !== 'undefined' ? window.kaiAPI?.creator : null;
 
-    // 1) Pull current status on mount (late-join / refresh safety).
+    // 1) Pull current status on mount (late-join / refresh safety + hostAvailable).
     (async () => {
       try {
         let status;
         if (ipc?.getStatus) status = await ipc.getStatus();
         else if (bridge?.getCreatorStatus) status = await bridge.getCreatorStatus();
-        if (!cancelled && status?.job) setJob(status.job);
+        if (!cancelled && status) {
+          if (status.job) setJob(status.job);
+          if (typeof status.hostAvailable === 'boolean') setHostAvailable(status.hostAvailable);
+        }
       } catch {
         /* no status yet — stay null until a live event arrives */
       }
@@ -59,5 +65,5 @@ export function useCreatorJob({ bridge } = {}) {
     };
   }, [bridge]);
 
-  return { job, isRunning: job?.status === 'running' };
+  return { job, isRunning: job?.status === 'running', hostAvailable };
 }

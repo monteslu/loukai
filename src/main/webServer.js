@@ -1852,7 +1852,12 @@ class WebServer {
     // (WebGPU) — no native components to check or install.
     this.app.get('/admin/creator/status', (req, res) => {
       try {
-        res.json(creatorService.getStatus());
+        // hostAvailable: is a player renderer present to run host-side creation? A web
+        // admin uses this to offer "Create on host" instead of only the signpost.
+        const hostAvailable = Boolean(
+          this.mainApp.mainWindow && !this.mainApp.mainWindow.isDestroyed()
+        );
+        res.json({ ...creatorService.getStatus(), hostAvailable });
       } catch (error) {
         console.error('Error checking creator status:', error);
         res.status(500).json({ error: 'Failed to check creator status' });
