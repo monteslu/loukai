@@ -1937,6 +1937,20 @@ class WebServer {
     } catch {
       /* best-effort */
     }
+    // Startup sweep: a crash mid-job (save or host-create) can orphan uploaded sources
+    // + stem temp files here. Each request cleans its own temps on every path, so any
+    // leftovers at boot are from a prior crashed run — safe to delete. Best-effort.
+    try {
+      for (const name of fs.readdirSync(wsd)) {
+        try {
+          fs.rmSync(path.join(wsd, name), { force: true });
+        } catch {
+          /* ignore individual failures */
+        }
+      }
+    } catch {
+      /* dir unreadable → nothing to sweep */
+    }
     const wsSaveHandler = multer({
       storage: multer.diskStorage({
         destination: (_req, _file, cb) => cb(null, wsd),
@@ -2070,14 +2084,21 @@ class WebServer {
           }
         };
         try {
-          if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+          if (err) {
+            cleanup();
+            return res.status(400).json({ error: err.message || 'Upload failed' });
+          }
           if (!srcPath) return res.status(400).json({ error: 'no audio file uploaded' });
 
           const songsFolder = this.mainApp.settings?.getSongsFolder?.();
-          if (!songsFolder) return res.status(400).json({ error: 'songs folder not set' });
+          if (!songsFolder) {
+            cleanup();
+            return res.status(400).json({ error: 'songs folder not set' });
+          }
 
           // Single-job contract: 409 if a creation is already running anywhere.
           if (creatorJob.isRunning()) {
+            cleanup();
             return res.status(409).json({
               error: 'A creation is already in progress',
               busy: true,
