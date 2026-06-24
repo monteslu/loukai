@@ -12,6 +12,8 @@
     "build:all": "npm run build:renderer && npm run build:web",
     "build:renderer": "vite build --config src/renderer/vite.config.js",
     "build:web": "vite build --config src/web/vite.config.js",
+    "build:offsite": "vite build --config src/offsite/vite.config.js",
+    "dev:offsite": "vite --config src/offsite/vite.config.js",
     "build:linux": "npm run build:all && electron-builder --linux && node scripts/rename-artifacts.js",
     "build:win": "npm run build:all && electron-builder --win && node scripts/rename-artifacts.js",
     "build:mac": "npm run build:all && electron-builder --mac && node scripts/rename-artifacts.js",

@@ -11,6 +11,7 @@ tasks.md
 dist/
 src/renderer/dist/
 src/web/dist/
+src/offsite/dist/
 
 # OS files
 .DS_Store

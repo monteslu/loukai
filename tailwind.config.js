@@ -4,6 +4,7 @@ export default {
     './src/renderer/**/*.{js,jsx,ts,tsx}',
     './src/shared/**/*.{js,jsx,ts,tsx}',
     './src/web/**/*.{js,jsx,ts,tsx}',
+    './src/offsite/**/*.{js,jsx,ts,tsx}',
   ],
   safelist: [
     '-ml-80', // For sidebar collapse animation
