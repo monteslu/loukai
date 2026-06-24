@@ -152,8 +152,9 @@ export default function CreatorImportPanel({ bridge }) {
 
   return (
     <div className="flex flex-col gap-4 max-w-2xl w-full mx-auto">
-      {/* Live job (this phone's host job, the desktop player's, or another admin's). */}
-      <CreatorJobBanner job={creatorJob} />
+      {/* Live job. `own` when it's the host job THIS phone started (the banner is then
+          its progress UI); otherwise a heads-up that another surface is creating. */}
+      <CreatorJobBanner job={creatorJob} own={ourJobRunning} />
 
       {/* Create on this host — only when a player is running. */}
       {hostAvailable && (

@@ -81,14 +81,14 @@ export function SongTitle({ artist, title }) {
 }
 
 /**
- * Live "a creation is already running" banner — fed by the single creatorJob
- * descriptor (see useCreatorJob). Shows on ANY admin surface when a job is active,
- * including one started on a different surface (the player while you're on a phone,
- * or another browser). `job` is the descriptor; `selfActive` is true when THIS
- * surface owns the running job (then we suppress the banner — the surface shows its
- * own richer progress instead).
+ * Live creator-job banner — fed by the single creatorJob descriptor (see
+ * useCreatorJob). Shows on ANY admin surface when a job is active. `selfActive` is true
+ * when THIS surface runs the compute itself (the player panel) → suppressed, since that
+ * surface shows its own richer progress. `own` is true when this surface STARTED the
+ * job but the compute runs elsewhere (a phone that commanded the host) → the banner IS
+ * its progress UI, so it's styled as "your song" rather than "running elsewhere".
  */
-export function CreatorJobBanner({ job, selfActive = false }) {
+export function CreatorJobBanner({ job, selfActive = false, own = false }) {
   if (!job || job.status !== 'running' || selfActive) return null;
   const who =
     job.source === 'electron'
@@ -98,27 +98,43 @@ export function CreatorJobBanner({ job, selfActive = false }) {
         : 'another device';
   const pct = Math.max(0, Math.min(100, Math.round(job.progress || 0)));
   const label = [job.artist, job.title].filter(Boolean).join(' - ');
+  // Two palettes: blue = your job (in progress, good); amber = someone else's (heads-up).
+  const c = own
+    ? {
+        box: 'border-blue-400 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/30',
+        head: 'text-blue-800 dark:text-blue-200',
+        sub: 'text-blue-700 dark:text-blue-300',
+        track: 'bg-blue-200 dark:bg-blue-800',
+        bar: 'bg-blue-500',
+      }
+    : {
+        box: 'border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/30',
+        head: 'text-amber-800 dark:text-amber-200',
+        sub: 'text-amber-700 dark:text-amber-300',
+        track: 'bg-amber-200 dark:bg-amber-800',
+        bar: 'bg-amber-500',
+      };
+  const headline = own
+    ? 'Creating your song on the host…'
+    : `A creation is already running on ${who}`;
   return (
-    <div className="rounded-lg border border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/30 p-4 select-text">
-      <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-medium">
-        <span className="inline-block animate-pulse">●</span>A creation is already running on {who}
+    <div className={`rounded-lg border ${c.box} p-4 select-text`}>
+      <div className={`flex items-center gap-2 ${c.head} font-medium`}>
+        <span className="inline-block animate-pulse">●</span>
+        {headline}
       </div>
-      {label && <div className="mt-1 text-sm text-amber-700 dark:text-amber-300">{label}</div>}
+      {label && <div className={`mt-1 text-sm ${c.sub}`}>{label}</div>}
       <div className="mt-2 flex items-center gap-2">
-        <div className="flex-1 h-2 rounded bg-amber-200 dark:bg-amber-800 overflow-hidden">
-          <div className="h-full bg-amber-500 transition-all" style={{ width: `${pct}%` }} />
+        <div className={`flex-1 h-2 rounded ${c.track} overflow-hidden`}>
+          <div className={`h-full ${c.bar} transition-all`} style={{ width: `${pct}%` }} />
         </div>
-        <span className="w-9 text-right text-xs text-amber-700 dark:text-amber-300">{pct}%</span>
+        <span className={`w-9 text-right text-xs ${c.sub}`}>{pct}%</span>
       </div>
-      {job.step && (
-        <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">Step: {job.step}</div>
-      )}
+      {job.step && <div className={`mt-1 text-xs ${c.sub}`}>Step: {job.step}</div>}
       {job.consoleTail?.length > 0 && (
         <details className="mt-2 text-xs">
-          <summary className="cursor-pointer text-amber-700 dark:text-amber-300">
-            show progress log
-          </summary>
-          <div className="mt-1 max-h-32 overflow-auto font-mono text-amber-800 dark:text-amber-200 whitespace-pre-wrap">
+          <summary className={`cursor-pointer ${c.sub}`}>show progress log</summary>
+          <div className={`mt-1 max-h-32 overflow-auto font-mono ${c.head} whitespace-pre-wrap`}>
             {job.consoleTail.slice(-20).join('\n')}
           </div>
         </details>
