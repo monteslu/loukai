@@ -2004,6 +2004,7 @@ class WebServer {
             referenceLyrics: refLyrics,
             settingsManager: this.mainApp.settings, // backend runs LLM correction
             songsFolder: this.mainApp.settings?.getSongsFolder?.(),
+            source: 'web', // observable job: this save came from a web admin
           });
           cleanup();
           // Re-sync the library so the new song shows up immediately (like native).
@@ -2015,6 +2016,11 @@ class WebServer {
           res.json({ success: true, ...result });
         } catch (e) {
           cleanup();
+          // Single-job contract: a save started while another is running gets a 409
+          // with the live job, so the UI can attach instead of seeing a 500.
+          if (e.busy) {
+            return res.status(409).json({ error: e.message, busy: true, job: e.job });
+          }
           console.error('webgpu-creator save failed:', e);
           res.status(500).json({ error: e.message || 'Save failed' });
         }

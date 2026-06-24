@@ -33,6 +33,35 @@ function emptyJob() {
 
 let job = emptyJob();
 
+// Optional change listeners. This module is imported by SHARED code (creatorService),
+// so it must not import Electron/main directly. Instead, main registers a listener
+// here and fans each update out to the player renderer (IPC) AND web admins (socket).
+// Every mutation below notifies all listeners with the fresh, serializable descriptor.
+const listeners = new Set();
+
+/**
+ * Subscribe to job changes. The callback is invoked with the current descriptor on
+ * every start/progress/console/finish mutation.
+ * @param {(job: object) => void} fn
+ * @returns {() => void} unsubscribe
+ */
+export function onChange(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+function notify() {
+  if (!listeners.size) return;
+  const snapshot = getJob();
+  for (const fn of listeners) {
+    try {
+      fn(snapshot);
+    } catch {
+      /* a bad listener must never break the pipeline */
+    }
+  }
+}
+
 /** @returns {object} a shallow copy of the current job descriptor (safe to serialize). */
 export function getJob() {
   return { ...job, consoleTail: [...job.consoleTail] };
@@ -56,6 +85,7 @@ export function startJob(info = {}) {
   job.source = info.source ?? null;
   job.device = info.device ?? null;
   job.startedAt = info.startedAt ?? null;
+  notify();
   return getJob();
 }
 
@@ -64,6 +94,7 @@ export function updateProgress({ step, progress } = {}) {
   if (job.status !== 'running') return;
   if (typeof step === 'string') job.step = step;
   if (typeof progress === 'number') job.progress = progress;
+  notify();
 }
 
 /** Append a console line (bounded ring buffer for late-join context). */
@@ -73,6 +104,7 @@ export function appendConsole(line) {
   if (job.consoleTail.length > CONSOLE_TAIL_MAX) {
     job.consoleTail.splice(0, job.consoleTail.length - CONSOLE_TAIL_MAX);
   }
+  notify();
 }
 
 /** Mark the job finished. status: 'complete' | 'error' | 'cancelled'. */
@@ -83,12 +115,14 @@ export function finishJob(status, { error = null, outputPath = null, finishedAt 
   job.finishedAt = finishedAt ?? null;
   job.step = status;
   if (status === 'complete') job.progress = 100;
+  notify();
   return getJob();
 }
 
 export default {
   getJob,
   isRunning,
+  onChange,
   startJob,
   updateProgress,
   appendConsole,

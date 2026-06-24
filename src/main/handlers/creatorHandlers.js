@@ -127,6 +127,7 @@ export function registerCreatorHandlers(mainApp) {
           referenceLyrics,
           settingsManager: mainApp.settings, // backend runs LLM correction (like native)
           songsFolder: mainApp.settings?.getSongsFolder?.(),
+          source: 'electron', // observable job: this save came from the player
         });
         // Re-sync the library so the new song appears immediately (matches the native
         // creator). Best-effort — a sync failure must not fail the save.
@@ -137,6 +138,9 @@ export function registerCreatorHandlers(mainApp) {
         }
         return { success: true, ...result };
       } catch (e) {
+        // Single-job contract: surface a structured busy result so the UI can show
+        // "already running" + attach to the live job, not an opaque failure.
+        if (e.busy) return { success: false, busy: true, job: e.job, error: e.message };
         return { success: false, error: e.message };
       } finally {
         try {

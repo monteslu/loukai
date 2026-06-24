@@ -246,6 +246,7 @@ export async function saveWebGpuStems({
   referenceLyrics,
   settingsManager,
   songsFolder,
+  source = null,
 }) {
   if (!songsFolder) throw new Error('songs folder is not set');
   const {
@@ -261,91 +262,127 @@ export async function saveWebGpuStems({
     composer,
     tempo,
   } = metadata || {};
+
+  // Single-job contract: there is exactly ONE conversion at a time per Loukai
+  // process. Reject (don't queue) when one is already running so a second surface
+  // (another web admin, or the player) can't kick off a parallel save. The thrown
+  // shape carries `busy` + the live job so callers can return a 409 / structured
+  // "already running" instead of an opaque error.
+  if (creatorJob.isRunning()) {
+    const err = new Error('A creation is already in progress');
+    err.busy = true;
+    err.job = creatorJob.getJob();
+    throw err;
+  }
+
   const safeFileName = (artist ? `${artist} - ${title}` : title).replace(/[<>:"/\\|?*]/g, '_');
   const outputPath = join(songsFolder, `${safeFileName}.stem.mp4`);
 
-  // --- LLM lyric correction, server-side ---
-  // The renderer sends the RAW transcription; correction happens HERE on the backend,
-  // not in the web UI — same code path, same settings resolution as the Python creator.
-  let llmStats = null;
-  let lyricsData = lyrics && lyrics.lines ? { lines: lyrics.lines } : null;
-  if (settingsManager && lyricsData?.lines?.length) {
-    try {
-      // Use the provided reference lyrics, else look up LRCLIB (in-flow, like native).
-      let ref = (referenceLyrics || '').trim();
-      if (!ref) {
-        const r = await searchLyrics(title, artist);
-        ref = (r?.plainLyrics || '').trim();
-      }
-      if (ref) {
-        const llmSettings = llmService.getLLMSettingsRaw(settingsManager);
-        const hasValidConfig = llmSettings.provider === 'lmstudio' || llmSettings.apiKey;
-        if (llmSettings.enabled && hasValidConfig) {
-          const llmResult = await llmService.correctLyrics(
-            { lines: lyricsData.lines, words: lyrics.words },
-            ref,
-            llmSettings
-          );
-          if (llmResult?.output?.lines?.length) {
-            lyricsData = { lines: llmResult.output.lines };
-            llmStats = llmResult.stats;
-          }
-        } else {
-          console.log('🤖 LLM not enabled/configured — skipping correction');
-        }
-      }
-    } catch (e) {
-      console.warn('⚠️ LLM correction failed, using original transcription:', e.message);
-    }
-  }
-
-  // Pass the FULL tag set through so the output preserves what the source had
-  // (parity with the native creator: year/genre/track/album-artist/composer/tempo).
-  const fullMeta = { title, artist };
-  if (album) fullMeta.album = album;
-  if (year) fullMeta.year = year;
-  if (genre) fullMeta.genre = genre;
-  if (track) fullMeta.track = track;
-  if (disk) fullMeta.disk = disk;
-  if (albumartist) fullMeta.albumartist = albumartist;
-  if (composer) fullMeta.composer = composer;
-  if (tempo) fullMeta.tempo = tempo;
-
-  // The renderer already encoded each stem to AAC-in-MP4 (ffmpeg-wasm); `stems.*`
-  // are temp-file paths to those .m4a blobs. stem-mp4 0.5.x is a pure-JS container
-  // muxer that takes PRE-ENCODED AAC (no ffmpeg), so read the bytes and pass them.
-  const readAac = (p) => readFileSync(p);
-  await StemMp4Writer.write({
-    outputPath,
-    stemsAac: {
-      drums: readAac(stems.drums),
-      bass: readAac(stems.bass),
-      other: readAac(stems.other),
-      vocals: readAac(stems.vocals),
-    },
-    mixdownAac: readAac(stems.master), // raw original mix = NI-Stems master track
-    metadata: fullMeta,
-    lyricsData: lyricsData || undefined, // corrected lines if LLM ran, else raw
-    encoderDelaySamples: 1024, // ffmpeg native aac priming (renderer used -c:a aac)
+  // Begin the observable job (broadcast to every admin surface via creatorJob.onChange).
+  // The browser already did separation/transcription; the backend's job is the SAVE:
+  // LLM-correct → mux → write key/pitch. Steps mirror that.
+  creatorJob.startJob({
+    title,
+    artist,
+    source,
+    startedAt: typeof performance !== 'undefined' ? Math.round(performance.now()) : 0,
   });
+  try {
+    // --- LLM lyric correction, server-side ---
+    // The renderer sends the RAW transcription; correction happens HERE on the backend,
+    // not in the web UI — same code path, same settings resolution as the Python creator.
+    let llmStats = null;
+    let lyricsData = lyrics && lyrics.lines ? { lines: lyrics.lines } : null;
+    if (settingsManager && lyricsData?.lines?.length) {
+      creatorJob.updateProgress({ step: 'correcting', progress: 10 });
+      try {
+        // Use the provided reference lyrics, else look up LRCLIB (in-flow, like native).
+        let ref = (referenceLyrics || '').trim();
+        if (!ref) {
+          const r = await searchLyrics(title, artist);
+          ref = (r?.plainLyrics || '').trim();
+        }
+        if (ref) {
+          const llmSettings = llmService.getLLMSettingsRaw(settingsManager);
+          const hasValidConfig = llmSettings.provider === 'lmstudio' || llmSettings.apiKey;
+          if (llmSettings.enabled && hasValidConfig) {
+            const llmResult = await llmService.correctLyrics(
+              { lines: lyricsData.lines, words: lyrics.words },
+              ref,
+              llmSettings
+            );
+            if (llmResult?.output?.lines?.length) {
+              lyricsData = { lines: llmResult.output.lines };
+              llmStats = llmResult.stats;
+            }
+          } else {
+            console.log('🤖 LLM not enabled/configured — skipping correction');
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ LLM correction failed, using original transcription:', e.message);
+      }
+    }
 
-  // CREPE-derived musical key + pitch track (parity with the native creator). Both
-  // best-effort — a failure here must not lose the otherwise-good file.
-  if (key) {
-    try {
-      await M4AAtoms.addMusicalKey(outputPath, key);
-    } catch (e) {
-      console.warn('addMusicalKey failed:', e.message);
+    // Pass the FULL tag set through so the output preserves what the source had
+    // (parity with the native creator: year/genre/track/album-artist/composer/tempo).
+    const fullMeta = { title, artist };
+    if (album) fullMeta.album = album;
+    if (year) fullMeta.year = year;
+    if (genre) fullMeta.genre = genre;
+    if (track) fullMeta.track = track;
+    if (disk) fullMeta.disk = disk;
+    if (albumartist) fullMeta.albumartist = albumartist;
+    if (composer) fullMeta.composer = composer;
+    if (tempo) fullMeta.tempo = tempo;
+
+    // The renderer already encoded each stem to AAC-in-MP4 (ffmpeg-wasm); `stems.*`
+    // are temp-file paths to those .m4a blobs. stem-mp4 0.5.x is a pure-JS container
+    // muxer that takes PRE-ENCODED AAC (no ffmpeg), so read the bytes and pass them.
+    creatorJob.updateProgress({ step: 'muxing', progress: 60 });
+    const readAac = (p) => readFileSync(p);
+    await StemMp4Writer.write({
+      outputPath,
+      stemsAac: {
+        drums: readAac(stems.drums),
+        bass: readAac(stems.bass),
+        other: readAac(stems.other),
+        vocals: readAac(stems.vocals),
+      },
+      mixdownAac: readAac(stems.master), // raw original mix = NI-Stems master track
+      metadata: fullMeta,
+      lyricsData: lyricsData || undefined, // corrected lines if LLM ran, else raw
+      encoderDelaySamples: 1024, // ffmpeg native aac priming (renderer used -c:a aac)
+    });
+
+    // CREPE-derived musical key + pitch track (parity with the native creator). Both
+    // best-effort — a failure here must not lose the otherwise-good file.
+    if (key) {
+      try {
+        await M4AAtoms.addMusicalKey(outputPath, key);
+      } catch (e) {
+        console.warn('addMusicalKey failed:', e.message);
+      }
     }
-  }
-  if (pitch && pitch.data?.length) {
-    try {
-      await M4AAtoms.writeVpchAtom(outputPath, pitch);
-    } catch (e) {
-      console.warn('writeVpchAtom failed:', e.message);
+    if (pitch && pitch.data?.length) {
+      try {
+        await M4AAtoms.writeVpchAtom(outputPath, pitch);
+      } catch (e) {
+        console.warn('writeVpchAtom failed:', e.message);
+      }
     }
+    creatorJob.finishJob('complete', {
+      outputPath,
+      finishedAt: typeof performance !== 'undefined' ? Math.round(performance.now()) : 0,
+    });
+    return { outputPath, fileName: basename(outputPath), llmStats };
+  } catch (e) {
+    creatorJob.finishJob('error', {
+      error: e.message,
+      finishedAt: typeof performance !== 'undefined' ? Math.round(performance.now()) : 0,
+    });
+    throw e;
   }
-  return { outputPath, fileName: basename(outputPath), llmStats };
 }
 
 /**

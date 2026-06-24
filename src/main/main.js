@@ -19,6 +19,7 @@ import * as queueService from '../shared/services/queueService.js';
 import * as libraryService from '../shared/services/libraryService.js';
 import * as playerService from '../shared/services/playerService.js';
 import * as serverSettingsService from '../shared/services/serverSettingsService.js';
+import * as creatorJob from './creator/creatorJob.js';
 import {
   initSettingsService,
   loadAndSync,
@@ -167,6 +168,19 @@ class KaiPlayerApp {
 
       // Send to renderer so it can sync
       this.sendToRenderer('preferences:updated', preferences);
+    });
+
+    // When the creator job changes (start / progress / finish), fan the descriptor
+    // out to BOTH the player renderer (IPC) and every web admin (socket), so "a
+    // creation is running" is observable on every surface — including one opened or
+    // refreshed mid-job (it also pulls the same descriptor via getStatus on mount).
+    // The job lives in the shared creatorJob module so a save from either surface
+    // drives the same single-job state. Mirrors the broadcasts above.
+    creatorJob.onChange((job) => {
+      if (this.webServer) {
+        this.webServer.io?.to('admin-clients').emit('creator:job', job);
+      }
+      this.sendToRenderer('creator:job', job);
     });
   }
 
