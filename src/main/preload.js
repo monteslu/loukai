@@ -276,6 +276,20 @@ const api = {
       ipcRenderer.on('creator:job', handler);
       return () => ipcRenderer.removeListener('creator:job', handler);
     },
+
+    // ---- Headless host-create (a phone commands the player to create on its GPU) ----
+    // main → renderer: a 'create this' command { jobId, audioBytes, opts }. The player
+    // app root registers this once and runs the same compute the panel uses.
+    onHostCreate: (callback) => {
+      const handler = (_e, payload) => callback(payload);
+      ipcRenderer.on('creator:hostCreate', handler);
+      return () => ipcRenderer.removeListener('creator:hostCreate', handler);
+    },
+    // renderer → main: stream progress, then the final result (or error), keyed by jobId.
+    sendHostCreateProgress: (jobId, progress) =>
+      ipcRenderer.send('creator:hostCreate:progress', { jobId, progress }),
+    sendHostCreateResult: (jobId, result) =>
+      ipcRenderer.send(`creator:hostCreate:response:${jobId}`, result),
   },
 };
 

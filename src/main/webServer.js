@@ -25,6 +25,7 @@ import { STEM_MP4_FORMAT, isStemMp4Format } from '../shared/formatUtils.js';
 import { getSetting } from '../shared/services/settingsService.js';
 import * as serverSettingsService from '../shared/services/serverSettingsService.js';
 import * as creatorService from '../shared/services/creatorService.js';
+import * as creatorJob from './creator/creatorJob.js';
 import * as llmService from './creator/llmService.js';
 import { validateSongPath, validateBase64Path } from './utils/pathValidator.js';
 import { getCacheDir } from './creator/systemChecker.js';
@@ -2023,6 +2024,132 @@ class WebServer {
           }
           console.error('webgpu-creator save failed:', e);
           res.status(500).json({ error: e.message || 'Save failed' });
+        }
+      });
+    });
+
+    // ---- Host-create: a phone web-admin commands the HOST player to create ----
+    // A browser on http://<LAN-IP> has no WebGPU secure context, so instead of running
+    // the compute here it uploads the source audio and asks the player renderer (on
+    // localhost → WebGPU works) to do the full creation on the host GPU. main relays
+    // the job to the renderer, streams progress back over the creator:job broadcast (so
+    // this phone — and every other admin — sees it live), then muxes + saves the result.
+    const ALLOWED_AUDIO = /\.(mp3|wav|flac|ogg|m4a|aac|mp4|mkv|avi|mov|webm)$/i;
+    const hostCreateHandler = multer({
+      storage: multer.diskStorage({
+        destination: (_req, _file, cb) => cb(null, wsd),
+        filename: (_req, file, cb) =>
+          cb(
+            null,
+            `${crypto.randomBytes(8).toString('hex')}_src${path.extname(file.originalname || '')}`
+          ),
+      }),
+      limits: { fileSize: 500 * 1024 * 1024, files: 1 },
+      fileFilter: (_req, file, cb) =>
+        cb(null, file.fieldname === 'file' && ALLOWED_AUDIO.test(file.originalname || '')),
+    }).single('file');
+
+    this.app.post('/admin/creator/host-create', (req, res) => {
+      hostCreateHandler(req, res, async (err) => {
+        const srcPath = req.file?.path;
+        const tmpStems = [];
+        const cleanup = () => {
+          for (const p of [srcPath, ...tmpStems]) {
+            if (p) {
+              try {
+                fs.rmSync(p, { force: true });
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+        };
+        try {
+          if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+          if (!srcPath) return res.status(400).json({ error: 'no audio file uploaded' });
+
+          const songsFolder = this.mainApp.settings?.getSongsFolder?.();
+          if (!songsFolder) return res.status(400).json({ error: 'songs folder not set' });
+
+          // Single-job contract: 409 if a creation is already running anywhere.
+          if (creatorJob.isRunning()) {
+            return res.status(409).json({
+              error: 'A creation is already in progress',
+              busy: true,
+              job: creatorJob.getJob(),
+            });
+          }
+
+          const title = (req.body.title || 'Untitled').toString().slice(0, 200);
+          const artist = (req.body.artist || 'Unknown').toString().slice(0, 200);
+          const album = req.body.album ? req.body.album.toString().slice(0, 200) : undefined;
+          const referenceLyrics = req.body.referenceLyrics
+            ? req.body.referenceLyrics.toString()
+            : undefined;
+          let opts = {};
+          try {
+            opts = req.body.opts ? JSON.parse(req.body.opts) : {};
+          } catch {
+            /* ignore malformed opts → defaults */
+          }
+
+          // This route owns the job for its full span (compute on the host + save).
+          const jobId = `host-${crypto.randomBytes(6).toString('hex')}`;
+          creatorJob.startJob({ id: jobId, title, artist, source: 'web', startedAt: Date.now() });
+
+          // Respond immediately — the phone watches progress via the creator:job socket
+          // broadcast (started above + driven below), not this HTTP response.
+          res.json({ success: true, accepted: true, jobId });
+
+          try {
+            const audioBytes = fs.readFileSync(srcPath);
+            const created = await this.mainApp.runHostCreate(jobId, audioBytes, opts, (p) => {
+              if (p.phase) creatorJob.updateProgress({ step: p.phase, progress: p.progress });
+              else if (typeof p.progress === 'number')
+                creatorJob.updateProgress({ progress: p.progress });
+              if (p.log) creatorJob.appendConsole(p.log);
+            });
+
+            // Write the renderer-returned AAC stems to temp files, then mux + save.
+            creatorJob.updateProgress({ step: 'saving', progress: 95 });
+            const stemPaths = {};
+            for (const name of ['master', 'drums', 'bass', 'other', 'vocals']) {
+              const bytes = created.stems?.[name];
+              if (!bytes) throw new Error(`renderer returned no ${name} stem`);
+              const p = path.join(wsd, `${jobId}_${name}.m4a`);
+              fs.writeFileSync(p, Buffer.from(bytes));
+              tmpStems.push(p);
+              stemPaths[name] = p;
+            }
+            const saved = await creatorService.saveWebGpuStems({
+              stems: stemPaths,
+              metadata: { title, artist, album, key: created.key, duration: created.duration },
+              lyrics: created.lyrics,
+              pitch: created.pitch,
+              referenceLyrics,
+              settingsManager: this.mainApp.settings,
+              songsFolder,
+              manageJob: false, // this route owns the creatorJob lifecycle
+            });
+            creatorJob.finishJob('complete', {
+              outputPath: saved.outputPath,
+              finishedAt: Date.now(),
+            });
+            try {
+              await libraryService.syncLibrary(this.mainApp);
+            } catch (e) {
+              console.warn('library sync after host-create failed:', e.message);
+            }
+            cleanup();
+          } catch (e) {
+            creatorJob.finishJob('error', { error: e.message, finishedAt: Date.now() });
+            console.error('host-create failed:', e);
+            cleanup();
+          }
+        } catch (e) {
+          cleanup();
+          // If we already responded (accepted), this just logs; else surface the error.
+          if (!res.headersSent) res.status(500).json({ error: e.message || 'host-create failed' });
         }
       });
     });

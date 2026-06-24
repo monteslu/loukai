@@ -247,6 +247,10 @@ export async function saveWebGpuStems({
   settingsManager,
   songsFolder,
   source = null,
+  // When false, the CALLER already owns the creatorJob lifecycle (e.g. the host-create
+  // relay, where the job spans compute+save). We then skip the busy-check, startJob and
+  // finishJob here, but still report save sub-step progress into the existing job.
+  manageJob = true,
 }) {
   if (!songsFolder) throw new Error('songs folder is not set');
   const {
@@ -268,7 +272,7 @@ export async function saveWebGpuStems({
   // (another web admin, or the player) can't kick off a parallel save. The thrown
   // shape carries `busy` + the live job so callers can return a 409 / structured
   // "already running" instead of an opaque error.
-  if (creatorJob.isRunning()) {
+  if (manageJob && creatorJob.isRunning()) {
     const err = new Error('A creation is already in progress');
     err.busy = true;
     err.job = creatorJob.getJob();
@@ -280,13 +284,16 @@ export async function saveWebGpuStems({
 
   // Begin the observable job (broadcast to every admin surface via creatorJob.onChange).
   // The browser already did separation/transcription; the backend's job is the SAVE:
-  // LLM-correct → mux → write key/pitch. Steps mirror that.
-  creatorJob.startJob({
-    title,
-    artist,
-    source,
-    startedAt: typeof performance !== 'undefined' ? Math.round(performance.now()) : 0,
-  });
+  // LLM-correct → mux → write key/pitch. Steps mirror that. Skipped when the caller
+  // owns the job (manageJob:false) — e.g. host-create, where the job spans compute too.
+  if (manageJob) {
+    creatorJob.startJob({
+      title,
+      artist,
+      source,
+      startedAt: typeof performance !== 'undefined' ? Math.round(performance.now()) : 0,
+    });
+  }
   try {
     // --- LLM lyric correction, server-side ---
     // The renderer sends the RAW transcription; correction happens HERE on the backend,
@@ -371,16 +378,20 @@ export async function saveWebGpuStems({
         console.warn('writeVpchAtom failed:', e.message);
       }
     }
-    creatorJob.finishJob('complete', {
-      outputPath,
-      finishedAt: typeof performance !== 'undefined' ? Math.round(performance.now()) : 0,
-    });
+    if (manageJob) {
+      creatorJob.finishJob('complete', {
+        outputPath,
+        finishedAt: typeof performance !== 'undefined' ? Math.round(performance.now()) : 0,
+      });
+    }
     return { outputPath, fileName: basename(outputPath), llmStats };
   } catch (e) {
-    creatorJob.finishJob('error', {
-      error: e.message,
-      finishedAt: typeof performance !== 'undefined' ? Math.round(performance.now()) : 0,
-    });
+    if (manageJob) {
+      creatorJob.finishJob('error', {
+        error: e.message,
+        finishedAt: typeof performance !== 'undefined' ? Math.round(performance.now()) : 0,
+      });
+    }
     throw e;
   }
 }

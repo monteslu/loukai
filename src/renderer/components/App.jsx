@@ -19,9 +19,15 @@ import { ServerTab } from './ServerTab.jsx';
 import { VisualizationSettings } from '../../shared/components/VisualizationSettings.jsx';
 import { toggleCanvasFullscreen } from '../hooks/useKeyboardShortcuts.js';
 import WebGpuCreatorPanel from '../../shared/components/WebGpuCreatorPanel.jsx';
+import { useHostCreateListener } from '../hooks/useHostCreateListener.js';
 
 export function App({ bridge }) {
   const [requests, setRequests] = useState([]);
+
+  // Register this player as the HOST creation engine so a phone web-admin (no WebGPU
+  // secure context) can command it to create on the host GPU. Works regardless of the
+  // open tab — must not depend on the Create tab being mounted.
+  useHostCreateListener();
 
   // Update QR code on players when server URL or settings change
   useEffect(() => {

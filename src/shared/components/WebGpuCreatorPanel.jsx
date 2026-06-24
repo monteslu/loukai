@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import * as StemExtractor from 'stem-mp4/extractor';
-import { assetBase, WHISPER_MODELS, DEMUCS_MODELS, encodeWav } from '../creator/creatorAudio.js';
+import { WHISPER_MODELS, DEMUCS_MODELS, encodeWav } from '../creator/creatorAudio.js';
 import { encodeWavToAac } from '../creator/aacEncoder.js';
 import { createKaraoke } from '../creator/createKaraoke.js';
+import { loadCreatorLibs } from '../creator/creatorLibs.js';
 import {
   STYLES,
   Spinner,
@@ -161,108 +162,12 @@ export default function WebGpuCreatorPanel() {
       .catch(() => setFtAvailable(false));
   }, []);
 
-  // transformers.js keys its environment detection off `typeof process`. In the
-  // Electron renderer (nodeIntegration: true) `process` exists, so it WRONGLY
-  // thinks it's Node.js → tries onnxruntime-node (not bundled) → its
-  // InferenceSession is undefined → 'cannot read create' / 'Unsupported device'.
-  // Fix: hide the Node globals for the duration of the import so it detects a
-  // browser env (verified: enables the webgpu/wasm device branch + real inference).
-  async function importTransformers(url) {
-    const saved = {
-      process: globalThis.process,
-      module: globalThis.module,
-      require: globalThis.require,
-      global: globalThis.global,
-    };
-    try {
-      delete globalThis.process;
-      delete globalThis.module;
-      delete globalThis.require;
-      delete globalThis.global;
-    } catch {
-      /* ignore */
-    }
-    try {
-      return await import(/* @vite-ignore */ url);
-    } finally {
-      globalThis.process = saved.process;
-      globalThis.module = saved.module;
-      globalThis.require = saved.require;
-      globalThis.global = saved.global;
-    }
-  }
-
+  // Load the WebGPU creator runtime via the shared loader (also used by the headless
+  // host-create path). Caches at module scope, so the panel + headless share one load.
   async function loadLibs() {
-    if (libs.current.ort) return libs.current;
-    const base = assetBase();
-    log('loading libraries from loukai (same-origin, backend-cached) …');
-    // All from /webgpu-assets/* — never a CDN. Self-contained ESM bundles
-    // (ort.webgpu.bundle.min.mjs has no sub-imports), so dynamic import works.
-    // transformers.js is imported with Node globals hidden (see importTransformers).
-    let ort, demucs, tf, ftEnsemble, crepeMod;
-    try {
-      [ort, demucs, tf, ftEnsemble, crepeMod] = await Promise.all([
-        import(/* @vite-ignore */ `${base}/ort.webgpu.bundle.min.mjs`),
-        import(/* @vite-ignore */ `${base}/demucs/index.js`),
-        importTransformers(`${base}/transformers.min.js`),
-        import(/* @vite-ignore */ `${base}/ft-ensemble.js`),
-        import(/* @vite-ignore */ `${base}/crepe-pitch.js`),
-      ]);
-    } catch (e) {
-      throw new Error(
-        `failed to load WebGPU libraries from loukai (${String(e.message).slice(0, 100)}). ` +
-          `If the app was reloading, just try again.`
-      );
-    }
-    try {
-      // WASM artifacts also served by us.
-      if (ort.env?.wasm) {
-        ort.env.wasm.wasmPaths = `${base}/`;
-        // SIMD is built into the artifact we serve (ort-wasm-simd-threaded). THREADS
-        // additionally require cross-origin isolation (COOP+COEP → SharedArrayBuffer);
-        // otherwise fall back to a single thread. Mirror the JIG bench.
-        const isolated = self.crossOriginIsolated === true;
-        const threads = isolated ? navigator.hardwareConcurrency || 4 : 1;
-        ort.env.wasm.numThreads = threads;
-        log(
-          `WASM: SIMD on, ${threads} thread${threads === 1 ? '' : 's'}` +
-            (isolated ? '' : ' (not cross-origin-isolated → single-threaded)')
-        );
-      }
-      if (ort.env?.webgpu) ort.env.webgpu.powerPreference = 'high-performance';
-      // Verbose ORT logging so the devtools console shows the real EP/device init
-      // (e.g. "[WebGPU] ..."), confirming whether the GPU was actually used.
-      try {
-        ort.env.logLevel = 'info';
-        if (ort.env.webgpu) ort.env.webgpu.profiling = { mode: 'off' };
-      } catch {
-        /* ignore */
-      }
-      // transformers.js: pull models through loukai too (no HuggingFace from UI).
-      if (tf.env) {
-        tf.env.allowRemoteModels = true;
-        // transformers.js requests {remoteHost}{model}/resolve/{revision}/{file};
-        // our /webgpu-models/* proxy passes that whole path through to HuggingFace.
-        tf.env.remoteHost = '/webgpu-models/';
-        tf.env.remotePathTemplate = '{model}/resolve/{revision}/';
-        // transformers.js bundles its OWN onnxruntime-web → point its wasm at us too.
-        if (tf.env.backends?.onnx?.wasm) tf.env.backends.onnx.wasm.wasmPaths = `${base}/`;
-      }
-    } catch {
-      /* ignore */
-    }
-    libs.current = {
-      ort,
-      base,
-      demucs, // full module (prepareModelInput / standaloneMask / standaloneIspec)
-      DemucsProcessor: demucs.DemucsProcessor,
-      CONSTANTS: demucs.CONSTANTS,
-      pipeline: tf.pipeline,
-      tf, // full transformers.js module (for WhisperTextStreamer)
-      ftEnsemble,
-      crepeMod,
-    };
-    return libs.current;
+    const loaded = await loadCreatorLibs(log);
+    libs.current = loaded;
+    return loaded;
   }
 
   // Dual-path call to a creator service: IPC in the Electron player (no admin HTTP

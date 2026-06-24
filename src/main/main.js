@@ -2040,6 +2040,52 @@ class KaiPlayerApp {
   }
 
   /**
+   * Long-job relay: ask the PLAYER renderer to run a full WebGPU creation (a phone
+   * web-admin has no secure context for WebGPU, so the host does the compute). Unlike
+   * sendToRendererAndWait this (a) forwards the payload, (b) has NO short timeout
+   * (creation takes ~30-90s), and (c) streams intermediate progress back to `onProgress`
+   * before resolving with the final result. The renderer side is useHostCreateListener.
+   *
+   * @param {string} jobId
+   * @param {Uint8Array|Buffer} audioBytes  uploaded source audio
+   * @param {Object} opts  creator options (asrModel/demucsModel/language/…)
+   * @param {(p:object)=>void} [onProgress]  {phase?,progress?,log?,stemProgress?}
+   * @returns {Promise<object>} the renderer result { success, stems, lyrics, key, pitch, ... }
+   */
+  runHostCreate(jobId, audioBytes, opts = {}, onProgress = () => {}) {
+    return new Promise((resolve, reject) => {
+      if (!this.mainWindow || this.mainWindow.isDestroyed()) {
+        return reject(new Error('no player window available to run host creation'));
+      }
+      const responseChannel = `creator:hostCreate:response:${jobId}`;
+
+      const progressListener = (_event, payload) => {
+        if (payload?.jobId === jobId) {
+          try {
+            onProgress(payload.progress || {});
+          } catch {
+            /* progress is best-effort */
+          }
+        }
+      };
+
+      const responseListener = (_event, result) => {
+        ipcMain.removeListener('creator:hostCreate:progress', progressListener);
+        ipcMain.removeListener(responseChannel, responseListener);
+        if (result?.success) resolve(result);
+        else reject(new Error(result?.error || 'host creation failed in renderer'));
+      };
+
+      ipcMain.on('creator:hostCreate:progress', progressListener);
+      ipcMain.once(responseChannel, responseListener);
+
+      // Forward the FULL payload (the bug sendToRendererAndWait has — dropping args —
+      // is exactly what we must not repeat here).
+      this.mainWindow.webContents.send('creator:hostCreate', { jobId, audioBytes, opts });
+    });
+  }
+
+  /**
    * Broadcast a settings change to renderer and web clients
    * @param {string} key - Settings key
    * @param {*} value - Settings value
