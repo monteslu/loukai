@@ -1,4 +1,6 @@
 import { useState, useRef } from 'react';
+import { CreatorJobBanner } from '../../shared/components/creatorUi.jsx';
+import { useCreatorJob } from '../../shared/hooks/useCreatorJob.js';
 
 /**
  * Web-admin "Create" tab. The full WebGPU creator can't run here: a browser only
@@ -8,17 +10,23 @@ import { useState, useRef } from 'react';
  *   1. Best results → create in the desktop app (localhost = WebGPU works).
  *   2. Or use the hosted online creator (HTTPS → WebGPU on your machine).
  *   3. Import the resulting .stem.mp4 here → optional lyric lookup + correction.
+ *
+ * It also observes the single creator job so that when the desktop player (or another
+ * admin) is mid-creation, this tab shows live progress instead of looking idle.
  */
 
 const ONLINE_CREATOR_URL = 'https://karaoke-creator.loukai.com';
 
-export default function CreatorImportPanel() {
+export default function CreatorImportPanel({ bridge }) {
   const [file, setFile] = useState(null);
   const [correct, setCorrect] = useState(true);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const inputRef = useRef(null);
+  // Live single-job descriptor (broadcast over the admin socket). Surfaces a running
+  // creation started on the desktop player or another admin.
+  const { job: creatorJob } = useCreatorJob({ bridge });
 
   const pick = (f) => {
     if (!f) return;
@@ -62,6 +70,9 @@ export default function CreatorImportPanel() {
 
   return (
     <div className="flex flex-col gap-4 max-w-2xl w-full mx-auto">
+      {/* Live job from another surface (the desktop player is creating right now). */}
+      <CreatorJobBanner job={creatorJob} />
+
       {/* Recommended path */}
       <div className={card}>
         <h3 className="text-lg font-semibold mb-1">Create karaoke files</h3>

@@ -81,6 +81,53 @@ export function SongTitle({ artist, title }) {
 }
 
 /**
+ * Live "a creation is already running" banner — fed by the single creatorJob
+ * descriptor (see useCreatorJob). Shows on ANY admin surface when a job is active,
+ * including one started on a different surface (the player while you're on a phone,
+ * or another browser). `job` is the descriptor; `selfActive` is true when THIS
+ * surface owns the running job (then we suppress the banner — the surface shows its
+ * own richer progress instead).
+ */
+export function CreatorJobBanner({ job, selfActive = false }) {
+  if (!job || job.status !== 'running' || selfActive) return null;
+  const who =
+    job.source === 'electron'
+      ? 'the desktop player'
+      : job.source === 'web'
+        ? 'a web admin'
+        : 'another device';
+  const pct = Math.max(0, Math.min(100, Math.round(job.progress || 0)));
+  const label = [job.artist, job.title].filter(Boolean).join(' - ');
+  return (
+    <div className="rounded-lg border border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/30 p-4 select-text">
+      <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-medium">
+        <span className="inline-block animate-pulse">●</span>A creation is already running on {who}
+      </div>
+      {label && <div className="mt-1 text-sm text-amber-700 dark:text-amber-300">{label}</div>}
+      <div className="mt-2 flex items-center gap-2">
+        <div className="flex-1 h-2 rounded bg-amber-200 dark:bg-amber-800 overflow-hidden">
+          <div className="h-full bg-amber-500 transition-all" style={{ width: `${pct}%` }} />
+        </div>
+        <span className="w-9 text-right text-xs text-amber-700 dark:text-amber-300">{pct}%</span>
+      </div>
+      {job.step && (
+        <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">Step: {job.step}</div>
+      )}
+      {job.consoleTail?.length > 0 && (
+        <details className="mt-2 text-xs">
+          <summary className="cursor-pointer text-amber-700 dark:text-amber-300">
+            show progress log
+          </summary>
+          <div className="mt-1 max-h-32 overflow-auto font-mono text-amber-800 dark:text-amber-200 whitespace-pre-wrap">
+            {job.consoleTail.slice(-20).join('\n')}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+/**
  * Per-stem progress bars (drums/bass/other/vocals) — the WebGPU creator's nicer
  * separation progress, shared so it's reusable. `progress` is { stem: 0..1 }.
  */

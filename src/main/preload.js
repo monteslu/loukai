@@ -266,6 +266,16 @@ const api = {
     getLLMSettings: () => ipcRenderer.invoke('creator:getLLMSettings'),
     saveLLMSettings: (settings) => ipcRenderer.invoke('creator:saveLLMSettings', settings),
     testLLMConnection: (settings) => ipcRenderer.invoke('creator:testLLMConnection', settings),
+
+    // Subscribe to the single-job descriptor (start / progress / finish), broadcast by
+    // main whenever a creation runs on ANY surface. Returns an unsubscribe fn so a
+    // React effect can clean up. Lets a Create tab opened/refreshed mid-job show the
+    // live job instead of a blank form.
+    onJob: (callback) => {
+      const handler = (_e, job) => callback(job);
+      ipcRenderer.on('creator:job', handler);
+      return () => ipcRenderer.removeListener('creator:job', handler);
+    },
   },
 };
 

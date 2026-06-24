@@ -10,7 +10,15 @@ import {
   cullOutroThanks,
 } from '../creator/creatorAudio.js';
 import { encodeWavToAac } from '../creator/aacEncoder.js';
-import { STYLES, Spinner, ErrorDisplay, SongTitle, StemProgressBars } from './creatorUi.jsx';
+import {
+  STYLES,
+  Spinner,
+  ErrorDisplay,
+  SongTitle,
+  StemProgressBars,
+  CreatorJobBanner,
+} from './creatorUi.jsx';
+import { useCreatorJob } from '../hooks/useCreatorJob.js';
 
 /**
  * WebGPU Creator (experimental) — runs Demucs stem separation + Whisper
@@ -95,6 +103,12 @@ export default function WebGpuCreatorPanel() {
   const reuseStemsRef = useRef(null);
   const libs = useRef({}); // cached dynamic imports
   const logEnd = useRef(null);
+
+  // Observe the single creator job (broadcast by main on every surface). In the
+  // player this compute runs locally, so we only use the job to show a banner when
+  // ANOTHER surface (a web admin / phone) is creating, and to block starting a
+  // second one. `bridge` is omitted → the hook uses IPC (window.kaiAPI).
+  const { job: creatorJob } = useCreatorJob();
 
   const log = (m) =>
     setLogLines((p) => [...p.slice(-150), `${new Date().toLocaleTimeString()}  ${m}`]);
@@ -1542,6 +1556,10 @@ export default function WebGpuCreatorPanel() {
     status === 'pitch' ||
     status === 'saving';
 
+  // A creation is running on ANOTHER surface (web admin / phone). We don't own it,
+  // so block starting a second one (single-job contract) and show the banner.
+  const remoteBusy = creatorJob?.status === 'running' && !busy;
+
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-3xl mx-auto flex flex-col gap-6">
@@ -1571,6 +1589,10 @@ export default function WebGpuCreatorPanel() {
         </div>
 
         <ErrorDisplay error={error} onDismiss={() => setError(null)} />
+
+        {/* A creation running on another surface (web admin / phone). selfActive when
+            this panel is busy → suppressed (we show our own richer progress below). */}
+        <CreatorJobBanner job={creatorJob} selfActive={busy} />
 
         {/* Sub-tab navigation */}
         <div className="flex border-b border-gray-300 dark:border-gray-600">
@@ -1907,14 +1929,16 @@ export default function WebGpuCreatorPanel() {
         <div className="flex flex-col gap-2">
           <button
             onClick={run}
-            disabled={busy || !fileName || fileLoading || lookingUp}
+            disabled={busy || remoteBusy || !fileName || fileLoading || lookingUp}
             className={STYLES.btnPrimary}
           >
             {busy
               ? 'Working…'
-              : fileLoading || lookingUp
-                ? 'Looking up lyrics…'
-                : 'Create Karaoke ⚡'}
+              : remoteBusy
+                ? 'Another creation is running…'
+                : fileLoading || lookingUp
+                  ? 'Looking up lyrics…'
+                  : 'Create Karaoke ⚡'}
           </button>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             First run downloads htdemucs (~172 MB) + the chosen Whisper model via loukai (cached

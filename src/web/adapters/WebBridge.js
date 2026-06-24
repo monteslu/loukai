@@ -313,6 +313,16 @@ export class WebBridge extends BridgeInterface {
     return await this._fetch(`/requests/${requestId}/reject`, { method: 'POST' });
   }
 
+  // ===== Creator =====
+
+  // Current creator status incl. the single-job descriptor. Used by the Create tab to
+  // pull-on-mount: if a creation is already running (started here or in the player),
+  // show the live job instead of a blank form. Live updates arrive via the
+  // onStateChange('creatorJob', ...) socket subscription below.
+  async getCreatorStatus() {
+    return await this._fetch('/creator/status');
+  }
+
   // ===== State Subscriptions =====
 
   onStateChange(domain, callback) {
@@ -330,6 +340,7 @@ export class WebBridge extends BridgeInterface {
       preferences: 'preferences-update',
       requests: 'new-song-request',
       currentSong: 'current-song-update',
+      creatorJob: 'creator:job',
     };
 
     const event = eventMap[domain];
@@ -362,6 +373,7 @@ export class WebBridge extends BridgeInterface {
       preferences: 'preferences-update',
       requests: 'new-song-request',
       currentSong: 'current-song-update',
+      creatorJob: 'creator:job',
     };
 
     const event = eventMap[domain];

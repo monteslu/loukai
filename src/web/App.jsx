@@ -588,7 +588,7 @@ export function App() {
         <div
           className={`${currentTab === 'create' ? 'flex' : 'hidden'} flex-col h-full gap-4 p-4 overflow-auto`}
         >
-          <CreatorImportPanel />
+          <CreatorImportPanel bridge={bridge} />
         </div>
       </main>
     </div>
