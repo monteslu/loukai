@@ -22,8 +22,11 @@ export default defineConfig({
         'src/shared/creator/**/*.js',
         'src/shared/formatUtils.js',
         'src/main/creator/creatorJob.js',
-        'src/main/creator/audioInfo.js',
         'src/main/creator/hostCreateRelay.js',
+        // NOTE: audioInfo.js is intentionally NOT measured — its tests are gated on
+        // ffmpeg/ffprobe being installed (describe.skipIf), so its coverage swings
+        // between dev (ffmpeg present) and CI (absent). An env-dependent number can't
+        // be a stable gate. The conformance tests still RUN where ffmpeg exists.
       ],
       reporter: ['text', 'json', 'html'],
       exclude: [
