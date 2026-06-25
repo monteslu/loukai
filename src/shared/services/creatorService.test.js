@@ -23,12 +23,19 @@ vi.mock('../../main/creator/audioInfo.js', () => ({
   isVideoFile: vi.fn(),
 }));
 
+vi.mock('../../main/creator/stemBuilder.js', () => ({
+  repairStemFile: vi.fn(),
+  repairStemFiles: vi.fn(),
+}));
+
 describe('creatorService', () => {
   let creatorService;
   let searchLyrics;
   let prepareWhisperContext;
   let getAudioInfo;
   let isVideoFile;
+  let repairStemFile;
+  let repairStemFiles;
 
   beforeEach(async () => {
     vi.resetModules();
@@ -40,6 +47,10 @@ describe('creatorService', () => {
     const audioInfo = await import('../../main/creator/audioInfo.js');
     getAudioInfo = audioInfo.getAudioInfo;
     isVideoFile = audioInfo.isVideoFile;
+
+    const stemBuilder = await import('../../main/creator/stemBuilder.js');
+    repairStemFile = stemBuilder.repairStemFile;
+    repairStemFiles = stemBuilder.repairStemFiles;
 
     creatorService = await import('./creatorService.js');
   });
@@ -197,6 +208,36 @@ describe('creatorService', () => {
 
       expect(result.success).toBe(true);
       expect(result.lyrics).toBeUndefined();
+    });
+  });
+
+  describe('repairStem', () => {
+    it('returns the repair result on success', async () => {
+      repairStemFile.mockResolvedValue({ success: true, repaired: true });
+      const result = await creatorService.repairStem('/songs/x.stem.mp4');
+      expect(repairStemFile).toHaveBeenCalledWith('/songs/x.stem.mp4');
+      expect(result).toEqual({ success: true, repaired: true });
+    });
+
+    it('returns a structured error when the repair throws', async () => {
+      repairStemFile.mockRejectedValue(new Error('bad atom'));
+      const result = await creatorService.repairStem('/songs/x.stem.mp4');
+      expect(result).toEqual({ success: false, error: 'bad atom' });
+    });
+  });
+
+  describe('repairStems', () => {
+    it('returns batch results on success', async () => {
+      repairStemFiles.mockResolvedValue({ success: true, repaired: 2 });
+      const result = await creatorService.repairStems(['/a.stem.mp4', '/b.stem.mp4']);
+      expect(repairStemFiles).toHaveBeenCalledWith(['/a.stem.mp4', '/b.stem.mp4']);
+      expect(result).toEqual({ success: true, repaired: 2 });
+    });
+
+    it('returns a structured error when the batch throws', async () => {
+      repairStemFiles.mockRejectedValue(new Error('batch failed'));
+      const result = await creatorService.repairStems(['/a.stem.mp4']);
+      expect(result).toEqual({ success: false, error: 'batch failed' });
     });
   });
 
