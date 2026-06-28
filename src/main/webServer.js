@@ -11,7 +11,6 @@ import Keygrip from 'keygrip';
 import { Server } from 'socket.io';
 import http from 'http';
 import rateLimit from 'express-rate-limit';
-import Fuse from 'fuse.js';
 import { log } from './logger.js';
 import * as queueService from '../shared/services/queueService.js';
 import * as libraryService from '../shared/services/libraryService.js';
@@ -52,7 +51,6 @@ class WebServer {
     this.settings = { ...SERVER_DEFAULTS };
 
     // Fuzzy search instance - will be initialized when songs are loaded
-    this.fuse = null;
 
     // Songs cache to avoid scanning directory on every request
     this.cachedSongs = null;
@@ -506,20 +504,8 @@ class WebServer {
         let songs = allSongs;
 
         if (search) {
-          // Initialize or update Fuse.js if not already done or songs changed
-          if (!this.fuse || this.fuse._docs.length !== allSongs.length) {
-            this.fuse = new Fuse(allSongs, {
-              keys: ['title', 'artist', 'album'],
-              threshold: 0.3, // 0 = exact match, 1 = match anything
-              includeScore: true,
-              ignoreLocation: true,
-              findAllMatches: true,
-            });
-          }
-
-          // Use fuzzy search
-          const fuseResults = this.fuse.search(search);
-          songs = fuseResults.map((result) => result.item);
+          // Shared search (same tuning as desktop/admin). No per-route Fuse config.
+          songs = libraryService.searchSongList(allSongs, search, allSongs.length);
         } else {
           // Sort alphabetically by title when no search
           songs = allSongs.sort((a, b) => a.title.localeCompare(b.title));
@@ -551,22 +537,10 @@ class WebServer {
         // Get songs from cache
         const allSongs = await this.getCachedSongs();
 
-        // Initialize or update Fuse.js if needed
-        if (!this.fuse || this.fuse._docs.length !== allSongs.length) {
-          this.fuse = new Fuse(allSongs, {
-            keys: ['title', 'artist', 'album'],
-            threshold: 0.3,
-            includeScore: true,
-            ignoreLocation: true,
-            findAllMatches: true,
-          });
-        }
-
-        // Use fuzzy search
-        const fuseResults = this.fuse.search(query);
-        const results = fuseResults
-          .slice(0, limit)
-          .map((result) => this.sanitizeSongForPublic(result.item));
+        // Shared search (same tuning as desktop/admin). No per-route Fuse config.
+        const results = libraryService
+          .searchSongList(allSongs, query, limit)
+          .map((song) => this.sanitizeSongForPublic(song));
 
         res.json({ results });
       } catch (error) {
@@ -2815,8 +2789,7 @@ class WebServer {
       this.cachedSongs = (await this.mainApp.getLibrarySongs?.()) || [];
       this.songsCacheTime = Date.now();
 
-      // Reset Fuse.js instance since songs changed
-      this.fuse = null;
+      libraryService.resetSongSearchIndex(); // songs changed → rebuild on next search
 
       log(`✅ Cached ${this.cachedSongs.length} songs`);
     } catch (error) {
@@ -2830,7 +2803,7 @@ class WebServer {
     log('🗑️ Clearing songs cache...');
     this.cachedSongs = null;
     this.songsCacheTime = null;
-    this.fuse = null;
+    libraryService.resetSongSearchIndex();
   }
 
   // Get or create a persistent secret key for cookie encryption

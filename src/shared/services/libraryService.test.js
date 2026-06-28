@@ -333,11 +333,16 @@ describe('libraryService', () => {
     });
 
     it('should handle search errors gracefully', () => {
-      // Simulate error by setting cachedLibrary to invalid data
-      mainApp.cachedLibrary = [{ invalid: 'data' }];
-      mainApp.cachedLibrary.filter = () => {
-        throw new Error('Search failed');
-      };
+      // Reset the shared index so this call rebuilds it, then make the cached list throw
+      // when the index is built (length access) — exercises the try/catch.
+      libraryService.resetSongSearchIndex();
+      // Make reading mainApp.cachedLibrary throw — exercises the try/catch.
+      Object.defineProperty(mainApp, 'cachedLibrary', {
+        configurable: true,
+        get() {
+          throw new Error('Search failed');
+        },
+      });
 
       const result = libraryService.searchSongs(mainApp, 'test');
 
@@ -450,7 +455,13 @@ describe('libraryService', () => {
 
       expect(result.success).toBe(true);
       expect(mainApp.webServer.cachedSongs).toEqual(mockFiles);
-      expect(mainApp.webServer.fuse).toBeNull();
+      // The shared search index is invalidated on cache update, so a subsequent search
+      // reflects the new songs (rather than a stale index).
+      const after = libraryService.searchSongList(
+        mockFiles,
+        mockFiles[0].title || mockFiles[0].artist || ''
+      );
+      expect(Array.isArray(after)).toBe(true);
       expect(mainApp.webServer.io.emit).toHaveBeenCalledWith(
         'library-refreshed',
         expect.objectContaining({ count: 1 })

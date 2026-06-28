@@ -1462,7 +1462,7 @@ class KaiPlayerApp {
           if (this.webServer) {
             this.webServer.cachedSongs = files;
             this.webServer.songsCacheTime = Date.now();
-            this.webServer.fuse = null;
+            libraryService.resetSongSearchIndex();
           }
 
           // Notify renderer
@@ -1498,7 +1498,7 @@ class KaiPlayerApp {
       if (this.webServer) {
         this.webServer.cachedSongs = files;
         this.webServer.songsCacheTime = Date.now();
-        this.webServer.fuse = null; // Reset Fuse.js - will rebuild on next search
+        libraryService.resetSongSearchIndex();
       }
 
       // Save to disk cache

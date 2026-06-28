@@ -5,7 +5,56 @@
  * to ensure consistent library behavior across all interfaces.
  */
 
+import Fuse from 'fuse.js';
 import { STEM_MP4_FORMAT } from '../formatUtils.js';
+
+/**
+ * THE single song-search configuration for the whole app (desktop IPC + web + phone).
+ * Tuned so users actually find things: typo-tolerant, field-weighted (title > artist >
+ * album), order-independent across words. Previously the desktop used a literal substring
+ * filter while the web server had its own Fuse config — two behaviors, one of them dumb.
+ * Now everything calls searchSongs() below.
+ */
+const FUSE_OPTIONS = {
+  // Weighted so a title hit outranks an artist/album hit (matches user expectation +
+  // the existing test: "queen" → "Dancing Queen" before "Bohemian Rhapsody").
+  keys: [
+    { name: 'title', weight: 0.7 },
+    { name: 'artist', weight: 0.25 },
+    { name: 'album', weight: 0.05 },
+  ],
+  threshold: 0.4, // a bit looser than the old 0.3 so near-misses/typos still match
+  ignoreLocation: true, // match anywhere in the field, not just the start
+  includeScore: true,
+  minMatchCharLength: 2,
+  useExtendedSearch: false,
+};
+
+// Module-level Fuse index, rebuilt only when the underlying song array actually changes
+// (reference or length). Building a Fuse index over a large library isn't free, so we
+// don't want to do it on every keystroke.
+let _fuse = null;
+let _fuseSource = null;
+let _fuseLength = -1;
+
+/** Get (or lazily build) the shared Fuse index for a song list. Exported so the web
+ *  server can invalidate it when the library refreshes. */
+export function getSongSearchIndex(songs) {
+  if (_fuse && _fuseSource === songs && _fuseLength === songs.length) {
+    return _fuse;
+  }
+  _fuse = new Fuse(songs, FUSE_OPTIONS);
+  _fuseSource = songs;
+  _fuseLength = songs.length;
+  return _fuse;
+}
+
+/** Drop the cached index (call when songs are added/removed/edited). */
+export function resetSongSearchIndex() {
+  _fuse = null;
+  _fuseSource = null;
+  _fuseLength = -1;
+}
 
 /**
  * Get the current songs folder path
@@ -257,7 +306,68 @@ export async function syncLibrary(mainApp, progressCallback) {
 }
 
 /**
- * Search songs in the library
+ * THE shared song search. Pure: takes a song array + query, returns ranked songs. Used by
+ * searchSongs() (desktop/admin) AND the web/phone API routes, so EVERY surface searches
+ * identically. Typo-tolerant (Fuse), field-weighted (title > artist > album), and
+ * order-independent across query words.
+ * @param {Array} songs - the song list to search
+ * @param {string} query - the search query
+ * @param {number} [limit=50] - max results
+ * @returns {Array} matching songs (already ranked + limited)
+ */
+export function searchSongList(songs, query, limit = 50) {
+  const trimmed = (query || '').trim();
+  if (!trimmed || !Array.isArray(songs) || songs.length === 0) return [];
+
+  const fuse = getSongSearchIndex(songs);
+
+  // Multi-word, ORDER-INDEPENDENT matching: split into terms, require each term to match
+  // SOME field (AND across terms). This is what lets "diamond caroline" or "artist title"
+  // find a song even though the words aren't contiguous — the #1 reason the old substring
+  // filter failed users. A single term just runs Fuse directly.
+  const terms = trimmed.split(/\s+/).filter(Boolean);
+
+  const ql = trimmed.toLowerCase();
+  // Title-first tiebreak: a row whose TITLE contains the query ranks above one that only
+  // matched on artist/album, even if Fuse scored the latter (e.g. an exact artist hit)
+  // lower. Matches what users expect when they type a song name.
+  const titleFirst = (a, b) => {
+    const at = a.item.title?.toLowerCase().includes(ql) ? 0 : 1;
+    const bt = b.item.title?.toLowerCase().includes(ql) ? 0 : 1;
+    if (at !== bt) return at - bt;
+    return (a.score ?? 1) - (b.score ?? 1);
+  };
+
+  let ranked;
+  if (terms.length <= 1) {
+    ranked = fuse.search(trimmed).sort(titleFirst);
+  } else {
+    // Intersect per-term result sets; combine scores (lower = better in Fuse).
+    const perTerm = terms.map((t) => new Map(fuse.search(t).map((r) => [r.item, r.score ?? 1])));
+    const first = perTerm[0];
+    const combined = [];
+    for (const [item, score0] of first) {
+      let total = score0;
+      let inAll = true;
+      for (let i = 1; i < perTerm.length; i++) {
+        const s = perTerm[i].get(item);
+        if (s === undefined) {
+          inAll = false;
+          break;
+        }
+        total += s;
+      }
+      if (inAll) combined.push({ item, score: total });
+    }
+    combined.sort((a, b) => a.score - b.score);
+    ranked = combined;
+  }
+
+  return ranked.slice(0, limit).map((r) => r.item);
+}
+
+/**
+ * Search songs in the library (desktop IPC + /admin route).
  * @param {Object} mainApp - Main application instance
  * @param {string} query - Search query
  * @returns {Object} Result with success status and matching songs
@@ -265,43 +375,10 @@ export async function syncLibrary(mainApp, progressCallback) {
 export function searchSongs(mainApp, query) {
   try {
     if (!query || !query.trim()) {
-      return {
-        success: true,
-        songs: [],
-      };
+      return { success: true, songs: [] };
     }
-
     const cachedSongs = mainApp.cachedLibrary || [];
-    if (cachedSongs.length === 0) {
-      return {
-        success: true,
-        songs: [],
-      };
-    }
-
-    const searchLower = query.toLowerCase().trim();
-    const matches = cachedSongs
-      .filter(
-        (song) =>
-          song.title?.toLowerCase().includes(searchLower) ||
-          song.artist?.toLowerCase().includes(searchLower) ||
-          song.album?.toLowerCase().includes(searchLower)
-      )
-      .sort((a, b) => {
-        // Prioritize title matches over artist/album matches
-        const aTitleMatch = a.title?.toLowerCase().includes(searchLower);
-        const bTitleMatch = b.title?.toLowerCase().includes(searchLower);
-        if (aTitleMatch && !bTitleMatch) return -1;
-        if (!aTitleMatch && bTitleMatch) return 1;
-        // Then sort alphabetically by title
-        return (a.title || '').localeCompare(b.title || '');
-      })
-      .slice(0, 50); // Limit to 50 results
-
-    return {
-      success: true,
-      songs: matches,
-    };
+    return { success: true, songs: searchSongList(cachedSongs, query, 50) };
   } catch (error) {
     return {
       success: false,
@@ -410,7 +487,7 @@ export async function updateLibraryCache(mainApp, files) {
     if (mainApp.webServer) {
       mainApp.webServer.cachedSongs = files;
       mainApp.webServer.songsCacheTime = Date.now();
-      mainApp.webServer.fuse = null; // Reset Fuse.js - will rebuild on next search
+      resetSongSearchIndex(); // songs changed → rebuild the shared search index
 
       // Notify web admin clients via socket
       if (mainApp.webServer.io) {
