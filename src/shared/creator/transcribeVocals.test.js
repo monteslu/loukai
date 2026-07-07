@@ -198,4 +198,24 @@ describe('language auto-detect', () => {
     expect(r.language).toBe('en');
     expect(asr.mock.calls[0][1].language).toBe('en');
   });
+
+  it('skips lib-unsupported codes (yue) and takes the runner-up', async () => {
+    // large-v3-turbo's model config lists yue, but transformers.js 3.8.1's language
+    // map does not — forcing it would throw. Detection must fall through to zh.
+    const asr = detectingAsr();
+    asr.model = vi.fn(async () => {
+      const logits = new Float32Array(16).fill(-5);
+      logits[3] = 12; // <|yue|> wins the argmax…
+      logits[7] = 10; // …but <|zh|> is the acceptable runner-up
+      return { logits: { data: logits } };
+    });
+    asr.model.config = { decoder_start_token_id: 1 };
+    asr.model.generation_config = { lang_to_id: { '<|yue|>': 3, '<|zh|>': 7, '<|en|>': 5 } };
+    const r = await transcribeVocals(
+      { vocals: vocals(60, [[10, 20]]), sampleRate: SR, duration: 60, asr, tf: { Tensor } },
+      { timestampMode: 'segment', language: 'auto' },
+      {}
+    );
+    expect(r.language).toBe('zh');
+  });
 });

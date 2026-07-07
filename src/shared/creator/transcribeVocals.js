@@ -256,15 +256,16 @@ export async function transcribeVocals(input, opts = {}, emit = {}) {
       const decoderIds = new tf.Tensor('int64', new BigInt64Array([BigInt(sot)]), [1, 1]);
       const fwd = await asr.model({ ...feats, decoder_input_ids: decoderIds });
       const logits = fwd.logits.data; // [1,1,vocab]
-      let bestTok = null;
-      let bestVal = -Infinity;
-      for (const [tok, id] of Object.entries(asr.model.generation_config.lang_to_id)) {
-        if (logits[id] > bestVal) {
-          bestVal = logits[id];
-          bestTok = tok;
-        }
-      }
-      effectiveLanguage = bestTok ? bestTok.slice(2, -2) : 'en'; // '<|es|>' → 'es'
+      const ranked = Object.entries(asr.model.generation_config.lang_to_id)
+        .map(([tok, id]) => [tok.slice(2, -2), logits[id]]) // '<|es|>' → 'es'
+        .sort((a, b) => b[1] - a[1]);
+      // Only accept codes transformers.js can force back through generate(): its
+      // language map holds the 99 two-letter codes plus 'haw'. large-v3-turbo's model
+      // config ALSO lists 'yue' (Cantonese), which transformers.js 3.8.1 throws on —
+      // walk the ranking and take the first acceptable code (Cantonese falls through
+      // to its runner-up, typically zh).
+      const acceptable = ([code]) => code.length === 2 || code === 'haw';
+      effectiveLanguage = ranked.find(acceptable)?.[0] ?? 'en';
       onLog(
         `language auto-detect: ${effectiveLanguage} (on the loudest 30s of vocals @ ${(s0 / 16000).toFixed(0)}s)`
       );
