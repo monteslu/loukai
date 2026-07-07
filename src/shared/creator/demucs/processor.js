@@ -103,8 +103,24 @@ export class DemucsProcessor {
     this.onProgress = options.onProgress ?? (() => {});
     this.onLog = options.onLog ?? (() => {});
     this.pipeline = options.pipeline ?? true;
+    // Gentle mode (~50% GPU duty + per-piece queue drains on the chained model):
+    // for when the SAME GPU is rendering something a human is watching (the
+    // host playing karaoke during host-create). MUTABLE mid-run: the worker
+    // flips it when playback starts/stops; the loops read it per segment (the
+    // setter below mirrors it into the live GpuSeparator).
+    this._gentle = options.gentle ?? false;
+    // Cooperative cancel: checked between segments; throws to abort the run
+    // without tearing down the warmed worker/sessions.
+    this.shouldCancel = options.shouldCancel ?? (() => false);
     const gpuAvailable = typeof navigator !== 'undefined' && Boolean(navigator.gpu);
     this.dspMode = options.dsp ?? (gpuAvailable ? 'webgpu' : 'wasm');
+  }
+  get gentle() {
+    return this._gentle;
+  }
+  set gentle(v) {
+    this._gentle = Boolean(v);
+    if (this.gpu) this.gpu.gentle = this._gentle; // live flip reaches the GPU loop
   }
   makeCpuDsp() {
     if (this.cpuDsp) return this.cpuDsp;
@@ -131,9 +147,16 @@ export class DemucsProcessor {
     });
     return this.session;
   }
-  async loadModel(modelBuffer) {
+  /**
+   * Load a monolithic ONNX buffer OR a ModelChain (the 21-piece split - see
+   * gpu-separator.js). A chain REQUIRES the full-GPU path: its short GPU
+   * submissions are its entire reason to exist, so a chain on a machine without
+   * a working WebGPU device fails loudly like the rest of the stems feature.
+   */
+  async loadModel(model) {
     this.onLog('model', 'Loading model...');
-    this.modelBuffer = modelBuffer;
+    const isChain = !(typeof ArrayBuffer !== 'undefined' && model instanceof ArrayBuffer);
+    this.modelBuffer = isChain ? null : model;
     // The full-GPU path only makes sense when the session itself targets the
     // webgpu EP (createKaraoke passes ['wasm'] when the user picks the wasm EP).
     const eps = this.sessionOptions['executionProviders'];
@@ -146,13 +169,16 @@ export class DemucsProcessor {
           sessionOptions: this.sessionOptions,
           onLog: this.onLog,
           onProgress: this.onProgress,
+          gentle: this.gentle,
+          shouldCancel: () => this.shouldCancel(),
         });
-        await gpu.init(modelBuffer);
+        await gpu.init(model);
         this.gpu = gpu;
         this.session = gpu.session;
         this.onLog('model', 'Model loaded successfully (full-GPU path)');
         return this.session;
       } catch (e) {
+        if (isChain) throw e;
         this.onLog(
           'gpu',
           `full-GPU path unavailable (${String(e).slice(0, 300)}) \u2014 using WASM DSP path`
@@ -161,7 +187,8 @@ export class DemucsProcessor {
         this.dspMode = 'wasm';
       }
     }
-    const session = await this.loadCpuSession(modelBuffer);
+    if (isChain) throw new Error('chained split model requires the WebGPU DSP path');
+    const session = await this.loadCpuSession(model);
     this.onLog('model', 'Model loaded successfully');
     return session;
   }
@@ -321,7 +348,12 @@ export class DemucsProcessor {
         weights[start + i] = weights[start + i] + window[i];
       }
     };
-    if (this.pipeline) {
+    // Gentle pacing: idle after each segment for about as long as it took
+    // (~50% GPU duty), so the compositor and the host's rendering stay smooth.
+    const pace = async (segMs) => {
+      if (this.gentle && segMs > 0) await new Promise((r) => setTimeout(r, Math.min(1500, segMs)));
+    };
+    if (this.pipeline && !this.gentle) {
       let feeds = this.prepareSegment(
         leftChannel,
         rightChannel,
@@ -351,7 +383,11 @@ export class DemucsProcessor {
         });
       }
     } else {
+      // Sequential path (also used for gentle mode - no pipelining, so the GPU
+      // genuinely idles between segments instead of being fed ahead).
       for (let n = 0; n < totalSegments; n++) {
+        if (this.shouldCancel()) throw new Error('separation cancelled');
+        const t0 = Date.now();
         const feeds = this.prepareSegment(
           leftChannel,
           rightChannel,
@@ -366,6 +402,7 @@ export class DemucsProcessor {
           currentSegment: n + 1,
           totalSegments,
         });
+        if (n + 1 < totalSegments) await pace(Date.now() - t0);
       }
     }
     for (const out of outputs) {

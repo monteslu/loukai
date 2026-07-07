@@ -112,6 +112,14 @@ const HTDEMUCS_URL =
   'https://huggingface.co/timcsy/demucs-web-onnx/resolve/main/htdemucs_embedded.onnx';
 const HF_BASE = 'https://huggingface.co';
 
+// The 21-piece chained split of htdemucs (mixed precision, fp16 with convs fp32; see
+// ~/code/kai/new_demucs.md): htdemucs_split_manifest.json + htdemucs_p00..p20.onnx.
+// Served as /webgpu-models/<name>, downloaded once from the HF repo below and
+// LAN-cached like every other model. The old timcsy htdemucs.onnx mapping stays for
+// anything still on the monolith path (wasm EP, stale bundles).
+const SPLIT_REPO = 'monteslu/htdemucs-web-onnx/resolve/main';
+const isSplitPiece = (rel) => /^htdemucs_(split_manifest\.json|p\d{2}\.onnx)$/.test(rel);
+
 function mimeFor(name) {
   const ext = name.slice(name.lastIndexOf('.'));
   return MIME[ext] || 'application/octet-stream';
@@ -237,6 +245,7 @@ export function registerWebGpuAssets(app) {
       if (!staticPath && !(existsSync(dest) && statSync(dest).size > 0)) {
         let upstream;
         if (rel === 'htdemucs.onnx') upstream = HTDEMUCS_URL;
+        else if (isSplitPiece(rel)) upstream = `${HF_BASE}/${SPLIT_REPO}/${rel}`;
         else if (FT_MODELS[rel]) upstream = `${HF_BASE}/${FT_MODELS[rel]}`;
         else upstream = `${HF_BASE}/${rel}`;
         if (!upstream.startsWith('https://huggingface.co/')) {

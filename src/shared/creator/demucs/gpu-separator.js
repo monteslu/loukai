@@ -1,6 +1,15 @@
 /* Ported from mochamix packages/stems/src/vendor/demucs (annotated TypeScript source of
  * this runner - keep in sync). Based on demucs-web by timcsy, MIT. WGSL/WASM demucs
- * DSP: the ONNX graph runs 100% on the WebGPU EP; this code is the DSP around it. */
+ * DSP: the ONNX graph runs 100% on the WebGPU EP; this code is the DSP around it.
+ *
+ * Supports two model forms:
+ *  - a single monolithic ONNX buffer (the original htdemucs.onnx path), and
+ *  - a ModelChain: the model split into ~21 sequential ONNX pieces (see
+ *    ~/code/kai/demucs-split-tools). Chaining short sessions instead of one
+ *    monolithic run is what keeps the HOST's rendering smooth while stems
+ *    generate: each piece is a ~10-30ms GPU submission, and in gentle mode the
+ *    queue drains between pieces so the compositor can interleave its frames.
+ */
 import { CONSTANTS } from './constants.js';
 import { GpuStemsDsp, GPU_GEOMETRY } from './gpu-dsp.js';
 import { segmentStarts } from './segments.js';
@@ -11,6 +20,7 @@ export class GpuSeparator {
   onLog;
   onProgress;
   extraSessionOptions;
+  gentle;
   session = null;
   captured = false;
   device;
@@ -21,14 +31,80 @@ export class GpuSeparator {
   fetches;
   modelBuffer;
   baseSessionOptions;
+  chain = null;
+  chainOutputs = null;
   constructor(opts) {
     this.ort = opts.ort;
     this.onLog = opts.onLog ?? (() => {});
     this.onProgress = opts.onProgress;
     this.extraSessionOptions = opts.sessionOptions ?? {};
+    // MUTABLE mid-run: the processor mirrors live gentle flips here; the segment
+    // and per-piece loops read it fresh each iteration.
+    this.gentle = opts.gentle ?? false;
+    this.shouldCancel = opts.shouldCancel ?? (() => false);
   }
-  /** Create the session (capture if possible), grab ORT's device, build the kernels. */
-  async init(modelBuffer) {
+  /** Create the session(s), grab ORT's device, build the kernels. */
+  async init(model) {
+    if (typeof ArrayBuffer !== 'undefined' && model instanceof ArrayBuffer) {
+      await this.initMonolith(model);
+    } else {
+      await this.initChain(model);
+    }
+  }
+  /**
+   * Chained pieces: piece 0 gets the caller's session options (it holds the
+   * CPU-pinned normalization prologue - forceCpuNodeNames), the rest run plain
+   * webgpu. All boundaries are gpu-buffer outputs consumed by name downstream;
+   * the pieces producing the final freq/time outputs write into our pre-bound
+   * buffers. No graph capture for chains (the win is many short submissions,
+   * capture would glue them back together).
+   */
+  async initChain(chain) {
+    this.chainOutputs = chain.outputs;
+    const finals = new Set([chain.outputs.freq, chain.outputs.time]);
+    const pieces = [];
+    for (let i = 0; i < chain.pieces.length; i++) {
+      const p = chain.pieces[i];
+      const isFinal = p.outputs.some((o) => finals.has(o));
+      if (isFinal && !p.outputs.every((o) => finals.has(o))) {
+        throw new Error(`chain piece ${i} mixes final and boundary outputs`);
+      }
+      const opts = {
+        executionProviders: ['webgpu'],
+        graphOptimizationLevel: 'all',
+        preferredOutputLocation: 'gpu-buffer',
+        ...(i === 0 ? this.extraSessionOptions : {}),
+      };
+      const session = await this.ort.InferenceSession.create(p.buf, opts);
+      pieces.push({
+        session,
+        inputs: p.inputs,
+        outputs: p.outputs,
+        fetches: isFinal ? {} : null,
+      });
+    }
+    this.chain = pieces;
+    this.session = pieces[0].session;
+    this.captured = false;
+    const device = this.ort.env.webgpu?.device;
+    if (!device) throw new Error('ORT exposed no WebGPU device after session init');
+    this.device = device;
+    this.dsp = new GpuStemsDsp(device);
+    const outUsage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
+    this.freqBuf = device.createBuffer({
+      size: 16 * PLANE * 4,
+      usage: outUsage,
+      label: 'model-freq-out',
+    });
+    this.timeBuf = device.createBuffer({
+      size: 8 * TRAINING_SAMPLES * 4,
+      usage: outUsage,
+      label: 'model-time-out',
+    });
+    this.buildChainIo();
+    this.onLog('gpu', `full-GPU pipeline ready (chained: ${pieces.length} pieces)`);
+  }
+  async initMonolith(modelBuffer) {
     this.modelBuffer = modelBuffer;
     const base = {
       executionProviders: ['webgpu'],
@@ -47,7 +123,7 @@ export class GpuSeparator {
       } catch (e) {
         this.onLog(
           'gpu',
-          `graph capture unavailable (${String(e).slice(0, 200)}) \u2014 running uncaptured`
+          `graph capture unavailable (${String(e).slice(0, 200)}) — running uncaptured`
         );
       }
     }
@@ -103,6 +179,91 @@ export class GpuSeparator {
     this.fetches = { [freqName]: freqTensor, [timeName]: timeTensor };
   }
   /**
+   * Chain I/O: the graph inputs (mix/mag) read the same DSP buffers as the
+   * monolith path; the final freq/time outputs write the same pre-bound
+   * buffers. Manifest tensor names are authoritative (mix, mag, x, xt).
+   */
+  buildChainIo() {
+    const t = this.ort.Tensor;
+    const waveTensor = t.fromGpuBuffer(this.dsp.waveformBuffer, {
+      dataType: 'float32',
+      dims: [1, 2, TRAINING_SAMPLES],
+    });
+    const specTensor = t.fromGpuBuffer(this.dsp.magSpecBuffer, {
+      dataType: 'float32',
+      dims: [1, 4, MODEL_SPEC_BINS, MODEL_SPEC_FRAMES],
+    });
+    const freqTensor = t.fromGpuBuffer(this.freqBuf, {
+      dataType: 'float32',
+      dims: [1, 4, 4, MODEL_SPEC_BINS, MODEL_SPEC_FRAMES],
+    });
+    const timeTensor = t.fromGpuBuffer(this.timeBuf, {
+      dataType: 'float32',
+      dims: [1, 4, 2, TRAINING_SAMPLES],
+    });
+    this.feeds = { mix: waveTensor, mag: specTensor };
+    const { freq, time } = this.chainOutputs;
+    for (const piece of this.chain) {
+      if (!piece.fetches) continue;
+      for (const o of piece.outputs) {
+        piece.fetches[o] = o === freq ? freqTensor : o === time ? timeTensor : piece.fetches[o];
+      }
+    }
+  }
+  /**
+   * Run one segment through the chained pieces. Boundary tensors stay on the
+   * GPU and are disposed once the segment is done. In gentle mode the queue is
+   * drained after every piece plus a tiny sleep - that per-piece gap (each
+   * piece is ~10-30ms of GPU work) is what lets the compositor hit its vsync
+   * while we separate; fast mode runs the pieces back to back.
+   */
+  async runChain() {
+    const vals = { ...this.feeds };
+    const boundary = [];
+    try {
+      for (const piece of this.chain) {
+        const feeds = {};
+        for (const nm of piece.inputs) {
+          const v = vals[nm];
+          if (!v) throw new Error(`chain: missing boundary tensor ${nm}`);
+          feeds[nm] = v;
+        }
+        if (piece.fetches) {
+          await piece.session.run(feeds, piece.fetches);
+        } else {
+          const res = await piece.session.run(feeds);
+          for (const nm of piece.outputs) {
+            vals[nm] = res[nm];
+            boundary.push(res[nm]);
+          }
+        }
+        if (this.gentle) {
+          await this.device.queue.onSubmittedWorkDone();
+          await new Promise((r) => setTimeout(r, 3));
+        }
+      }
+    } finally {
+      for (const b of boundary) {
+        try {
+          b.dispose?.();
+        } catch {
+          /* freed with the session */
+        }
+      }
+    }
+  }
+  /** Release every session (chain or monolith). */
+  async release() {
+    const sessions = this.chain
+      ? this.chain.map((p) => p.session)
+      : this.session
+        ? [this.session]
+        : [];
+    this.chain = null;
+    this.session = null;
+    for (const s of sessions) await s.release?.().catch(() => {});
+  }
+  /**
    * ORT's WebGPU graph-capture REPLAY can fail on graphs this size even when
    * the capturing run succeeded (an internal bind group re-created against a
    * freed buffer). Recreate the session uncaptured - same device, so all our
@@ -136,6 +297,23 @@ export class GpuSeparator {
   async separate(left, right) {
     const session = this.session;
     if (!session) throw new Error('GpuSeparator not initialized');
+    const runModel = async () => {
+      if (this.chain) {
+        await this.runChain();
+        return;
+      }
+      try {
+        await this.session.run(this.feeds, this.fetches);
+      } catch (e) {
+        if (!this.captured) throw e;
+        this.onLog(
+          'gpu',
+          `graph-capture replay failed (${String(e).slice(0, 160)}) — recreating session uncaptured`
+        );
+        await this.recreateWithoutCapture();
+        await this.session.run(this.feeds, this.fetches);
+      }
+    };
     const totalSamples = left.length;
     const accBytes = totalSamples * 4;
     const limit = this.device.limits.maxStorageBufferBindingSize;
@@ -159,6 +337,8 @@ export class GpuSeparator {
     const padR = short ? new Float32Array(TRAINING_SAMPLES) : null;
     try {
       for (let n = 0; n < totalSegments; n++) {
+        if (this.shouldCancel()) throw new Error('separation cancelled');
+        const segT0 = Date.now();
         const start = starts[n];
         const segmentLength = Math.min(start + TRAINING_SAMPLES, totalSamples) - start;
         if (short) {
@@ -175,17 +355,7 @@ export class GpuSeparator {
         this.dsp.encodeStft(pre, 0);
         this.dsp.encodeStft(pre, 1);
         this.device.queue.submit([pre.finish()]);
-        try {
-          await this.session.run(this.feeds, this.fetches);
-        } catch (e) {
-          if (!this.captured) throw e;
-          this.onLog(
-            'gpu',
-            `graph-capture replay failed (${String(e).slice(0, 160)}) \u2014 recreating session uncaptured`
-          );
-          await this.recreateWithoutCapture();
-          await this.session.run(this.feeds, this.fetches);
-        }
+        await runModel();
         const post = this.device.createCommandEncoder({ label: `post-${n}` });
         this.dsp.encodePost(post, binds, {
           start,
@@ -199,6 +369,11 @@ export class GpuSeparator {
           currentSegment: n + 1,
           totalSegments,
         });
+        // Gentle pacing: give the compositor (and the host's rendering) the GPU
+        // for about as long as this segment held it.
+        if (this.gentle && n + 1 < totalSegments) {
+          await new Promise((r) => setTimeout(r, Math.min(1500, Date.now() - segT0)));
+        }
       }
       const norm = this.device.createCommandEncoder({ label: 'normalize' });
       for (const pair of accs)

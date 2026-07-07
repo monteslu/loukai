@@ -268,3 +268,132 @@ describe('DemucsProcessor.separate', () => {
     expect(events).toEqual([1, 2, 3]);
   });
 });
+
+// ── the chained split model (gpu-separator runChain + processor loadModel) ──────
+import { GpuSeparator } from './gpu-separator.js';
+
+describe('GpuSeparator.runChain (chained split)', () => {
+  const mkSep = () => new GpuSeparator({ ort: {} });
+
+  it('runs pieces strictly in order, feeds boundaries by name, disposes them after', async () => {
+    const sep = mkSep();
+    const calls = [];
+    const disposed = [];
+    const tensor = (name) => ({ name, dispose: () => disposed.push(name) });
+    sep.feeds = { mix: 'MIX', mag: 'MAG' };
+    sep.chain = [
+      {
+        session: {
+          run: async (feeds) => {
+            calls.push(['p0', Object.keys(feeds)]);
+            return { a: tensor('a') };
+          },
+        },
+        inputs: ['mix', 'mag'],
+        outputs: ['a'],
+        fetches: null,
+      },
+      {
+        session: {
+          run: async (feeds) => {
+            calls.push(['p1', Object.keys(feeds)]);
+            return { b: tensor('b') };
+          },
+        },
+        inputs: ['a'],
+        outputs: ['b'],
+        fetches: null,
+      },
+      {
+        session: {
+          run: async (feeds, fetches) => {
+            calls.push(['p2', Object.keys(feeds), Object.keys(fetches)]);
+            return {};
+          },
+        },
+        inputs: ['b', 'mix'],
+        outputs: ['x'],
+        fetches: { x: 'FREQ' },
+      },
+    ];
+    await sep.runChain();
+    // strict manifest order, boundary tensors resolved by NAME (a from p0 → p1, b+mix → p2),
+    // final piece runs with pre-bound fetches
+    expect(calls).toEqual([
+      ['p0', ['mix', 'mag']],
+      ['p1', ['a']],
+      ['p2', ['b', 'mix'], ['x']],
+    ]);
+    // every boundary tensor disposed once the segment is done (VRAM leak pitfall)
+    expect(disposed.sort()).toEqual(['a', 'b']);
+  });
+
+  it('throws on a missing boundary tensor and still disposes what it made', async () => {
+    const sep = mkSep();
+    const disposed = [];
+    sep.feeds = { mix: 'MIX', mag: 'MAG' };
+    sep.chain = [
+      {
+        session: { run: async () => ({ a: { dispose: () => disposed.push('a') } }) },
+        inputs: ['mix'],
+        outputs: ['a'],
+        fetches: null,
+      },
+      // asks for a tensor no earlier piece produced → manifest order violation
+      { session: { run: async () => ({}) }, inputs: ['nope'], outputs: ['z'], fetches: null },
+    ];
+    await expect(sep.runChain()).rejects.toThrow(/missing boundary tensor nope/);
+    expect(disposed).toEqual(['a']);
+  });
+
+  it('initChain gives ONLY piece 0 the caller session options (CPU-pinned prologue)', async () => {
+    const seen = [];
+    const ort = {
+      InferenceSession: {
+        create: async (_buf, opts) => {
+          seen.push(opts);
+          return { run: async () => ({}) };
+        },
+      },
+      env: { webgpu: {} }, // no device → initChain throws AFTER creating sessions
+      Tensor: { fromGpuBuffer: () => ({}) },
+    };
+    const sep = new GpuSeparator({
+      ort,
+      sessionOptions: {
+        executionProviders: [{ name: 'webgpu', forceCpuNodeNames: ['/ReduceMean'] }],
+      },
+    });
+    const chain = {
+      pieces: [
+        { buf: new ArrayBuffer(1), inputs: ['mix', 'mag'], outputs: ['t1'] },
+        { buf: new ArrayBuffer(1), inputs: ['t1'], outputs: ['x'] },
+      ],
+      outputs: { freq: 'x', time: 'xt' },
+    };
+    await expect(sep.initChain(chain)).rejects.toThrow(/no WebGPU device/);
+    expect(seen).toHaveLength(2);
+    // piece 0: caller options (with the forceCpuNodeNames pin) merged in
+    expect(seen[0].executionProviders[0].forceCpuNodeNames).toEqual(['/ReduceMean']);
+    // piece 1: plain webgpu, NO pin (pinning later pieces breaks them)
+    expect(seen[1].executionProviders).toEqual(['webgpu']);
+    expect(seen[1].executionProviders[0].forceCpuNodeNames).toBeUndefined();
+  });
+});
+
+describe('DemucsProcessor chained model requirements', () => {
+  it('a chain on a non-GPU dsp path fails loudly (no silent WASM fallback)', async () => {
+    const proc = new DemucsProcessor({ ort: {}, dsp: 'wasm' });
+    const chain = { pieces: [], outputs: { freq: 'x', time: 'xt' } };
+    await expect(proc.loadModel(chain)).rejects.toThrow(/requires the WebGPU DSP path/);
+  });
+
+  it('live gentle flip reaches the gpu separator through the setter', () => {
+    const proc = new DemucsProcessor({ ort: {}, dsp: 'wasm', gentle: false });
+    proc.gpu = { gentle: false };
+    proc.gentle = true;
+    expect(proc.gpu.gentle).toBe(true);
+    proc.gentle = false;
+    expect(proc.gpu.gentle).toBe(false);
+  });
+});

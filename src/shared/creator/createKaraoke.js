@@ -19,6 +19,29 @@ import { snapToVocalEnergy } from './vocalSegmentation.js';
 import { groupWordsIntoLines } from './creatorAudio.js';
 import { transcribeVocals } from './transcribeVocals.js';
 
+// The chained split model's piece 0 must pin its fp16 normalization prologue to the
+// CPU (forceCpuNodeNames) or the graph is all-NaN on WebGPU. Identical to the lists in
+// static/webgpu/ft_cpu_nodes.json (every htdemucs export shares this prologue). Only
+// piece 0 gets this; the other pieces must NOT (gpu-separator applies it to piece 0).
+const FP16_CPU_NODES = [
+  '/ReduceMean',
+  '/Sub',
+  '/Pow',
+  '/ReduceMean_1',
+  '/Clip',
+  '/Sqrt',
+  '/Add',
+  '/Div',
+  '/ReduceMean_2',
+  '/Sub_1',
+  '/Pow_1',
+  '/ReduceMean_3',
+  '/Clip_1',
+  '/Sqrt_1',
+  '/Add_1',
+  '/Div_1',
+];
+
 /**
  * @param {Object} input
  * @param {{left:Float32Array,right:Float32Array,sampleRate:number,duration:number}} input.audio
@@ -72,6 +95,9 @@ export async function createKaraoke(
     language = 'en',
     enableCrepe = true,
     whisperPrompt = null,
+    // Gentle duty (~50% GPU + per-piece drains on the chained model): set when the
+    // SAME GPU is rendering something a human is watching (host playing mid-set).
+    gentle = false,
   } = opts || {};
 
   const { ort, demucs, ftEnsemble, pipeline, crepeMod, DemucsProcessor, tf } = libs;
@@ -126,21 +152,118 @@ export async function createKaraoke(
       }
     }
     if (modelDef.kind !== 'ft' && !result) {
-      modeLabel = 'htdemucs (fast)';
-      onLog('loading htdemucs (single model) from loukai …');
-      const modelBuf = await fetch('/webgpu-models/htdemucs.onnx').then((res) => {
-        if (!res.ok) throw new Error(`model fetch ${res.status}`);
-        return res.arrayBuffer();
-      });
+      // Preferred: the 21-piece chained split (mixed precision fp16/convs-fp32,
+      // 126MB, ~2.4x faster). Each piece is a ~10-30ms GPU submission instead of one
+      // monolithic ~200-330ms burst, so the HOST's rendering (karaoke video mid-set)
+      // keeps its frame rate while stems generate — the entire point of the split.
+      // Chain requires the full-GPU path; on wasm (or if the pieces aren't
+      // reachable) fall back to the old fp32 monolith.
+      let chain = null;
+      if (device === 'webgpu') {
+        try {
+          const manifest = await fetch('/webgpu-models/htdemucs_split_manifest.json').then((r) => {
+            if (!r.ok) throw new Error(`manifest fetch ${r.status}`);
+            return r.json();
+          });
+          onLog(
+            `loading htdemucs model (mixed precision, chained ${manifest.pieces.length} pieces) …`
+          );
+          // Aggregate download progress across all pieces (report total only once
+          // every content-length is known, so the numbers don't lie).
+          const received = new Array(manifest.pieces.length).fill(0);
+          const totals = new Array(manifest.pieces.length).fill(-1);
+          let lastPct = -25;
+          const report = () => {
+            if (totals.some((t) => t < 0)) return;
+            const total = totals.reduce((a, b) => a + b, 0);
+            const got = received.reduce((a, b) => a + b, 0);
+            const pct = Math.floor(((got / total) * 100) / 25) * 25;
+            if (pct > lastPct) {
+              lastPct = pct;
+              onLog(
+                `  ↓ model pieces ${Math.round((got / total) * 100)}% (${(got / 1e6).toFixed(0)}/${(total / 1e6).toFixed(0)}MB)`
+              );
+            }
+          };
+          const fetchPiece = async (name, i) => {
+            const res = await fetch(`/webgpu-models/${name}`);
+            if (!res.ok) throw new Error(`model fetch ${name} ${res.status}`);
+            totals[i] = Number(res.headers.get('content-length')) || 0;
+            if (!res.body || !totals[i]) {
+              const buf = await res.arrayBuffer();
+              totals[i] = buf.byteLength;
+              received[i] = buf.byteLength;
+              report();
+              return buf;
+            }
+            const reader = res.body.getReader();
+            const chunks = [];
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+              received[i] += value.byteLength;
+              report();
+            }
+            const out = new Uint8Array(received[i]);
+            let off = 0;
+            for (const c of chunks) {
+              out.set(c, off);
+              off += c.byteLength;
+            }
+            return out.buffer;
+          };
+          const buffers = await Promise.all(manifest.pieces.map((p, i) => fetchPiece(p.file, i)));
+          chain = {
+            pieces: manifest.pieces.map((p, i) => ({
+              buf: buffers[i],
+              inputs: p.inputs,
+              outputs: p.outputs,
+            })),
+            outputs: manifest.outputs,
+          };
+        } catch (e) {
+          onLog(
+            `chained model unavailable (${String(e.message).slice(0, 120)}) — using the fp32 monolith`
+          );
+          chain = null;
+        }
+      }
+      let modelInput = chain;
+      if (!modelInput) {
+        onLog('loading htdemucs (single model) from loukai …');
+        modelInput = await fetch('/webgpu-models/htdemucs.onnx').then((res) => {
+          if (!res.ok) throw new Error(`model fetch ${res.status}`);
+          return res.arrayBuffer();
+        });
+      }
+      modeLabel = chain ? 'htdemucs (chained, mixed precision)' : 'htdemucs (fast)';
       const proc = new DemucsProcessor({
         ort,
-        sessionOptions: { executionProviders: device === 'webgpu' ? ['webgpu'] : ['wasm'] },
+        // The chain's piece 0 carries the CPU-pinned fp16 normalization prologue
+        // (same 16 node names as ft_cpu_nodes.json); without the pin the fp16
+        // graph is all-NaN on WebGPU. Monolith keeps the plain EP list.
+        sessionOptions: {
+          executionProviders:
+            device !== 'webgpu'
+              ? ['wasm']
+              : chain
+                ? [{ name: 'webgpu', forceCpuNodeNames: FP16_CPU_NODES }]
+                : ['webgpu'],
+        },
+        gentle,
+        shouldCancel: emit.shouldCancel,
         onProgress: ({ progress }) =>
           onStemProgress(STEMS.reduce((a, s) => ({ ...a, [s]: progress || 0 }), {})),
         onLog: (phase, m) => onLog(`[${phase}] ${m}`),
       });
-      await proc.loadModel(modelBuf);
-      onLog(`separating — htdemucs (single) on EP: ${device} …`);
+      // Hand the live processor to the caller (the worker uses this to flip
+      // gentle mid-run when playback starts/stops, and to signal cancel).
+      emit.onSeparator?.(proc);
+      await proc.loadModel(modelInput);
+      onLog(
+        `separating — ${chain ? `htdemucs chain (${chain.pieces.length} pieces${gentle ? ', gentle' : ''})` : 'htdemucs (single)'} on EP: ${device} …`
+      );
       result = await proc.separate(audio.left, audio.right);
     }
     const sec = (performance.now() - t0) / 1000;

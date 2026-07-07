@@ -49,6 +49,22 @@ export async function createKaraokeInWorker(input, opts, emit = {}) {
   }
 }
 
+/**
+ * Live separation duty toggle (rawr peers are symmetric — this notifies the worker).
+ * Call when host playback starts/stops mid-run: the worker flips the active
+ * separator's gentle flag, taking effect within one segment (~<1s). No-op when no
+ * worker is up.
+ */
+export function setCreatorGentle(gentle) {
+  _peer?.notifiers.gentle?.(Boolean(gentle));
+}
+
+/** Cooperatively cancel the current run (checked between segments) WITHOUT
+ *  terminating the warmed worker. The in-flight create() rejects. */
+export function cancelCreatorRun() {
+  _peer?.notifiers.cancel?.();
+}
+
 /** Tear down the worker (drops warmed models; next run reloads them). */
 export function disposeCreatorWorker() {
   if (_worker) {

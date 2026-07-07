@@ -311,7 +311,10 @@ export class GpuStemsDsp {
     this.ola = makePipe(device, OLA_WGSL, 'stems-ola');
     this.combine = makePipe(device, COMBINE_WGSL, 'stems-combine');
     this.norm = makePipe(device, NORM_WGSL, 'stems-normalize');
-    const storage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST;
+    // COPY_SRC: the chained split model pins its normalization prologue to CPU
+    // (forceCpuNodeNames), and those nodes read the model INPUT buffers back
+    // host-side - without COPY_SRC on them, ORT session init throws.
+    const storage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
     const hann = new Float32Array(FFT_SIZE);
     for (let i = 0; i < FFT_SIZE; i++) hann[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / FFT_SIZE));
     this.hannBuf = device.createBuffer({ size: hann.byteLength, usage: storage, label: 'hann' });

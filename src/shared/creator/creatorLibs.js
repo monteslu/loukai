@@ -79,13 +79,17 @@ export async function loadCreatorLibs(onLog = () => {}) {
     if (ort.env?.wasm) {
       ort.env.wasm.wasmPaths = `${base}/`;
       // SIMD is built in; THREADS need cross-origin isolation (COOP+COEP). Else 1.
-      // Cap the pool at ~60% of cores: full hardwareConcurrency saturates EVERY
-      // core when Whisper (or separation) runs on the wasm EP, starving the UI
-      // and audio. On the webgpu EP the pool mostly idles anyway (the demucs
-      // graph runs 100% on WebGPU; verified via ORT node placements).
+      // WebGPU machines: keep the pool TINY (2). The demucs graph runs 100% on the
+      // WebGPU EP (verified via ORT node placements), so a bigger pool just spins
+      // under the GPU session, stealing cores from audio decode + the AAC encode
+      // pool — and under the chained model it competes for the compositor slots
+      // the per-piece drains exist to create. WASM-only machines: Whisper and
+      // separation run ON this pool, so cap at ~60% of cores instead (full
+      // concurrency starves UI + audio).
       const isolated = self.crossOriginIsolated === true;
       const cores = navigator.hardwareConcurrency || 4;
-      const threads = isolated ? Math.max(1, Math.floor(cores * 0.6)) : 1;
+      const hasWebGpu = typeof navigator !== 'undefined' && Boolean(navigator.gpu);
+      const threads = !isolated ? 1 : hasWebGpu ? 2 : Math.max(1, Math.floor(cores * 0.6));
       ort.env.wasm.numThreads = threads;
       onLog(
         `WASM: SIMD on, ${threads} thread${threads === 1 ? '' : 's'}` +
