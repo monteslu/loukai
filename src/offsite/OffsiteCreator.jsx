@@ -3,7 +3,12 @@ import { useEffect, useRef, useState } from 'react';
 // These deep paths are aliased to the package's writer.js / atoms.js in vite.config.js.
 import StemMp4Writer from 'stem-mp4/writer';
 import * as Atoms from 'stem-mp4/atoms';
-import { WHISPER_MODELS, DEMUCS_MODELS, encodeWav } from '../shared/creator/creatorAudio.js';
+import {
+  WHISPER_MODELS,
+  WHISPER_LANGUAGES,
+  DEMUCS_MODELS,
+  encodeWav,
+} from '../shared/creator/creatorAudio.js';
 import { encodeWavToAac } from '../shared/creator/aacEncoder.js';
 import { createKaraokeInWorker } from '../shared/creator/createKaraokeClient.js';
 import { detectWebGpu } from '../shared/creator/creatorLibs.js';
@@ -337,9 +342,10 @@ export default function OffsiteCreator() {
                 onChange={(e) => setLanguage(e.target.value)}
                 disabled={busy}
               >
-                {['en', 'es', 'fr', 'de', 'it', 'pt', 'ja', 'ko', 'zh', 'auto'].map((l) => (
-                  <option key={l} value={l}>
-                    {l}
+                <option value="auto">Auto-detect</option>
+                {WHISPER_LANGUAGES.map(([code, label]) => (
+                  <option key={code} value={code}>
+                    {label}
                   </option>
                 ))}
               </select>

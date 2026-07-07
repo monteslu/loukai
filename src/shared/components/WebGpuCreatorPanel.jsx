@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import * as StemExtractor from 'stem-mp4/extractor';
-import { WHISPER_MODELS, DEMUCS_MODELS, encodeWav } from '../creator/creatorAudio.js';
+import {
+  WHISPER_MODELS,
+  WHISPER_LANGUAGES,
+  DEMUCS_MODELS,
+  encodeWav,
+} from '../creator/creatorAudio.js';
 import { encodeWavToAac } from '../creator/aacEncoder.js';
 import { createKaraokeInWorker } from '../creator/createKaraokeClient.js';
 import {
@@ -984,16 +989,12 @@ export default function WebGpuCreatorPanel() {
                 onChange={(e) => setLanguage(e.target.value)}
                 disabled={busy}
               >
-                <option value="en">English</option>
-                <option value="es">Spanish</option>
-                <option value="fr">French</option>
-                <option value="de">German</option>
-                <option value="it">Italian</option>
-                <option value="pt">Portuguese</option>
-                <option value="ja">Japanese</option>
-                <option value="ko">Korean</option>
-                <option value="zh">Chinese</option>
                 <option value="auto">Auto-detect</option>
+                {WHISPER_LANGUAGES.map(([code, label]) => (
+                  <option key={code} value={code}>
+                    {label}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">

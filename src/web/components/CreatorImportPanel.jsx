@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { CreatorJobBanner } from '../../shared/components/creatorUi.jsx';
 import { useCreatorJob } from '../../shared/hooks/useCreatorJob.js';
+import { WHISPER_LANGUAGES } from '../../shared/creator/creatorAudio.js';
 
 /**
  * Web-admin "Create" tab. A browser only exposes WebGPU on a secure context
@@ -27,9 +28,9 @@ export default function CreatorImportPanel({ bridge }) {
   const [srcFile, setSrcFile] = useState(null);
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
-  // Whisper transcription language. 'auto' = real detection on the host (the creator
-  // detects on the loudest vocals window) — guests shouldn't need to know this exists.
-  const [language, setLanguage] = useState('auto');
+  // Whisper transcription language. Defaults to English; 'auto' runs real detection on
+  // the host (the creator detects on the loudest vocals window).
+  const [language, setLanguage] = useState('en');
   const [submitting, setSubmitting] = useState(false);
   const [hostError, setHostError] = useState(null);
   const [hostDone, setHostDone] = useState(null); // {fileName} once the job completes
@@ -207,15 +208,11 @@ export default function CreatorImportPanel({ bridge }) {
               className="ml-2 px-2 py-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
             >
               <option value="auto">Auto-detect</option>
-              <option value="en">English</option>
-              <option value="es">Spanish</option>
-              <option value="fr">French</option>
-              <option value="de">German</option>
-              <option value="it">Italian</option>
-              <option value="pt">Portuguese</option>
-              <option value="ja">Japanese</option>
-              <option value="ko">Korean</option>
-              <option value="zh">Chinese</option>
+              {WHISPER_LANGUAGES.map(([code, label]) => (
+                <option key={code} value={code}>
+                  {label}
+                </option>
+              ))}
             </select>
           </label>
 
