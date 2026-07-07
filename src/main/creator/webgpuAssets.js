@@ -71,7 +71,10 @@ const ASSETS = {
   'ort-wasm-simd-threaded.asyncify.mjs': `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort-wasm-simd-threaded.asyncify.mjs`,
   'ort-wasm-simd-threaded.jsep.wasm': `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort-wasm-simd-threaded.jsep.wasm`,
   'ort-wasm-simd-threaded.jsep.mjs': `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort-wasm-simd-threaded.jsep.mjs`,
-  // demucs-web — plain ESM source, zero deps, takes ort as a param.
+  // demucs-web - DEPRECATED: the runner is vendored now (src/shared/creator/demucs,
+  // WASM+SIMD FFT + optional full-WebGPU DSP). These entries stay ONLY so older
+  // deployed offsite-creator builds that still fetch /webgpu-assets/demucs/* from a
+  // newer server keep working. Remove after those builds age out.
   'demucs/index.js': `https://cdn.jsdelivr.net/npm/demucs-web@${DEMUCS_VER}/src/index.js`,
   'demucs/processor.js': `https://cdn.jsdelivr.net/npm/demucs-web@${DEMUCS_VER}/src/processor.js`,
   'demucs/fft.js': `https://cdn.jsdelivr.net/npm/demucs-web@${DEMUCS_VER}/src/fft.js`,

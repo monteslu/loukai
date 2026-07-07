@@ -56,43 +56,49 @@ export async function createEnsembleSessions({ ort, modelUrl, cpuNodes, onLog })
 export async function runEnsemble({ ort, sessions, proc, left, right, onStemProgress, onSegment, onLog }) {
   const total = left.length;
   const stride = Math.floor(TRAIN * (1 - OVERLAP));
-  const numSeg = Math.max(1, Math.ceil((total - TRAIN) / stride) + 1);
-
-  // Precompute per-segment inputs (STFT via demucs-web) + overlap windows once.
-  const segs = [];
-  for (let start = 0; start < total; start += stride) {
-    const end = Math.min(start + TRAIN, total);
-    const segLen = end - start;
-    const sl = new Float32Array(TRAIN);
-    const sr = new Float32Array(TRAIN);
-    for (let i = 0; i < segLen; i++) {
-      sl[i] = left[start + i];
-      sr[i] = right[start + i];
+  // Segment plan: stride apart, FINAL segment aligned to end at the last sample.
+  // The old grid-aligned tail was up to ~97% zero padding, i.e. one wasted
+  // inference PER MODEL per track (4 wasted runs on the ensemble).
+  const starts = [];
+  for (let s = 0; ; s += stride) {
+    if (s + TRAIN >= total) {
+      starts.push(Math.max(0, total - TRAIN));
+      break;
     }
-    const win = new Float32Array(segLen);
-    for (let i = 0; i < segLen; i++) {
-      win[i] = Math.min(Math.min(i / (stride * 0.5), 1), Math.min((segLen - i) / (stride * 0.5), 1));
-    }
-    segs.push({ start, segLen, inp: proc.prepareModelInput(sl, sr), win });
+    starts.push(s);
   }
 
   const out = STEMS.map(() => ({ left: new Float32Array(total), right: new Float32Array(total) }));
   const weights = new Float32Array(total);
   const t0 = performance.now();
+  const sl = new Float32Array(TRAIN);
+  const sr = new Float32Array(TRAIN);
 
-  // For each specialist model: run every segment, take ONLY its own stem.
-  for (let s = 0; s < STEMS.length; s++) {
-    const sess = sessions[s];
-    for (let si = 0; si < segs.length; si++) {
-      const seg = segs[si];
-      const res = await sess.run({
-        mix: new ort.Tensor('float32', seg.inp.waveform, [1, 2, TRAIN]),
-        mag: new ort.Tensor('float32', seg.inp.magSpec, [1, 4, 2048, 336]),
-      });
+  // SEGMENT-OUTER: prepare each segment's inputs ONCE, run all 4 specialists on
+  // it, then move on. The old model-outer order precomputed every segment's
+  // inputs up front and held them for the whole run (~14MB per segment, hundreds
+  // of MB on a full track); this keeps exactly one segment's inputs alive.
+  for (let si = 0; si < starts.length; si++) {
+    const start = starts[si];
+    const segLen = Math.min(start + TRAIN, total) - start;
+    sl.fill(0);
+    sr.fill(0);
+    sl.set(left.subarray(start, start + segLen));
+    sr.set(right.subarray(start, start + segLen));
+    const inp = proc.prepareModelInput(sl, sr);
+    const mix = new ort.Tensor('float32', inp.waveform, [1, 2, TRAIN]);
+    const mag = new ort.Tensor('float32', inp.magSpec, [1, 4, 2048, 336]);
+    const win = new Float32Array(segLen);
+    for (let i = 0; i < segLen; i++) {
+      win[i] = Math.min(Math.min(i / (stride * 0.5), 1), Math.min((segLen - i) / (stride * 0.5), 1));
+    }
+
+    for (let s = 0; s < STEMS.length; s++) {
+      const res = await sessions[s].run({ mix, mag });
       let freqData = null;
       let timeData = null;
       let timeShape = null;
-      for (const name of sess.outputNames) {
+      for (const name of sessions[s].outputNames) {
         const t = res[name];
         if (t.dims.length === 5 && t.dims[2] === 4) freqData = t.data;
         else if (t.dims.length === 4 && t.dims[2] === 2) {
@@ -101,17 +107,23 @@ export async function runEnsemble({ ort, sessions, proc, left, right, onStemProg
         }
       }
       const samples = timeShape[3];
-      const fo = freqData ? proc.standaloneIspec(proc.standaloneMask(freqData)[s], TRAIN) : null;
+      // Fused single-stem reconstruction when the runner provides it (vendored
+      // runner: WASM iSTFT, no 4-track intermediates); demucs-web fallback else.
+      const fo = freqData
+        ? proc.freqTrackToTime
+          ? proc.freqTrackToTime(freqData, s, TRAIN)
+          : proc.standaloneIspec(proc.standaloneMask(freqData)[s], TRAIN)
+        : null;
       const o = out[s];
-      for (let i = 0; i < seg.segLen && seg.start + i < total; i++) {
+      for (let i = 0; i < segLen && start + i < total; i++) {
         const tl = timeData[s * 2 * samples + 0 * samples + i];
         const tr = timeData[s * 2 * samples + 1 * samples + i];
-        o.left[seg.start + i] += (tl + (fo ? fo.left[i] || 0 : 0)) * seg.win[i];
-        o.right[seg.start + i] += (tr + (fo ? fo.right[i] || 0 : 0)) * seg.win[i];
-        if (s === 0) weights[seg.start + i] += seg.win[i];
+        o.left[start + i] += (tl + (fo ? fo.left[i] || 0 : 0)) * win[i];
+        o.right[start + i] += (tr + (fo ? fo.right[i] || 0 : 0)) * win[i];
+        if (s === 0) weights[start + i] += win[i];
       }
-      onStemProgress?.(s, (si + 1) / segs.length);
-      onSegment?.(s * segs.length + si + 1, STEMS.length * segs.length);
+      onStemProgress?.(s, (si + 1) / starts.length);
+      onSegment?.(si * STEMS.length + s + 1, STEMS.length * starts.length);
     }
   }
 

@@ -64,9 +64,11 @@ describe('createKaraoke', () => {
       other: { left: audio.left, right: audio.right },
       vocals: { left: audio.left, right: audio.right },
     };
-    // asr returns one segment with a sung line inside the loud region.
+    // asr returns one segment with a sung line. Timestamps are WINDOW-RELATIVE:
+    // voiced-span planning starts the first window at ~9.4s (loud region padded),
+    // so [1.6, 4.6] lands at ~11-14s absolute, inside the loud region.
     const libs = fakeLibs(async () => ({
-      chunks: [{ text: 'hello world tonight', timestamp: [11, 14] }],
+      chunks: [{ text: 'hello world tonight', timestamp: [1.6, 4.6] }],
       text: 'hello world tonight',
     }));
 
@@ -109,7 +111,7 @@ describe('createKaraoke', () => {
     const libs = fakeLibs(() =>
       // "[Music]" must be stripped by the annotation cull; real words kept.
       Promise.resolve({
-        chunks: [{ text: 'la la la [Music]', timestamp: [11, 14] }],
+        chunks: [{ text: 'la la la [Music]', timestamp: [1.6, 4.6] }],
         text: 'la la la [Music]',
       })
     );
@@ -129,7 +131,7 @@ describe('createKaraoke', () => {
     const reuse = { vocals: { left: audio.left, right: audio.right } };
     const libs = fakeLibs(() =>
       Promise.resolve({
-        chunks: [{ text: 'a sung phrase here', timestamp: [11, 14] }],
+        chunks: [{ text: 'a sung phrase here', timestamp: [1.6, 4.6] }],
         text: 'a sung phrase here',
       })
     );

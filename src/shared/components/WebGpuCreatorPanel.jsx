@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as StemExtractor from 'stem-mp4/extractor';
 import { WHISPER_MODELS, DEMUCS_MODELS, encodeWav } from '../creator/creatorAudio.js';
 import { encodeWavToAac } from '../creator/aacEncoder.js';
-import { createKaraoke } from '../creator/createKaraoke.js';
-import { loadCreatorLibs } from '../creator/creatorLibs.js';
+import { createKaraokeInWorker } from '../creator/createKaraokeClient.js';
 import {
   STYLES,
   Spinner,
@@ -95,7 +94,6 @@ export default function WebGpuCreatorPanel() {
   // changed settings WITHOUT paying the ~50s Demucs separation again. { fileName, audio,
   // result } — result holds the {vocals,...} stems.
   const reuseStemsRef = useRef(null);
-  const libs = useRef({}); // cached dynamic imports
   const logEnd = useRef(null);
 
   // Observe the single creator job (broadcast by main on every surface). In the
@@ -162,13 +160,9 @@ export default function WebGpuCreatorPanel() {
       .catch(() => setFtAvailable(false));
   }, []);
 
-  // Load the WebGPU creator runtime via the shared loader (also used by the headless
-  // host-create path). Caches at module scope, so the panel + headless share one load.
-  async function loadLibs() {
-    const loaded = await loadCreatorLibs(log);
-    libs.current = loaded;
-    return loaded;
-  }
+  // The WebGPU creator runtime loads INSIDE the creator worker now (see
+  // createKaraokeClient.js) - its load logs stream back through onLog. Nothing
+  // heavy loads or runs on this (UI) thread anymore.
 
   // Dual-path call to a creator service: IPC in the Electron player (no admin HTTP
   // session there), authed REST in the web admin. ipcFn = (payload)=>Promise,
@@ -411,10 +405,13 @@ export default function WebGpuCreatorPanel() {
   }
 
   // Decode an uploaded file into stereo Float32 channel data via WebAudio.
+  // OfflineAudioContext pinned to 44.1k: decodeAudioData resamples to the
+  // context rate, and htdemucs is trained at 44.1k — a device-rate (48k)
+  // AudioContext fed the model ~9% slow audio and degraded every stem. It also
+  // leaked a real AudioContext per decode (Chromium caps ~6 live).
   async function decodeAudio(file) {
     const arr = await file.arrayBuffer();
-    const AC = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AC();
+    const ctx = new OfflineAudioContext(2, 1, 44100);
     const buf = await ctx.decodeAudioData(arr);
     const left = buf.getChannelData(0);
     const right = buf.numberOfChannels > 1 ? buf.getChannelData(1) : buf.getChannelData(0);
@@ -444,8 +441,8 @@ export default function WebGpuCreatorPanel() {
     const trackBuf = StemExtractor.extractTrack(arr, vocalsIdx);
     if (!trackBuf) throw new Error('could not extract vocals track');
     const u8 = trackBuf instanceof Uint8Array ? trackBuf : new Uint8Array(trackBuf);
-    const AC = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AC();
+    // 44.1k offline decode (see decodeAudio) — no leaked AudioContext.
+    const ctx = new OfflineAudioContext(2, 1, 44100);
     const buf = await ctx.decodeAudioData(
       u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)
     );
@@ -472,8 +469,6 @@ export default function WebGpuCreatorPanel() {
     setStemProgress({});
     setRtf(null);
     try {
-      const libs = await loadLibs();
-
       // Lyrics-only mode: an existing .stem.mp4 → re-transcribe its vocals track and
       // rewrite the lyrics atom, skipping separation entirely.
       const lyricsOnly = /\.stem\.mp4$/i.test(file.name);
@@ -523,9 +518,10 @@ export default function WebGpuCreatorPanel() {
         }
       }
 
-      // Run the framework-free compute. The panel just maps its callbacks to React
-      // state; the SAME createKaraoke() runs headlessly when a phone commands the host.
-      const created = await createKaraoke(
+      // Run the compute in the creator WORKER (separation + Whisper + CREPE all
+      // off the UI thread). The panel just maps its callbacks to React state; the
+      // SAME worker runs headlessly when a phone commands the host.
+      const created = await createKaraokeInWorker(
         { audio, stems: reuseInput, lyricsOnly },
         {
           asrModel,
@@ -538,7 +534,6 @@ export default function WebGpuCreatorPanel() {
           enableCrepe,
           whisperPrompt,
         },
-        libs,
         {
           onPhase: (p) => setStatus(p),
           onLog: (m) => log(m),
@@ -649,11 +644,17 @@ export default function WebGpuCreatorPanel() {
       // Encode each stem WAV -> AAC-in-MP4 here in the renderer (ffmpeg-wasm).
       // stem-mp4 0.5.x muxes PRE-ENCODED AAC tracks; it no longer encodes. All
       // stems use identical params so the multi-track sample tables align.
-      log('encoding stems to AAC (ffmpeg-wasm)…');
+      // CONCURRENT on the encoder worker pool: sequential encoding pinned one
+      // core 5x as long as needed.
+      log('encoding stems to AAC (ffmpeg-wasm, parallel)…');
+      const stemKeys = Object.keys(wavBlobs);
+      const encoded = await Promise.all(
+        stemKeys.map((k) => encodeWavToAac(wavBlobs[k], { tag: k }))
+      );
       const aacBytes = {};
-      for (const k of Object.keys(wavBlobs)) {
-        aacBytes[k] = await encodeWavToAac(wavBlobs[k], { tag: k });
-      }
+      stemKeys.forEach((k, i) => {
+        aacBytes[k] = encoded[i];
+      });
 
       if (window.kaiAPI?.creator?.saveWebGpuStems) {
         // Electron player: IPC (no admin HTTP session here). Send AAC bytes.

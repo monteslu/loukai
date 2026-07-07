@@ -5,8 +5,8 @@ import StemMp4Writer from 'stem-mp4/writer';
 import * as Atoms from 'stem-mp4/atoms';
 import { WHISPER_MODELS, DEMUCS_MODELS, encodeWav } from '../shared/creator/creatorAudio.js';
 import { encodeWavToAac } from '../shared/creator/aacEncoder.js';
-import { createKaraoke } from '../shared/creator/createKaraoke.js';
-import { loadCreatorLibs, detectWebGpu } from '../shared/creator/creatorLibs.js';
+import { createKaraokeInWorker } from '../shared/creator/createKaraokeClient.js';
+import { detectWebGpu } from '../shared/creator/creatorLibs.js';
 import {
   STYLES,
   Spinner,
@@ -75,10 +75,11 @@ export default function OffsiteCreator() {
     };
   }, [downloadUrl]);
 
+  // 44.1k offline decode: htdemucs is trained at 44.1k (a device-rate context fed
+  // it slow audio), and OfflineAudioContext doesn't leak a live AudioContext.
   async function decodeAudio(file) {
     const arr = await file.arrayBuffer();
-    const AC = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AC();
+    const ctx = new OfflineAudioContext(2, 1, 44100);
     const buf = await ctx.decodeAudioData(arr);
     const left = buf.getChannelData(0);
     const right = buf.numberOfChannels > 1 ? buf.getChannelData(1) : buf.getChannelData(0);
@@ -128,15 +129,15 @@ export default function OffsiteCreator() {
     setStemProgress({});
     setDownloadUrl(null);
     try {
-      const libs = await loadCreatorLibs(log);
       log(`decoding ${file.name} …`);
       const audio = await decodeAudio(file);
       const device = gpu === 'available' ? 'webgpu' : 'wasm';
 
-      const created = await createKaraoke(
+      // Compute runs in the creator WORKER (separation + Whisper + CREPE off the
+      // UI thread); the runtime libs load inside it, their logs stream via onLog.
+      const created = await createKaraokeInWorker(
         { audio },
         { asrModel, demucsModel, ftAvailable: false, device, language, enableCrepe },
-        libs,
         {
           onPhase: (p) => setStatus(p),
           onLog: log,
@@ -159,10 +160,13 @@ export default function OffsiteCreator() {
         other: encodeWav(result.other.left, result.other.right, sr),
         vocals: encodeWav(result.vocals.left, result.vocals.right, sr),
       };
+      // CONCURRENT on the encoder worker pool (see aacEncoder.js).
+      const stemKeys = Object.keys(wavBlobs);
+      const encoded = await Promise.all(stemKeys.map((k) => encodeWavToAac(wavBlobs[k])));
       const aac = {};
-      for (const k of Object.keys(wavBlobs)) {
-        aac[k] = await encodeWavToAac(wavBlobs[k]);
-      }
+      stemKeys.forEach((k, i) => {
+        aac[k] = encoded[i];
+      });
 
       const artist = songArtist.trim();
       const title = songTitle.trim() || file.name.replace(/\.[^.]+$/, '');

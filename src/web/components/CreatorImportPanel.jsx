@@ -27,6 +27,9 @@ export default function CreatorImportPanel({ bridge }) {
   const [srcFile, setSrcFile] = useState(null);
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
+  // Whisper transcription language. 'auto' = real detection on the host (the creator
+  // detects on the loudest vocals window) — guests shouldn't need to know this exists.
+  const [language, setLanguage] = useState('auto');
   const [submitting, setSubmitting] = useState(false);
   const [hostError, setHostError] = useState(null);
   const [hostDone, setHostDone] = useState(null); // {fileName} once the job completes
@@ -77,6 +80,8 @@ export default function CreatorImportPanel({ bridge }) {
       fd.append('file', srcFile, srcFile.name);
       if (title) fd.append('title', title);
       if (artist) fd.append('artist', artist);
+      // creator options — the host-create endpoint parses this JSON into the job opts
+      fd.append('opts', JSON.stringify({ language }));
       const res = await fetch('/admin/creator/host-create', {
         method: 'POST',
         body: fd,
@@ -192,6 +197,27 @@ export default function CreatorImportPanel({ bridge }) {
               className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
             />
           </div>
+
+          <label className="block mt-2 text-sm text-gray-700 dark:text-gray-300">
+            Lyrics language:
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              disabled={submitting || isRunning}
+              className="ml-2 px-2 py-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
+            >
+              <option value="auto">Auto-detect</option>
+              <option value="en">English</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="it">Italian</option>
+              <option value="pt">Portuguese</option>
+              <option value="ja">Japanese</option>
+              <option value="ko">Korean</option>
+              <option value="zh">Chinese</option>
+            </select>
+          </label>
 
           <button
             type="button"

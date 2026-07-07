@@ -12,6 +12,11 @@
  */
 
 import { assetBase } from './creatorAudio.js';
+// The demucs runner is VENDORED (WASM+SIMD FFT, optional full-WebGPU DSP path,
+// aligned tail segment) instead of loading demucs-web from the asset cache. Same
+// API (DemucsProcessor, CONSTANTS, prepareModelInput/standaloneMask/standaloneIspec
+// for the ft ensemble) plus the fused freqTrackToTime fast path.
+import * as demucs from './demucs/index.js';
 
 let cached = null;
 
@@ -54,12 +59,12 @@ export async function loadCreatorLibs(onLog = () => {}) {
   const base = assetBase();
   onLog('loading libraries from loukai (same-origin, backend-cached) …');
   // All from /webgpu-assets/* — never a CDN. Self-contained ESM bundles, so dynamic
-  // import works. transformers.js is imported with Node globals hidden.
-  let ort, demucs, tf, ftEnsemble, crepeMod;
+  // import works. transformers.js is imported with Node globals hidden. (demucs is
+  // vendored + bundled now; only ort still fetches its own .wasm at runtime.)
+  let ort, tf, ftEnsemble, crepeMod;
   try {
-    [ort, demucs, tf, ftEnsemble, crepeMod] = await Promise.all([
+    [ort, tf, ftEnsemble, crepeMod] = await Promise.all([
       import(/* @vite-ignore */ `${base}/ort.webgpu.bundle.min.mjs`),
-      import(/* @vite-ignore */ `${base}/demucs/index.js`),
       importTransformers(`${base}/transformers.min.js`),
       import(/* @vite-ignore */ `${base}/ft-ensemble.js`),
       import(/* @vite-ignore */ `${base}/crepe-pitch.js`),
@@ -74,8 +79,13 @@ export async function loadCreatorLibs(onLog = () => {}) {
     if (ort.env?.wasm) {
       ort.env.wasm.wasmPaths = `${base}/`;
       // SIMD is built in; THREADS need cross-origin isolation (COOP+COEP). Else 1.
+      // Cap the pool at ~60% of cores: full hardwareConcurrency saturates EVERY
+      // core when Whisper (or separation) runs on the wasm EP, starving the UI
+      // and audio. On the webgpu EP the pool mostly idles anyway (the demucs
+      // graph runs 100% on WebGPU; verified via ORT node placements).
       const isolated = self.crossOriginIsolated === true;
-      const threads = isolated ? navigator.hardwareConcurrency || 4 : 1;
+      const cores = navigator.hardwareConcurrency || 4;
+      const threads = isolated ? Math.max(1, Math.floor(cores * 0.6)) : 1;
       ort.env.wasm.numThreads = threads;
       onLog(
         `WASM: SIMD on, ${threads} thread${threads === 1 ? '' : 's'}` +

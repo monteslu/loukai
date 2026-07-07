@@ -15,21 +15,9 @@
  *   duration, lyrics:{lines, words}, key, pitch, timing }.
  */
 
-import { planVocalSegments, snapToVocalEnergy } from './vocalSegmentation.js';
-import { groupWordsIntoLines, cullOutroThanks } from './creatorAudio.js';
-
-// Downmix to mono 16k for Whisper.
-function toMono16k(left, right, sampleRate) {
-  const n = left.length;
-  const mono = new Float32Array(n);
-  for (let i = 0; i < n; i++) mono[i] = (left[i] + right[i]) * 0.5;
-  if (sampleRate === 16000) return mono;
-  const ratio = sampleRate / 16000;
-  const outLen = Math.floor(n / ratio);
-  const out = new Float32Array(outLen);
-  for (let i = 0; i < outLen; i++) out[i] = mono[Math.floor(i * ratio)] || 0;
-  return out;
-}
+import { snapToVocalEnergy } from './vocalSegmentation.js';
+import { groupWordsIntoLines } from './creatorAudio.js';
+import { transcribeVocals } from './transcribeVocals.js';
 
 /**
  * @param {Object} input
@@ -167,307 +155,68 @@ export async function createKaraoke(
   // --- Whisper transcription of the vocals stem (in-browser) ---
   onPhase('transcribing');
   const want = asrModel;
-  // q4f16 on webgpu (small/fast, measured-equal accuracy); q8 on wasm.
-  const dtype = device === 'webgpu' ? whisperDtype : 'q8';
-  onLog(`loading Whisper model · ${want} · ${device}/${dtype} (first run downloads it) …`);
+  // q4f16 on webgpu (small/fast, measured-equal accuracy); q8 on wasm. NOT every
+  // onnx-community repo ships every dtype though - e.g. whisper-base_timestamped
+  // has a q4f16 DECODER but no q4f16 ENCODER, and transformers.js surfaces that
+  // as a misleading "Unsupported model type: whisper" (it fell through its model
+  // class chain). Fall through a dtype chain instead: uniform preferred → mixed
+  // (fp16 encoder + quantized decoder) → fp16 → q8.
+  const preferred = device === 'webgpu' ? whisperDtype : 'q8';
+  const dtypeCandidates =
+    device === 'webgpu'
+      ? [preferred, { encoder_model: 'fp16', decoder_model_merged: preferred }, 'fp16', 'q8']
+      : ['q8'];
   const seenFiles = new Set();
   let asr;
-  try {
-    asr = await pipeline('automatic-speech-recognition', want, {
-      device,
-      dtype,
-      progress_callback: (p) => {
-        if (p.status === 'progress' && p.file && p.total) {
-          const pct = Math.round((p.loaded / p.total) * 100);
-          if (pct % 25 === 0 && !seenFiles.has(p.file + pct)) {
-            seenFiles.add(p.file + pct);
-            onLog(`  ↓ ${p.file} ${pct}%`);
+  let lastErr;
+  for (const dtype of dtypeCandidates) {
+    const label = typeof dtype === 'string' ? dtype : JSON.stringify(dtype);
+    onLog(`loading Whisper model · ${want} · ${device}/${label} (first run downloads it) …`);
+    try {
+      asr = await pipeline('automatic-speech-recognition', want, {
+        device,
+        dtype,
+        progress_callback: (p) => {
+          if (p.status === 'progress' && p.file && p.total) {
+            const pct = Math.round((p.loaded / p.total) * 100);
+            if (pct % 25 === 0 && !seenFiles.has(p.file + pct)) {
+              seenFiles.add(p.file + pct);
+              onLog(`  ↓ ${p.file} ${pct}%`);
+            }
           }
-        }
-      },
-    });
-  } catch (e) {
+        },
+      });
+      break;
+    } catch (e) {
+      lastErr = e;
+      onLog(`  dtype ${label} unavailable for this model - trying the next option`);
+    }
+  }
+  if (!asr) {
     throw new Error(
-      `Whisper model "${want}" failed to load (${String(e.message).slice(0, 100)}). ` +
+      `Whisper model "${want}" failed to load (${String(lastErr?.message).slice(0, 100)}). ` +
         `If it's large-v3-turbo, your GPU may be out of memory — try a smaller model.`
     );
   }
-  const mono = toMono16k(result.vocals.left, result.vocals.right, audio.sampleRate);
-  const audioMin = (mono.length / 16000 / 60).toFixed(1);
-
-  // --- Vocals energy profile (replaces Silero VAD) ---
-  const WIN_SEC = 0.1;
-  const winLen = Math.max(1, Math.round(WIN_SEC * 16000));
-  const nWin = Math.ceil(mono.length / winLen);
-  const rms = new Float32Array(nWin);
-  let peakRms = 1e-9;
-  for (let w = 0; w < nWin; w++) {
-    let sum = 0;
-    const s = w * winLen;
-    const e = Math.min(mono.length, s + winLen);
-    for (let i = s; i < e; i++) sum += mono[i] * mono[i];
-    const r = Math.sqrt(sum / Math.max(1, e - s));
-    rms[w] = r;
-    if (r > peakRms) peakRms = r;
-  }
-  const SILENT_FRAC = 0.08;
-  const silentThresh = peakRms * SILENT_FRAC;
-  const inSilentGap = (t, minGapSec = 1.5) => {
-    const c = Math.min(nWin - 1, Math.max(0, Math.floor((t * 16000) / winLen)));
-    if (rms[c] > silentThresh) return false;
-    let lo = c;
-    let hi = c;
-    while (lo > 0 && rms[lo] <= silentThresh) lo--;
-    while (hi < nWin - 1 && rms[hi] <= silentThresh) hi++;
-    return (hi - lo) * WIN_SEC >= minGapSec;
-  };
-  onLog(
-    `vocals energy profile: peak=${peakRms.toFixed(4)}, silence threshold=${silentThresh.toFixed(4)} (${Math.round(SILENT_FRAC * 100)}% of peak)`
-  );
-
-  const tStart = performance.now();
-  onLog(`transcribing ${audioMin} min of vocals on ${device} …`);
-  let chunkIdx = 0;
-  const hb = setInterval(() => {
-    const el = ((performance.now() - tStart) / 1000).toFixed(0);
-    onTranscribeInfo(`transcribing window ${chunkIdx} · ${el}s`);
-  }, 1000);
-
-  const promptText = whisperPrompt;
-  const useWordTs = timestampMode === 'word';
-  let promptIds = null;
-  if (promptText) {
-    try {
-      if (typeof asr.tokenizer?.get_prompt_ids === 'function') {
-        promptIds = asr.tokenizer.get_prompt_ids(promptText);
-      }
-    } catch (e) {
-      onLog(`prompt tokenize failed (${e.message}) — transcribing without prompt`);
-    }
-  }
-  onLog(`transcribing with silence-aware vocal segmentation${promptText ? ', prompt ON' : ''}`);
-  const SR16 = 16000;
-  const totalSamples = mono.length;
-  const allChunks = [];
-  const baseOpts = {
-    return_timestamps: useWordTs ? 'word' : true,
-    ...(language && language !== 'auto' ? { language } : {}),
-    ...(promptIds ? { prompt_ids: promptIds } : promptText ? { prompt: promptText } : {}),
-    repetition_penalty: 1.2,
-    no_repeat_ngram_size: 3,
-  };
-
-  // no_speech_prob capture (non-destructive logits processor).
-  const NO_SPEECH_TOKEN = 50363;
-  const LogitsProcessor = tf?.LogitsProcessor;
-  const makeNoSpeechCapture = () => {
-    if (!LogitsProcessor) return null;
-    const cap = new (class extends LogitsProcessor {
-      constructor() {
-        super();
-        this.prob = null;
-      }
-      _call(inputIds, logits) {
-        try {
-          if (this.prob === null) {
-            const row = logits.dims?.length === 2 ? logits[0] : logits;
-            const data = row.data ?? row;
-            const vocab = row.dims ? row.dims[row.dims.length - 1] : data.length;
-            let mx = -Infinity;
-            for (let i = 0; i < vocab; i++) if (data[i] > mx) mx = data[i];
-            let sum = 0;
-            for (let i = 0; i < vocab; i++) sum += Math.exp(data[i] - mx);
-            this.prob = Math.exp(data[NO_SPEECH_TOKEN] - mx) / sum;
-          }
-        } catch {
-          /* fail-safe: don't gate this window */
-        }
-        return logits;
-      }
-    })();
-    return cap;
-  };
-
-  const transcribeWindow = async (window) => {
-    const cap = makeNoSpeechCapture();
-    const w = await asr(window, {
-      ...baseOpts,
-      ...(cap ? { logits_processor: [cap] } : {}),
-    });
-    return { chunks: w.chunks || [], text: w.text || '', noSpeech: cap?.prob ?? null };
-  };
-
-  const plan = planVocalSegments(rms, {
+  // --- Vocals → words (transcribeVocals module: silence-skipping segmentation,
+  // no_speech gating, anti-aliased 16k downmix; see transcribeVocals.js) ---
+  const {
+    words: vadWords,
+    text: rawText,
+    seconds: tSec,
+    mono,
+    rms,
     hopSec: WIN_SEC,
-    durationSec: audio.duration,
-    minSegSec: 20,
-    maxSegSec: 30,
-    overlapSec: 0,
-    dipSec: 0.5,
-  });
-  onLog(`planned ${plan.length} vocal-aware segment(s) (20s + best-dip cut, ≤30s, clean cuts)`);
-
-  let out;
-  try {
-    for (let pi = 0; pi < plan.length; pi++) {
-      const { start, end } = plan[pi];
-      chunkIdx += 1;
-      const s0 = Math.max(0, Math.floor(start * SR16));
-      const s1 = Math.min(totalSamples, Math.ceil(end * SR16));
-      const window = mono.subarray(s0, s1);
-      onTranscribeInfo(`segment ${chunkIdx}/${plan.length} @ ${start.toFixed(0)}s …`);
-      const w = await transcribeWindow(window);
-      const segs = (w.chunks || []).filter((c) => (c.text || '').trim());
-      for (const c of segs) {
-        const ts = c.timestamp || [c.start, c.end];
-        const a = ts[0] != null ? ts[0] + start : null;
-        const b = ts[1] != null ? ts[1] + start : null;
-        if (a == null) continue;
-        allChunks.push({ text: c.text, timestamp: [a, b != null ? b : a + 0.4] });
-      }
-      if (allChunks.length) {
-        const flat = allChunks.map((c) => ({
-          text: c.text,
-          start: c.timestamp[0],
-          end: c.timestamp[1],
-        }));
-        onLyricsPreview(groupWordsIntoLines(flat, { duration: audio.duration }));
-      }
-      onLog(
-        `  segment ${chunkIdx} @ ${start.toFixed(0)}-${end.toFixed(0)}s: ${segs.length} seg(s)`
-      );
-    }
-    allChunks.sort((a, b) => (a.timestamp[0] ?? 0) - (b.timestamp[0] ?? 0));
-    out = { chunks: allChunks, text: allChunks.map((c) => c.text).join('') };
-  } finally {
-    clearInterval(hb);
-    onTranscribeInfo('');
-  }
-  const tSec = (performance.now() - tStart) / 1000;
-  perf.transcription = tSec;
-
-  // Expand segment-mode chunks into evenly-spaced pseudo-words.
-  let words = out.chunks || [];
-  if (!useWordTs) {
-    const expanded = [];
-    for (const seg of words) {
-      const [s, e] = seg.timestamp || [seg.start, seg.end];
-      const toks = (seg.text || '').trim().split(/\s+/).filter(Boolean);
-      if (s == null || !toks.length) continue;
-      const dur = (e ?? s) - s;
-      const step = toks.length > 0 ? dur / toks.length : 0;
-      toks.forEach((tok, i) => {
-        expanded.push({
-          text: (i ? ' ' : '') + tok,
-          timestamp: [s + i * step, s + (i + 1) * step],
-        });
-      });
-    }
-    words = expanded;
-  }
-
-  const lastWordT = words.length
-    ? (words[words.length - 1].timestamp?.[1] ?? words[words.length - 1].end ?? 0)
-    : 0;
-  onLog(
-    `Whisper raw: ${words.length} words, ${(out.text || '').length} chars, last word @ ${lastWordT.toFixed(0)}s of ${audio.duration.toFixed(0)}s${promptText ? ' (prompt ON)' : ''}`
+    silentFrac: SILENT_FRAC,
+  } = await transcribeVocals(
+    { vocals: result.vocals, sampleRate: audio.sampleRate, duration: audio.duration, asr, tf },
+    { timestampMode, language, whisperPrompt, device },
+    { onLog, onTranscribeInfo, onLyricsPreview }
   );
-
-  // --- Hallucination cull stack (verbatim from the inline pipeline) ---
-  const isAnnotation = (s) => /[*[\]#♪♫]/.test((s || '').trim());
-
-  // (1) stuck-decoder time-collision cull
-  {
-    const minStartGap = 0.08;
-    const startOf = (w) => (w.timestamp ? w.timestamp[0] : w.start) ?? null;
-    const kept = [];
-    let prevStart = null;
-    let dropped = 0;
-    for (const w of words) {
-      const s = startOf(w);
-      const collide = s != null && prevStart != null && s - prevStart < minStartGap;
-      if (s != null) prevStart = s;
-      if (collide) {
-        dropped++;
-        continue;
-      }
-      kept.push(w);
-    }
-    if (dropped) {
-      onLog(
-        `dropped ${dropped} time-collided word(s) (<${minStartGap}s apart → stuck decoder loop)`
-      );
-      words = kept;
-    }
-  }
-
-  // (2) annotation strip + sustained-silence cull (skip mid-phrase words)
-  {
-    const culled = [];
-    const startOf = (w) => (w.timestamp ? w.timestamp[0] : w.start) ?? null;
-    const endOf = (w) => (w.timestamp ? w.timestamp[1] : w.end) ?? startOf(w);
-    const NEIGHBOR = 1.2;
-    words = words.filter((w, i, arr) => {
-      const text = (w.text || '').trim();
-      const ts = w.timestamp || [w.start, w.end];
-      const mid = ts[0] != null && ts[1] != null ? (ts[0] + ts[1]) / 2 : ts[0];
-      if (isAnnotation(text)) {
-        culled.push({ text, t: mid == null ? -1 : Number(mid.toFixed(2)), why: 'annotation' });
-        return false;
-      }
-      if (mid == null) return true;
-      const s = startOf(w);
-      const gapBefore = i > 0 ? s - endOf(arr[i - 1]) : Infinity;
-      const gapAfter = i < arr.length - 1 ? startOf(arr[i + 1]) - endOf(w) : Infinity;
-      const midPhrase = gapBefore <= NEIGHBOR && gapAfter <= NEIGHBOR;
-      if (!midPhrase && inSilentGap(mid)) {
-        culled.push({ text, t: Number(mid.toFixed(2)), why: 'instrumental gap' });
-        return false;
-      }
-      return true;
-    });
-    if (culled.length) {
-      onLog(`trimmed ${culled.length} hallucinated word(s) (annotation / instrumental gap)`);
-    }
-  }
-
-  // (3) isolated-word-after-big-gap cull (fade ghost)
-  {
-    const isoGap = 8;
-    const startOf = (w) => (w.timestamp ? w.timestamp[0] : w.start) ?? null;
-    const endOf = (w) => (w.timestamp ? w.timestamp[1] : w.end) ?? startOf(w);
-    const stranded = [];
-    words = words.filter((w, i) => {
-      const s = startOf(w);
-      if (s == null) return true;
-      const prevEnd = i > 0 ? endOf(words[i - 1]) : null;
-      const nextStart = i < words.length - 1 ? startOf(words[i + 1]) : null;
-      const gapBefore = prevEnd != null ? s - prevEnd : Infinity;
-      const gapAfter = nextStart != null ? nextStart - (endOf(w) ?? s) : Infinity;
-      if (gapBefore >= isoGap && gapAfter >= isoGap) {
-        stranded.push({ text: (w.text || '').trim(), t: Number(s.toFixed(1)) });
-        return false;
-      }
-      return true;
-    });
-    if (stranded.length) {
-      onLog(
-        `dropped ${stranded.length} stranded word(s) (isolated >${isoGap}s from neighbors → fade ghost)`
-      );
-    }
-  }
-
-  // (4) "thank you" outro cull (only outside the lyric body)
-  {
-    const r = cullOutroThanks(words);
-    if (r.removed.length) {
-      words = r.words;
-      onLog(
-        `dropped ${r.removed.length} "thank you" hallucination word(s) outside lyric body: ${r.removed.join(' ')}`
-      );
-    }
-  }
-  onLog(`after VAD: ${words.length} words`);
+  perf.transcription = tSec;
+  const audioMin = (mono.length / 16000 / 60).toFixed(1);
+  const words = vadWords;
+  const out = { text: rawText };
 
   // --- Group into lines + snap + non-overlap invariant + junk-line filter ---
   let lines = words.length

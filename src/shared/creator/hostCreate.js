@@ -13,16 +13,18 @@
  * Browser/renderer only.
  */
 
-import { loadCreatorLibs, detectWebGpu } from './creatorLibs.js';
-import { createKaraoke } from './createKaraoke.js';
+import { detectWebGpu } from './creatorLibs.js';
+import { createKaraokeInWorker } from './createKaraokeClient.js';
 import { encodeWav } from './creatorAudio.js';
 import { encodeWavToAac } from './aacEncoder.js';
 
 // Decode raw file bytes (any browser-decodable container) → stereo Float32 channels.
+// OfflineAudioContext pinned to 44.1k: htdemucs is trained at 44.1k, and a
+// device-rate (48k) AudioContext fed the model slow audio (worse stems). Also
+// avoids leaking a live AudioContext per decode.
 async function decodeBytes(bytes) {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const AC = window.AudioContext || window.webkitAudioContext;
-  const ctx = new AC();
+  const ctx = new OfflineAudioContext(2, 1, 44100);
   const buf = await ctx.decodeAudioData(
     u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)
   );
@@ -50,7 +52,6 @@ export async function hostCreate({ audioBytes, opts = {} }, onProgress = () => {
   const device = gpu ? 'webgpu' : 'wasm';
   emitLog(`host create starting — EP: ${device}`);
 
-  const libs = await loadCreatorLibs(emitLog);
   emitLog('decoding uploaded audio …');
   const audio = await decodeBytes(audioBytes);
 
@@ -59,10 +60,11 @@ export async function hostCreate({ audioBytes, opts = {} }, onProgress = () => {
   // we coarsely map phases to an overall %.)
   const PHASE_PCT = { separating: 5, transcribing: 55, pitch: 90 };
 
-  const created = await createKaraoke(
+  // Compute runs in the creator WORKER (separation + Whisper + CREPE off the
+  // UI thread); the runtime libs load inside it, their logs stream via onLog.
+  const created = await createKaraokeInWorker(
     { audio },
     { ...opts, device, ftAvailable: opts.ftAvailable ?? false },
-    libs,
     {
       onPhase: (phase) => onProgress({ phase, progress: PHASE_PCT[phase] ?? undefined }),
       onLog: emitLog,
@@ -85,10 +87,14 @@ export async function hostCreate({ audioBytes, opts = {} }, onProgress = () => {
     other: encodeWav(result.other.left, result.other.right, sr),
     vocals: encodeWav(result.vocals.left, result.vocals.right, sr),
   };
+  // CONCURRENT on the encoder worker pool (see aacEncoder.js) instead of one
+  // core pinned 5x as long.
+  const stemKeys = Object.keys(wavBlobs);
+  const encoded = await Promise.all(stemKeys.map((k) => encodeWavToAac(wavBlobs[k])));
   const stemsAac = {};
-  for (const k of Object.keys(wavBlobs)) {
-    stemsAac[k] = await encodeWavToAac(wavBlobs[k]);
-  }
+  stemKeys.forEach((k, i) => {
+    stemsAac[k] = encoded[i];
+  });
 
   emitLog('host create compute complete — handing stems back to main');
   return {
