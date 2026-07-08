@@ -22,6 +22,7 @@ import {
   createReadStream,
   statSync,
   renameSync,
+  rmSync,
 } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -164,6 +165,74 @@ function download(url, destPath, redirects = 5) {
   });
 }
 
+/**
+ * Download url → destPath while STREAMING the same bytes to the client response
+ * (tee). This is what makes FIRST-RUN model downloads show real progress in the
+ * renderer: upstream's Content-Length is forwarded and bytes flow as they arrive
+ * from HuggingFace, instead of the old buffer-fully-then-serve (which left the
+ * client's progress silent for the whole slow phase, then jumping 0→100 from
+ * local disk). On a mid-stream failure the partial cache file is discarded and
+ * the response destroyed so the client's fetch rejects rather than hanging.
+ */
+function streamDownload(url, destPath, clientRes, redirects = 5) {
+  return new Promise((resolve, reject) => {
+    mkdirSync(join(destPath, '..'), { recursive: true });
+    const req = https.get(url, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+        if (redirects <= 0) return reject(new Error('too many redirects'));
+        res.resume();
+        const next = res.headers.location.startsWith('http')
+          ? res.headers.location
+          : new URL(res.headers.location, url).href;
+        return streamDownload(next, destPath, clientRes, redirects - 1).then(resolve, reject);
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+      }
+      if (res.headers['content-length']) {
+        clientRes.setHeader('Content-Length', res.headers['content-length']);
+      }
+      const tmp = `${destPath}.part`;
+      const out = createWriteStream(tmp);
+      let failed = false;
+      const fail = (e) => {
+        if (failed) return;
+        failed = true;
+        out.destroy();
+        try {
+          rmSync(tmp, { force: true });
+        } catch {
+          /* best-effort cleanup */
+        }
+        clientRes.destroy();
+        reject(e);
+      };
+      res.on('error', fail);
+      out.on('error', fail);
+      res.pipe(out);
+      res.pipe(clientRes);
+      out.on('finish', () => {
+        if (failed) return;
+        out.close(() => {
+          try {
+            renameSync(tmp, destPath);
+            resolve();
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+    });
+    req.on('error', reject);
+  });
+}
+
+// In-flight upstream downloads by dest path: a second request for the SAME file
+// while it is still downloading waits for the first (two writers on one .part
+// file would corrupt it), then serves from the finished cache.
+const inflightDownloads = new Map();
+
 /** Ensure one asset is cached; returns its absolute path. */
 async function ensureAsset(key) {
   const url = ASSETS[key];
@@ -240,8 +309,9 @@ export function registerWebGpuAssets(app) {
     const dest = staticPath || join(modelsDir(), rel);
     try {
       // Otherwise fetch + LAN-cache from HuggingFace: our htdemucs_ft ensemble
-      // (FT_MODELS → monteslu/htdemucs-ft-webgpu), the fast htdemucs alias, and the
-      // public model trees (silero VAD, Whisper) that transformers.js requests.
+      // (FT_MODELS → monteslu/htdemucs-ft-webgpu), the chained split pieces, the
+      // fast htdemucs alias, and the public model trees (silero VAD, Whisper)
+      // that transformers.js requests.
       if (!staticPath && !(existsSync(dest) && statSync(dest).size > 0)) {
         let upstream;
         if (rel === 'htdemucs.onnx') upstream = HTDEMUCS_URL;
@@ -251,7 +321,28 @@ export function registerWebGpuAssets(app) {
         if (!upstream.startsWith('https://huggingface.co/')) {
           return res.status(404).json({ error: 'model not found locally and no upstream' });
         }
-        await download(upstream, dest);
+        if (inflightDownloads.has(dest)) {
+          // Someone else is already pulling this exact file: wait, then serve
+          // the cached copy below (never two writers on one .part file).
+          await inflightDownloads.get(dest);
+        } else {
+          // STREAM-THROUGH: pipe HF → this client AND the cache file, so the
+          // first-ever download shows live progress instead of a silent stall.
+          res.setHeader('Content-Type', mimeFor(rel));
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+          const p = streamDownload(upstream, dest, res);
+          inflightDownloads.set(
+            dest,
+            p.catch(() => {})
+          );
+          try {
+            await p;
+          } finally {
+            inflightDownloads.delete(dest);
+          }
+          return; // bytes already sent while caching
+        }
       }
       res.setHeader('Content-Type', mimeFor(rel));
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
@@ -263,7 +354,11 @@ export function registerWebGpuAssets(app) {
       createReadStream(dest).pipe(res);
     } catch (e) {
       console.error('webgpu-model fetch failed:', rel, e.message);
-      res.status(502).json({ error: `failed to fetch model: ${e.message}` });
+      // Headers (and bytes) may already be on the wire from the stream-through
+      // path; a JSON error would corrupt the payload — just kill the socket so
+      // the client's fetch rejects.
+      if (res.headersSent) res.destroy();
+      else res.status(502).json({ error: `failed to fetch model: ${e.message}` });
     }
   });
 }
