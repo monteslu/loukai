@@ -43,6 +43,16 @@ export default defineConfig({
         'src/shared/creator/hostCreate.js', // window.AudioContext + WebGPU compute
         'src/shared/creator/aacEncoder.js', // spawns a Web Worker (ffmpeg-wasm)
         'src/shared/creator/createKaraoke.js', // drives Demucs/Whisper/CREPE on the GPU
+        // The vendored demucs runner's GPU/Worker layer (same rationale). The pure DSP
+        // (fft, segments, processor, stemsdsp) stays measured via demucs.test.js; the
+        // chain LOGIC in gpu-separator has tests too, but the bulk of that file is
+        // real-WebGPU (device buffers, WGSL dispatch, GPU readback).
+        'src/shared/creator/demucs/gpu-separator.js', // WebGPU sessions + GPU-resident I/O
+        'src/shared/creator/demucs/gpu-dsp.js', // WGSL pipelines on a real GPUDevice
+        'src/shared/creator/demucs/compat.js', // ft-ensemble DSP glue (exercised by the GPU ensemble path)
+        'src/shared/creator/demucs/index.js', // re-exports only
+        'src/shared/creator/createKaraoke.worker.js', // Worker context (rawr + self)
+        'src/shared/creator/createKaraokeClient.js', // spawns the real Worker
       ],
       // Floors set just below the real measured coverage of the unit-testable layer
       // (the include list above). They ratchet against regressions. The previous

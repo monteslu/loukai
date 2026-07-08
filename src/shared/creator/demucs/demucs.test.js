@@ -197,7 +197,10 @@ function echoModel(feeds) {
     add_67: { data: time, dims: [1, 4, 2, TRAINING_SAMPLES] },
   };
 }
-describe('DemucsProcessor.separate', () => {
+// 60s timeout: these run the REAL WASM/JS DSP (STFT/iSTFT over full segments). Fast
+// locally (~0.4-1.7s each), but CI's runner under v8 coverage instrumentation is many
+// times slower — the 5s default timed out there (first CI run of this file).
+describe('DemucsProcessor.separate', { timeout: 60000 }, () => {
   it('reassembles time-branch output through overlap-add (echo model)', async () => {
     const proc = makeProcessor(echoModel);
     await proc.loadModel(new ArrayBuffer(0));
