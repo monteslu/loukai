@@ -39,3 +39,4 @@ yarn-error.log*
 .flatpak-builder/
 build-dir/
 .flatpak/
+__pycache__/
