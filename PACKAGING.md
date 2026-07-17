@@ -2,7 +2,7 @@
 
 ## Overview
 
-Loukai uses **electron-builder 26** to create distributable packages for Linux, Windows, and macOS. The build system supports multi-architecture compilation, producing **7 packages** across **3 platforms**.
+Loukai uses **electron-builder 26** to create distributable packages for Linux, Windows, and macOS. The build system supports multi-architecture packaging, producing **8 packages** across **3 platforms**. All dependencies are pure JS/WASM — nothing is compiled per platform.
 
 ## Supported Platforms & Architectures
 
@@ -11,9 +11,10 @@ Loukai uses **electron-builder 26** to create distributable packages for Linux, 
 | **Linux** | AppImage | x64, ARM64 | 143 MB each | ✅ Production |
 | **Linux** | Flatpak | x64, ARM64 | 104 MB each | ✅ Production |
 | **Windows** | NSIS | x64 | ~150 MB | ✅ Production |
+| **Windows** | Portable | x64 | ~150 MB | ✅ Production |
 | **macOS** | DMG | x64 (Intel), ARM64 (Apple Silicon) | ~150 MB each | ✅ Production |
 
-**Total Output:** 7 packages, ~900 MB combined
+**Total Output:** 8 packages, ~1 GB combined
 
 ---
 
@@ -21,8 +22,8 @@ Loukai uses **electron-builder 26** to create distributable packages for Linux, 
 
 ### Prerequisites
 
-- **Node.js 18+**
-- **npm 9+**
+- **Node.js 20.19+** (CI uses 24)
+- **npm 10+**
 - Platform-specific tools (see below)
 
 ### Build Commands
@@ -31,7 +32,7 @@ Loukai uses **electron-builder 26** to create distributable packages for Linux, 
 # Build for all platforms
 npm run build                  # Current platform only
 npm run build:linux            # Linux (AppImage + Flatpak)
-npm run build:win              # Windows (NSIS)
+npm run build:win              # Windows (NSIS + portable)
 npm run build:mac              # macOS (DMG x2)
 
 # Build assets only (no packaging)
@@ -46,14 +47,17 @@ All build artifacts are placed in `dist/`:
 
 ```
 dist/
-├── Loukai-1.0.0.AppImage              # Linux x64 AppImage
-├── Loukai-1.0.0-arm64.AppImage        # Linux ARM64 AppImage
-├── Loukai-1.0.0-x86_64.flatpak        # Linux x64 Flatpak
-├── Loukai-1.0.0-aarch64.flatpak       # Linux ARM64 Flatpak
-├── Loukai-Setup-1.0.0.exe             # Windows NSIS installer
-├── Loukai-1.0.0.dmg                   # macOS Intel DMG
-└── Loukai-1.0.0-arm64.dmg             # macOS Apple Silicon DMG
+├── Loukai Karaoke-<version>-linux-x86_64.AppImage      # Linux x64 AppImage
+├── Loukai Karaoke-<version>-linux-aarch64.AppImage     # Linux ARM64 AppImage
+├── Loukai Karaoke-<version>-linux-x86_64.flatpak       # Linux x64 Flatpak
+├── Loukai Karaoke-<version>-linux-aarch64.flatpak      # Linux ARM64 Flatpak
+├── Loukai Karaoke-<version>-windows-x86_64-installer.exe  # Windows NSIS installer
+├── Loukai Karaoke-<version>-windows-x86_64-portable.exe   # Windows portable
+├── Loukai Karaoke-<version>-macos-x86_64.dmg           # macOS Intel DMG
+└── Loukai Karaoke-<version>-macos-aarch64.dmg          # macOS Apple Silicon DMG
 ```
+
+(Names come from the `artifactName` templates in package.json; `scripts/rename-artifacts.js` converts x64/arm64 to x86_64/aarch64.)
 
 ---
 
@@ -63,7 +67,7 @@ dist/
 
 **Format:** Universal Linux binary that runs on any distribution
 
-**Configuration** (`package.json`):
+**Configuration** (`package.json`, excerpt — the full `linux` block also lists the flatpak target, `artifactName`, and a `desktop.entry`):
 ```json
 {
   "linux": {
@@ -88,10 +92,10 @@ dist/
 **Usage:**
 ```bash
 # Make executable
-chmod +x Loukai-1.0.0.AppImage
+chmod +x "Loukai Karaoke-<version>-linux-x86_64.AppImage"
 
 # Run
-./Loukai-1.0.0.AppImage
+"./Loukai Karaoke-<version>-linux-x86_64.AppImage"
 ```
 
 ### Flatpak
@@ -149,7 +153,7 @@ flatpak install --user -y flathub \
 **Usage:**
 ```bash
 # Install
-flatpak install --user Loukai-1.0.0-x86_64.flatpak
+flatpak install --user "Loukai Karaoke-<version>-linux-x86_64.flatpak"
 
 # Run
 flatpak run com.loukai.app
@@ -169,16 +173,20 @@ flatpak uninstall com.loukai.app
 
 ## Windows Packaging
 
-### NSIS Installer
+### NSIS Installer + Portable
 
-**Format:** Installable Windows executable with auto-updater support
+**Format:** Installable Windows executable (NSIS) plus a portable single-file exe
 
 **Configuration** (`package.json`):
 ```json
 {
   "win": {
-    "target": "nsis",
-    "icon": "static/images/logo.png"
+    "target": [
+      { "target": "nsis", "arch": ["x64"] },
+      { "target": "portable", "arch": ["x64"] }
+    ],
+    "icon": "static/images/logo.png",
+    "artifactName": "${productName}-${version}-windows-${arch}.${ext}"
   }
 }
 ```
@@ -187,20 +195,21 @@ flatpak uninstall com.loukai.app
 - Standard Windows installer experience
 - Desktop shortcut creation
 - Start menu integration
-- Auto-updater support (GitHub releases)
+- Published to GitHub Releases (no in-app auto-updater)
 - Uninstaller included
+- Portable exe alternative — run without installing
 
 **Build Requirements:**
 - Windows 10/11 or GitHub Actions (windows-latest)
-- Visual Studio Build Tools (for bcrypt compilation)
+- No compiler toolchain needed — all dependencies are pure JS/WASM
 
 **Usage:**
-1. Double-click `Loukai-Setup-1.0.0.exe`
+1. Double-click `Loukai Karaoke-<version>-windows-x86_64-installer.exe` (or run the `-portable.exe` without installing)
 2. Follow installation wizard
 3. Launch from Start menu or desktop shortcut
 
 **Installation Paths:**
-- Program Files: `C:\Program Files\Loukai\`
+- Program: `%LOCALAPPDATA%\Programs\Loukai Karaoke\` (per-user install)
 - User Data: `%APPDATA%\loukai\`
 
 ---
@@ -221,7 +230,9 @@ flatpak uninstall com.loukai.app
         "arch": ["x64", "arm64"]
       }
     ],
-    "icon": "static/images/logo.png"
+    "icon": "static/images/logo.png",
+    "identity": null,
+    "artifactName": "${productName}-${version}-macos-${arch}.${ext}"
   }
 }
 ```
@@ -229,7 +240,7 @@ flatpak uninstall com.loukai.app
 **Features:**
 - Native macOS application
 - Universal binary support (Intel + Apple Silicon)
-- Code signing ready
+- Ships unsigned (`identity: null`); code signing/notarization can be enabled for distribution
 - Drag-to-Applications installation
 
 **Build Requirements:**
@@ -238,17 +249,17 @@ flatpak uninstall com.loukai.app
 - Code signing certificate (optional, for distribution)
 
 **Usage:**
-1. Open `Loukai-1.0.0.dmg` (or `-arm64.dmg` for Apple Silicon)
+1. Open `Loukai Karaoke-<version>-macos-x86_64.dmg` (or `-macos-aarch64.dmg` for Apple Silicon)
 2. Drag Loukai icon to Applications folder
 3. Launch from Applications or Launchpad
 
 **Installation Paths:**
-- Application: `/Applications/Loukai.app`
+- Application: `/Applications/Loukai Karaoke.app`
 - User Data: `~/Library/Application Support/loukai/`
 
 **Architecture Selection:**
-- `Loukai-1.0.0.dmg` - Intel Macs (x64)
-- `Loukai-1.0.0-arm64.dmg` - Apple Silicon (M1/M2/M3)
+- `Loukai Karaoke-<version>-macos-x86_64.dmg` - Intel Macs (x64)
+- `Loukai Karaoke-<version>-macos-aarch64.dmg` - Apple Silicon (M1/M2/M3)
 
 ---
 
@@ -268,16 +279,8 @@ sudo apt-get install -y qemu-user-static
 
 **Process:**
 1. Downloads Electron ARM64 binary
-2. Uses `@electron/rebuild` to compile native modules (bcrypt)
-3. Packages into ARM64 AppImage
-
-**Build Output:**
-```
-• executing @electron/rebuild  electronVersion=38.2.2 arch=arm64
-• installing native dependencies  arch=arm64
-• preparing       moduleName=bcrypt arch=arm64
-• finished        moduleName=bcrypt arch=arm64
-```
+2. Packages the app (pure JS/WASM — no native module rebuild step)
+3. Produces the ARM64 AppImage
 
 #### Flatpak (Native Runtimes)
 
@@ -304,73 +307,59 @@ File: `.github/workflows/build.yml`
 
 **Triggers:**
 - Push to tags matching `v*` (e.g., `v1.0.0`)
-- Manual workflow dispatch
+- Manual workflow dispatch (jobs are still gated on a tag ref, so dispatch only builds when run on a tag)
 
 **Jobs:**
 
 ```yaml
 jobs:
-  build-linux:      # Ubuntu x64 runner
-  build-windows:    # Windows x64 runner
-  build-macos:      # macOS x64 runner
-  release:          # Create GitHub release
+  build-linux-x64:    # Fedora-based flatpak container on ubuntu-latest
+  build-linux-arm64:  # Same container + QEMU user-mode emulation
+  build-windows:      # Windows x64 runner
+  build-macos:        # macOS runner (builds both arches)
 ```
+
+There is no separate release job — every job publishes its artifacts straight to the GitHub release via `electron-builder --publish always`.
 
 ### Build Matrix
 
 | Job | Runner | Architectures | Output |
 |-----|--------|---------------|--------|
-| **build-linux** | ubuntu-latest | x64, ARM64 | 2× AppImage, 2× Flatpak |
-| **build-windows** | windows-latest | x64 | 1× NSIS installer |
+| **build-linux-x64** | `bilelmoussaoui/flatpak-github-actions:freedesktop-24.08` container | x64 | 1× AppImage, 1× Flatpak |
+| **build-linux-arm64** | same container + QEMU | ARM64 | 1× AppImage, 1× Flatpak |
+| **build-windows** | windows-latest | x64 | 1× NSIS installer, 1× portable exe |
 | **build-macos** | macos-latest | x64, ARM64 | 2× DMG |
-| **release** | ubuntu-latest | - | GitHub release with all artifacts |
 
-### Linux Build Steps
+### Linux Build Steps (per arch)
 
 ```yaml
 - name: Checkout code
-- name: Setup Node.js 18
+- name: Setup Node.js 24
+- name: Install QEMU for ARM64 builds        # arm64 job only
+  run: dnf install -y qemu-user-static
 - name: Install dependencies
-- name: Install flatpak-builder
+  run: npm ci
+- name: Build renderer and web UI
+  run: npm run build:all
+- name: Setup Flatpak remotes and Electron base
   run: |
-    sudo apt-get update
-    sudo apt-get install -y flatpak-builder flatpak
-    flatpak remote-add --user --if-not-exists flathub \
-      https://flathub.org/repo/flathub.flatpakrepo
-
-- name: Install Flatpak runtimes
-  run: |
-    flatpak install --user -y flathub \
-      org.electronjs.Electron2.BaseApp/x86_64/24.08 \
-      org.freedesktop.Platform/x86_64/24.08 \
-      org.freedesktop.Sdk/x86_64/24.08 \
-      org.electronjs.Electron2.BaseApp/aarch64/24.08 \
-      org.freedesktop.Platform/aarch64/24.08 \
-      org.freedesktop.Sdk/aarch64/24.08
-
-- name: Install QEMU for ARM64
-  run: sudo apt-get install -y qemu-user-static
-
-- name: Build Linux
-  run: npm run build:linux
-
-- name: Upload artifacts
-  uses: actions/upload-artifact@v4
-  with:
-    name: linux-builds
-    path: |
-      dist/*.AppImage
-      dist/*.flatpak
+    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+    flatpak install -y flathub org.electronjs.Electron2.BaseApp/<arch>/24.08
+    # (arm64 job also installs the aarch64 Platform + Sdk; x64 versions ship with the container)
+- name: Move electron to devDependencies for electron-builder
+- name: Build and publish
+  run: npx electron-builder --linux AppImage flatpak --<arch> --publish always && node scripts/rename-artifacts.js
 ```
+
+No compiler toolchain is installed — all dependencies are pure JS/WASM.
 
 ### Release Creation
 
 When a version tag is pushed:
 
 1. All build jobs run in parallel
-2. Artifacts are uploaded from each job
-3. Release job downloads all artifacts
-4. GitHub release is created with all 7 packages attached
+2. Each job publishes its artifacts directly to the GitHub release (`--publish always`)
+3. The release ends up with all 8 packages attached
 
 **Example:**
 ```bash
@@ -386,13 +375,13 @@ git push origin v1.0.0
 
 | Platform | Format | Architecture | Build Time | Notes |
 |----------|--------|--------------|------------|-------|
-| Linux | AppImage | x64 | ~45s | Native compilation |
+| Linux | AppImage | x64 | ~45s | Packaging only |
 | Linux | AppImage | ARM64 | ~60s | QEMU emulation |
 | Linux | Flatpak | x64 | ~90s | Runtime installation |
 | Linux | Flatpak | ARM64 | ~90s | Runtime installation |
-| Windows | NSIS | x64 | ~60s | Native compilation |
-| macOS | DMG | x64 | ~50s | Native compilation |
-| macOS | DMG | ARM64 | ~50s | Native compilation |
+| Windows | NSIS | x64 | ~60s | Packaging only |
+| macOS | DMG | x64 | ~50s | Packaging only |
+| macOS | DMG | ARM64 | ~50s | Packaging only |
 
 **Total CI time:** ~5-7 minutes (parallel jobs)
 
@@ -435,13 +424,13 @@ dist/assets/index-Cn6I7HKD.js   358.66 kB │ gzip: 100.15 kB
 - Butterchurn + Presets: ~100 KB
 - Audio Worklets: ~50 KB
 
-**Native Module:**
-- bcrypt 6: Compiled for each platform/architecture
+**No native modules:**
+- bcryptjs (pure JS) replaced native bcrypt — nothing is compiled per platform/architecture
 
 **Optimization:**
 - Code splitting (dynamic imports)
 - Tree shaking (Vite default)
-- Minification (Terser)
+- Minification (esbuild, Vite default)
 - Gzip compression
 
 ---
@@ -453,19 +442,19 @@ dist/assets/index-Cn6I7HKD.js   358.66 kB │ gzip: 100.15 kB
 #### AppImage
 ```bash
 # Make executable
-chmod +x dist/Loukai-1.0.0.AppImage
+chmod +x "dist/Loukai Karaoke-<version>-linux-x86_64.AppImage"
 
 # Run
-./dist/Loukai-1.0.0.AppImage
+"./dist/Loukai Karaoke-<version>-linux-x86_64.AppImage"
 
 # Run with debug
-./dist/Loukai-1.0.0.AppImage --no-sandbox --enable-logging
+"./dist/Loukai Karaoke-<version>-linux-x86_64.AppImage" --no-sandbox --enable-logging
 ```
 
 #### Flatpak
 ```bash
 # Install locally
-flatpak install --user dist/Loukai-1.0.0-x86_64.flatpak
+flatpak install --user "dist/Loukai Karaoke-<version>-linux-x86_64.flatpak"
 
 # Run
 flatpak run com.loukai.app
@@ -478,22 +467,21 @@ flatpak run --command=sh com.loukai.app
 
 ```cmd
 REM Install
-dist\Loukai-Setup-1.0.0.exe
+"dist\Loukai Karaoke-<version>-windows-x86_64-installer.exe"
 
 REM Run from Start Menu or:
-"%LOCALAPPDATA%\Programs\loukai\Loukai.exe"
+"%LOCALAPPDATA%\Programs\Loukai Karaoke\Loukai Karaoke.exe"
 ```
 
 ### macOS
 
 ```bash
 # Mount DMG
-open dist/Loukai-1.0.0.dmg
+open "dist/Loukai Karaoke-<version>-macos-x86_64.dmg"
 
 # Copy to Applications (manual)
-# OR run directly
-open dist/Loukai-1.0.0.dmg
-./Volumes/Loukai/Loukai.app/Contents/MacOS/Loukai
+# OR run directly from the mounted volume
+"/Volumes/Loukai Karaoke/Loukai Karaoke.app/Contents/MacOS/Loukai Karaoke"
 ```
 
 ---
@@ -525,7 +513,7 @@ open dist/Loukai-1.0.0.dmg
 
 ### ARM64 Build Fails
 
-**Issue:** bcrypt compilation fails for ARM64
+**Issue:** ARM64 emulation not available for the cross-arch build
 
 **Solution:**
 1. Install QEMU:
@@ -538,18 +526,9 @@ open dist/Loukai-1.0.0.dmg
    ls /proc/sys/fs/binfmt_misc/qemu-aarch64
    ```
 
-### Native Module Errors
-
-**Issue:** `Error: Cannot find module 'bcrypt'`
-
-**Solution:**
-```bash
-# Rebuild native modules
-npm run rebuild
-
-# OR manually
-npx electron-rebuild
-```
+> Note: loukai has no native (compiled) node modules — all dependencies are pure
+> JS/WASM, so no compiler toolchain or `electron-rebuild` step is needed on any
+> platform.
 
 ### macOS Code Signing
 
@@ -558,7 +537,7 @@ npx electron-rebuild
 **Workaround (development only):**
 ```bash
 # Remove quarantine attribute
-xattr -cr /Applications/Loukai.app
+xattr -cr "/Applications/Loukai Karaoke.app"
 ```
 
 **Production solution:** Sign with Apple Developer certificate
