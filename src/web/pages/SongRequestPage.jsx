@@ -174,7 +174,7 @@ export function SongRequestPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          songId: selectedSong.path,
+          songId: selectedSong.id,
           requesterName: userName,
           message: requestMessage,
         }),
@@ -319,7 +319,7 @@ export function SongRequestPage() {
               ) : (
                 quickSearchResults.slice(0, 8).map((song) => (
                   <div
-                    key={song.path}
+                    key={song.id}
                     className="p-3.5 cursor-pointer border-b border-gray-200 dark:border-gray-600 flex justify-between items-start gap-3 transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 last:border-b-0"
                     onClick={() => {
                       handleRequestSong(song);
@@ -408,7 +408,7 @@ export function SongRequestPage() {
             ) : (
               songs.map((song) => (
                 <div
-                  key={song.path}
+                  key={song.id}
                   className="flex justify-between items-start p-4 bg-gray-100 dark:bg-gray-700 rounded-md mb-2 transition-colors gap-4"
                 >
                   <div className="flex-1 flex flex-col items-start">
