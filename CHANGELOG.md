@@ -65,6 +65,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.0] - 2026-07-17
+
+### Added
+- WebGPU creator: GPU karaoke creation from any surface — in-app, phone-commanded
+  host creation (upload from the web admin, the desktop player runs the GPU job),
+  and offsite creator (#59)
+- Chained 21-piece demucs split model with live toggle and cancel; optional
+  htdemucs_ft "best quality" ensemble
+- Full Whisper language list in creator dropdowns; auto-detect with fallback
+- AIFF (.aif/.aiff) accepted by all import surfaces and the host-create upload (#58)
+- Creator JS/wasm libraries (onnxruntime-web, transformers.js, ffmpeg-core)
+  are now vendored into packages at build time — no CDN dependency at runtime;
+  ML models remain download-on-first-use (#65)
+
+### Fixed
+- LAN web song requests failed with "Song ID and requester name are required":
+  the client sent the sanitized-away `path` instead of the song `id` (#60)
+- Real first-run download progress for chained model files (stream-through)
+
+### Changed
+- Electron 42; no native modules remain (pure JS/WASM) — compiler toolchains
+  removed from release CI; `ensure-electron` repair now reuses Electron's own
+  installer (#65)
+- Docs corrected across README/CONTRIBUTING/PACKAGING/architecture/flatpak
+  to match the post-Python reality (#65)
+
+### Removed
+- Dead `src/native/` legacy autotune module (#65)
+
 ## [1.0.0] - 2025-10-11
 
 ### Added - Phase 2 (Testing Infrastructure)

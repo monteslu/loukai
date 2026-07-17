@@ -48,6 +48,18 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.7.0" date="2026-07-17">
+      <description>
+        <p>WebGPU creator everywhere, AIFF support, and a fully pure-JS runtime</p>
+        <ul>
+          <li>Create karaoke from any surface: in-app, phone-commanded host creation, or the offsite creator</li>
+          <li>Higher-quality separation option (htdemucs_ft ensemble) with live progress and cancel</li>
+          <li>AIFF (.aif/.aiff) import support</li>
+          <li>Fixed song requests from the LAN web page</li>
+          <li>Creator libraries ship inside the app — only ML models download on first use</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-06-21">
       <description>
         <p>GPU-accelerated song creation and web-based creator</p>
