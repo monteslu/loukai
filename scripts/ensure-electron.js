@@ -14,13 +14,13 @@
  *     the version range declared in our own package.json. In the dev repo
  *     Electron is already present, so this never triggers.
  *
- *  2. REPAIR: Electron's own postinstall extracts its binary with `extract-zip`
- *     (bundling the unmaintained `yauzl@2.x`). On Node 24 that extractor
- *     silently stalls after the first zip entry, leaving a half-written `dist/`
- *     (only `LICENSES.chromium.html`, no `path.txt`). We re-extract the
- *     downloaded zip with the system archive tool (`unzip` on macOS/Linux,
- *     PowerShell on Windows), which is unaffected by the bug, then write
- *     `path.txt`.
+ *  2. REPAIR: if Electron is present but its dist/ is incomplete (e.g. an
+ *     interrupted first install), re-run Electron's own install.js. Historical
+ *     note: this job used to hand-roll download + system-unzip because
+ *     Electron's old extract-zip (bundling the dead yauzl@2) silently stalled
+ *     on Node 24. Electron now extracts with the native
+ *     @electron-internal/extract-zip (verified working on Node 24 with
+ *     Electron 42), so its own installer is the repair.
  *
  * When Electron is already present and healthy, this is a silent no-op.
  * Best-effort throughout: it never fails the install; if it can't finish it
@@ -29,14 +29,7 @@
 
 import { createRequire } from 'module';
 import { execFileSync } from 'child_process';
-import {
-  existsSync,
-  readFileSync,
-  writeFileSync,
-  renameSync,
-  rmSync,
-  mkdirSync,
-} from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -96,21 +89,6 @@ function isInstalled(electronDir, version, platformPath) {
   return existsSync(join(electronDir, 'dist', platformPath));
 }
 
-function extractZip(zipPath, destDir) {
-  rmSync(destDir, { recursive: true, force: true });
-  mkdirSync(destDir, { recursive: true });
-  if (process.platform === 'win32') {
-    execFileSync(
-      'powershell',
-      ['-NoProfile', '-NonInteractive', '-Command', `Expand-Archive -Path "${zipPath}" -DestinationPath "${destDir}" -Force`],
-      { stdio: 'ignore' }
-    );
-  } else {
-    // `unzip` ships with macOS and virtually every Linux base image.
-    execFileSync('unzip', ['-q', '-o', zipPath, '-d', destDir], { stdio: 'ignore' });
-  }
-}
-
 function installElectron(range) {
   const spec = `electron@${range || 'latest'}`;
   log(`Electron not found; installing ${spec} (devDependency is skipped by production/npx installs)…`);
@@ -122,7 +100,7 @@ function installElectron(range) {
   );
 }
 
-async function main() {
+function main() {
   if (process.env.ELECTRON_SKIP_BINARY_DOWNLOAD) {
     return; // user opted out of the binary entirely
   }
@@ -163,36 +141,16 @@ async function main() {
     return; // healthy — silent no-op (the common dev-repo case)
   }
 
-  log(`Electron ${version} is not fully extracted; repairing (Node ${process.version} extract-zip workaround)…`);
-
-  let zipPath;
+  log(`Electron ${version} is not fully extracted; re-running its installer…`);
   try {
-    const getRequire = createRequire(join(electronDir, 'package.json'));
-    const { downloadArtifact } = getRequire('@electron/get');
-    let checksums;
-    try {
-      checksums = getRequire(join(electronDir, 'checksums.json'));
-    } catch {
-      checksums = undefined;
-    }
-    zipPath = await downloadArtifact({ version, artifactName: 'electron', platform, arch, checksums });
+    execFileSync(process.execPath, [join(electronDir, 'install.js')], {
+      cwd: electronDir,
+      stdio: 'inherit',
+      env: { ...process.env, npm_config_platform: platform, npm_config_arch: arch },
+    });
   } catch (err) {
-    log(`Could not obtain the Electron zip: ${err.message}`);
-    log('Run `npm rebuild electron` (Node 22 or earlier), or reinstall, to fix.');
-    return;
-  }
-
-  const distDir = join(electronDir, 'dist');
-  try {
-    extractZip(zipPath, distDir);
-    const srcTypeDef = join(distDir, 'electron.d.ts');
-    if (existsSync(srcTypeDef)) {
-      renameSync(srcTypeDef, join(electronDir, 'electron.d.ts'));
-    }
-    writeFileSync(join(electronDir, 'path.txt'), platformPath);
-  } catch (err) {
-    log(`Extraction failed: ${err.message}`);
-    log('Ensure `unzip` (macOS/Linux) or PowerShell (Windows) is available, then reinstall.');
+    log(`Electron's installer failed: ${err.message}`);
+    log('Run `npm rebuild electron` (or reinstall) to fix.');
     return;
   }
 
@@ -203,6 +161,8 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+try {
+  main();
+} catch (err) {
   log(`Unexpected error (ignored): ${err.message}`);
-});
+}

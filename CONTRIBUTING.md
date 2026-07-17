@@ -42,8 +42,8 @@ Thank you for your interest in contributing to Loukai! This document provides gu
 
 Before you begin, ensure you have:
 
-- **Node.js 18+** (LTS recommended)
-- **npm 9+** or **yarn 1.22+**
+- **Node.js 24+** (matches CI; Vite 7 needs at least 20.19/22.12)
+- **npm 10+** (bundled with Node 24)
 - **Git**
 - **Code Editor** (VS Code recommended)
 
@@ -450,6 +450,7 @@ Closes #123"
 Pre-commit hooks automatically run:
 - **Linting** (ESLint)
 - **Formatting** (Prettier)
+- **Related tests** (Vitest, for staged test files)
 
 If hooks fail, fix the issues and commit again.
 
@@ -552,8 +553,10 @@ loukai/
 │   │   ├── appState.js    # Centralized state
 │   │   ├── audioEngine.js # Audio processing
 │   │   ├── webServer.js   # Express + Socket.IO
-│   │   ├── creator/       # Karaoke file creation
-│   │   │   └── stemBuilder.js
+│   │   ├── creator/       # Karaoke file creation (in-browser WebGPU/WASM pipeline)
+│   │   │   ├── creatorJob.js
+│   │   │   ├── stemBuilder.js
+│   │   │   └── webgpuAssets.js  # Same-origin proxy/cache for ONNX & transformers.js models
 │   │   └── handlers/      # IPC handlers
 │   │       └── autotuneHandlers.js
 │   ├── renderer/          # Electron renderer (React)
@@ -567,14 +570,15 @@ loukai/
 │   │   ├── App.jsx        # Web admin root
 │   │   ├── components/    # Web-specific components
 │   │   └── vite.config.js
+│   ├── offsite/           # Standalone offsite creator page
+│   │   └── vite.config.js
 │   ├── shared/            # Shared code (renderer + web)
 │   │   ├── components/    # Reusable React components
 │   │   ├── services/      # Business logic
 │   │   └── utils/         # Utility functions
 │   ├── utils/             # Node.js utilities
-│   │   └── m4aLoader.js   # M4A file parsing
-│   ├── native/            # Native modules
-│   │   └── autotune.js    # Auto-tune utilities
+│   │   ├── m4aLoader.js   # M4A file parsing
+│   │   └── cdgLoader.js   # CDG file parsing
 │   └── test/              # Test setup
 │       └── setup.js       # Vitest config
 ├── static/                # Static assets
@@ -601,7 +605,6 @@ loukai/
 - [README.md](./README.md) - Project overview
 - [docs/m4a_format.md](./docs/m4a_format.md) - M4A Stems karaoke format specification
 - [docs/architecture.md](./docs/architecture.md) - System architecture and design
-- [docs/PHASE2-SUMMARY.md](./docs/PHASE2-SUMMARY.md) - Testing infrastructure guide
 
 ### External Resources
 

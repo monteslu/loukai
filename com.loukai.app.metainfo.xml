@@ -22,6 +22,7 @@
       <li>Web-based song request system</li>
       <li>Butterchurn visualizations and effects</li>
       <li>Queue management and playlist support</li>
+      <li>Create stem-karaoke files from any song, fully on-device (WebGPU AI — works offline after first model download)</li>
     </ul>
   </description>
 
@@ -51,9 +52,9 @@
       <description>
         <p>GPU-accelerated song creation and web-based creator</p>
         <ul>
-          <li>GPU acceleration for stem separation and transcription (ROCm, CUDA, MPS)</li>
+          <li>In-app GPU acceleration for stem separation and transcription via WebGPU (WASM fallback) — no Python or extra installs</li>
           <li>Create karaoke files from the web admin, including file upload</li>
-          <li>Precise lyric timing via forced alignment</li>
+          <li>Word-level lyric timing from timestamped Whisper models with vocal-energy refinement</li>
         </ul>
       </description>
     </release>

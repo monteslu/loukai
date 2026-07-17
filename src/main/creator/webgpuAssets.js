@@ -58,7 +58,11 @@ const TF_VER = '3.8.1';
 // (no @ffmpeg/ffmpeg Worker wrapper) to match loukai's same-origin import model.
 const FFMPEG_CORE_VER = '0.12.10';
 
-const ASSETS = {
+// Exported for scripts/vendor-webgpu-assets.js, which pre-downloads these into
+// static/webgpu at build time so packaged apps serve them without touching the
+// CDN (the static-first check below already prefers them). The runtime download
+// path stays as the fallback for anything not vendored (e.g. offline builds).
+export const ASSETS = {
   // onnxruntime-web — self-contained WebGPU ESM bundle. NOTE the bundle/standalone
   // build fetches the ASYNCIFY wasm; transformers.js's OWN bundled ORT fetches the
   // JSEP wasm. We serve BOTH pairs so whichever loads, its wasm is present.

@@ -7,7 +7,7 @@ needed and the plan to narrow the broad ones.
 |------------|-----------------|-------------|
 | `--share=ipc` | Chromium/Electron shared-memory (X11) | No (standard for Electron) |
 | `--socket=x11` / `--socket=wayland` | Display the app window | No |
-| `--device=dri` | GPU rendering for the UI + Butterchurn visualizations | No |
+| `--device=dri` | GPU rendering for the UI + Butterchurn visualizations, and WebGPU compute for the Creator (stem separation, transcription, pitch detection) | No |
 | `--socket=session-bus` | Chromium requires the session bus (also used by the notifications portal) | No |
 | `--socket=pulseaudio` | **Core feature** — karaoke audio output (PA + IEM buses) | No |
 | `--share=network` | The web remote-control server (Express + Socket.IO) that singers connect to from phones; lyrics lookup (LRCLIB); model/runtime downloads for the Creator | No |
@@ -34,6 +34,12 @@ commonly accept it for media-library apps with a clear rationale.
 
 ## Creator runtime deps
 
-The Creator downloads/uses a bundled Python (extra-data), ffmpeg, and PyTorch.
-The runtime-download behavior is the subject of the M0b reviewer question — see
-the deferred distribution plan. `--share=network` covers any sanctioned downloads.
+The Creator runs entirely in-browser (WebGPU via onnxruntime-web, WASM fallback) —
+no Python, PyTorch, native modules, or system ffmpeg. Its JS/wasm libraries are
+vendored into the package at build time when the build has network access
+(`scripts/vendor-webgpu-assets.js`); in the offline Flathub build they are instead
+fetched at first use through the app's same-origin caching proxy
+(`src/main/creator/webgpuAssets.js`), like the ONNX models (Whisper, htdemucs,
+Silero VAD) always are. Everything is cached in the user cache dir; subsequent
+runs are fully offline. `--share=network` covers these one-time pinned-version
+CDN (jsdelivr) / Hugging Face fetches.

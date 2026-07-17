@@ -13,6 +13,14 @@ src/renderer/dist/
 src/web/dist/
 src/offsite/dist/
 
+# Vendored WebGPU creator assets (downloaded by scripts/vendor-webgpu-assets.js;
+# pinned upstream versions live in src/main/creator/webgpuAssets.js ASSETS)
+static/webgpu/ort*.mjs
+static/webgpu/ort*.wasm
+static/webgpu/transformers.min.js
+static/webgpu/ffmpeg-core.js
+static/webgpu/ffmpeg-core.wasm
+
 # OS files
 .DS_Store
 Thumbs.db

@@ -9,10 +9,13 @@
 # electron-builder `flatpak` target in package.json (which produces a local
 # sideloadable .flatpak). Keep the runtime/base versions in sync between them.
 #
-# The Creator's heavyweight runtime deps (Python, ffmpeg, PyTorch/ROCm) are NOT
-# bundled here yet — that is handled by the later extra-data tasks (M1.7/M1.8).
-# Until then this Flatpak ships the player + a Creator that requires those deps
-# to be provided; see the deferred distribution plan.
+# The Creator runs entirely in-browser (WebGPU/WASM — no Python, PyTorch, or
+# system ffmpeg). Its JS/wasm assets (~80MB, pinned in webgpuAssets.js ASSETS)
+# are vendored into static/webgpu by scripts/vendor-webgpu-assets.js during
+# `npm run build:all`; that script is offline-tolerant, so THIS offline build
+# skips them and the app falls back to its runtime fetch+cache. To ship them in
+# the Flathub build, add the pinned URLs as sources dropped into static/webgpu.
+# ML models (~840MB) are always fetched+cached at runtime (too big to bundle).
 app-id: com.loukai.app
 runtime: org.freedesktop.Platform
 runtime-version: '24.08'
@@ -79,6 +82,6 @@ modules:
       # every npm tarball + the Electron binary with pinned checksums.
       - generated-sources.json
       # NOTE: the creator (stem separation + transcription) runs entirely in-browser
-      # via WebGPU — NO Python/PyTorch is bundled. ffmpeg (for the .stem.mp4 save path)
-      # is still fetched at runtime by downloadManager; pin it to a versioned release
-      # before final submission.
+      # via WebGPU — NO Python/PyTorch is bundled. AAC encoding uses ffmpeg-wasm
+      # (no system ffmpeg); its wasm + the other creator JS assets are fetched at
+      # runtime via the webgpuAssets proxy unless vendored (see header note).

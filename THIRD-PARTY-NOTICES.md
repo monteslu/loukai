@@ -89,3 +89,44 @@ presets distributed under that package.
 - Package: `cdgraphics`
 - Source: https://github.com/bhj/cdgraphics
 - License: ISC
+
+---
+
+## aubio / aubiojs
+
+- Package: `aubiojs` (WASM build of aubio, used for realtime pitch tracking)
+- Source: https://github.com/aubio/aubio — https://github.com/qiuxiang/aubiojs
+- License: GPL-3.0 (compatible with this project's AGPL-3.0)
+
+---
+
+## Vendored Creator libraries (shipped in packages)
+
+The in-browser Creator's JS/wasm libraries are downloaded at build time by
+`scripts/vendor-webgpu-assets.js` (pinned versions in
+`src/main/creator/webgpuAssets.js`) into `static/webgpu/` and shipped inside
+the installers and the npm package:
+
+- **onnxruntime-web** (Microsoft) — MIT — https://github.com/microsoft/onnxruntime
+- **@huggingface/transformers** (transformers.js) — Apache-2.0 —
+  https://github.com/huggingface/transformers.js
+- **@ffmpeg/core** (ffmpeg.wasm core) — MIT wrapper around **FFmpeg**
+  (LGPL-2.1+) — https://github.com/ffmpegwasm/ffmpeg.wasm — https://ffmpeg.org
+
+(Builds produced without network access — e.g. the Flathub-from-source build —
+omit them; there the app fetches the same pinned files at runtime through its
+same-origin caching proxy instead.)
+
+## Runtime-fetched Creator models
+
+The ML models are fetched at first Creator use from Hugging Face via the app's
+same-origin caching proxy, cached locally, and re-served by the app:
+
+- **Whisper** speech-to-text model weights (OpenAI) — MIT — via onnx-community
+  timestamped exports
+- **Demucs / htdemucs** stem-separation models (Meta AI) — MIT —
+  https://github.com/facebookresearch/demucs — ONNX exports served from
+  Hugging Face (incl. `monteslu/htdemucs-ft-webgpu`; provenance in
+  `tools/webgpu-ft-export/model-card.md`)
+- **Silero VAD** — MIT — https://github.com/snakers4/silero-vad — used by the
+  vocal-gating step (`static/webgpu/vad-gate.js`)

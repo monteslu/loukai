@@ -6,8 +6,8 @@
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![React 19](https://img.shields.io/badge/React-19-blue)](https://react.dev/)
-[![Electron 38](https://img.shields.io/badge/Electron-38-blue)](https://www.electronjs.org/)
-[![Tests](https://img.shields.io/badge/tests-283-green)](./docs/PHASE2-SUMMARY.md)
+[![Electron 42](https://img.shields.io/badge/Electron-42-blue)](https://www.electronjs.org/)
+[![Tests](https://img.shields.io/badge/tests-340-green)](./.github/workflows/ci.yml)
 
 Loukai is a free, open source karaoke software that runs locally on your computer to **play** and **create** karaoke files from your own music. Built on M4A Stems (MPEG-4 multi-track audio), it uses industry-standard formats compatible with DJ software, giving you full control over your personal karaoke library.
 
@@ -78,8 +78,8 @@ npx loukai-app
 - **Song Metadata Editor**: Update title, artist, album, and other metadata
 
 ### Developer Features
-- **Modern Stack**: React 19, Vite 7, Electron 38
-- **Comprehensive Testing**: 52% code coverage with Vitest
+- **Modern Stack**: React 19, Vite 7, Electron 42
+- **Comprehensive Testing**: 340 tests with Vitest coverage reporting
 - **ESLint + Prettier**: Automated code formatting and linting
 - **Pre-commit Hooks**: Husky + lint-staged for quality assurance
 - **Hot Module Replacement**: Fast development with Vite HMR
@@ -90,8 +90,8 @@ npx loukai-app
 
 ### Prerequisites
 
-- **Node.js 18+** (LTS recommended)
-- **npm 9+** or **yarn 1.22+**
+- **Node.js 20.19+** (Node 24 recommended — used in CI)
+- **npm 10+**
 - **Git**
 
 ### Installation
@@ -139,7 +139,7 @@ npm run build:all
 # Build for Linux (AppImage x64/ARM64 + Flatpak x64/ARM64)
 npm run build:linux
 
-# Build for Windows (NSIS installer x64)
+# Build for Windows (NSIS installer + portable x64)
 npm run build:win
 
 # Build for macOS (DMG x64 + ARM64)
@@ -153,6 +153,7 @@ npm run build:mac
 | **Linux** | AppImage | x64, ARM64 | ~143 MB each |
 | **Linux** | Flatpak | x64, ARM64 | ~104 MB each |
 | **Windows** | NSIS | x64 | ~150 MB |
+| **Windows** | Portable | x64 | ~150 MB |
 | **macOS** | DMG | x64 (Intel), ARM64 (Apple Silicon) | ~150 MB each |
 
 **Build Requirements:**
@@ -180,7 +181,7 @@ npm run build:mac
   - Flatpak: Requires ARM64 runtimes (installed above)
 
 - **macOS builds**: Both Intel and Apple Silicon DMGs built simultaneously
-- **Windows builds**: x64 NSIS installer with auto-updater support
+- **Windows builds**: x64 NSIS installer and portable executable
 
 ### Production
 
@@ -196,7 +197,7 @@ npm start
 Loukai is built with a multi-process architecture:
 
 ### Main Process (Electron)
-- **Audio Engine**: Native audio processing with dual outputs
+- **Audio Engine**: Dual-output audio coordination (playback via Web Audio API in the renderer)
 - **Library Scanner**: Metadata extraction and caching
 - **Web Server**: Express 5 REST API + Socket.IO
 - **State Management**: Centralized app state with event emitters
@@ -215,7 +216,7 @@ Loukai is built with a multi-process architecture:
 - **Standalone Web UI**: Accessible from any device
 - **Socket.IO**: Real-time bidirectional communication
 - **Responsive Design**: Mobile-friendly interface
-- **Authentication**: Session-based login with bcrypt
+- **Authentication**: Session-based login with bcryptjs (pure-JS bcrypt)
 - **WebRTC**: Optional audio/video streaming
 
 ### Key Technologies
@@ -224,7 +225,7 @@ Loukai is built with a multi-process architecture:
 |----------|------------|
 | **Frontend** | React 19, Tailwind CSS 3 |
 | **Build Tool** | Vite 7 |
-| **Desktop** | Electron 38 |
+| **Desktop** | Electron 42 |
 | **Backend** | Node.js, Express 5 |
 | **Real-time** | Socket.IO 4 |
 | **Testing** | Vitest 3, Testing Library 16 |
@@ -239,7 +240,7 @@ Loukai is built with a multi-process architecture:
 | Platform | Formats | Architecture Support |
 |----------|---------|---------------------|
 | **Linux** | AppImage, Flatpak | x64, ARM64 |
-| **Windows** | NSIS Installer | x64 |
+| **Windows** | NSIS Installer, Portable | x64 |
 | **macOS** | DMG | Intel (x64), Apple Silicon (ARM64) |
 
 **Flatpak Configuration:**
@@ -396,9 +397,7 @@ npm run test:coverage
 npm run test:ui
 ```
 
-**Current Coverage:** 283 tests
-
-See [PHASE2-SUMMARY.md](./docs/PHASE2-SUMMARY.md) for detailed testing information.
+**Current Coverage:** 340 tests across 17 test files
 
 ---
 
@@ -414,14 +413,14 @@ loukai/
 │   │   ├── appState.js    # Centralized state
 │   │   ├── audioEngine.js # Audio processing
 │   │   ├── webServer.js   # Express + Socket.IO
-│   │   └── handlers/      # IPC handlers
-│   │       └── autotuneHandlers.js  # Auto-tune IPC
+│   │   ├── creator/       # Creator pipeline (WebGPU asset proxy, stem building, key detection)
+│   │   └── handlers/      # IPC handlers (app, audio, creator, player, ...)
 │   ├── renderer/          # Electron renderer (React)
 │   │   ├── components/    # React components
 │   │   ├── hooks/         # Custom React hooks
 │   │   ├── js/            # Audio engine (vanilla JS)
 │   │   │   ├── autoTuneWorklet.js  # Auto-tune processor
-│   │   │   └── playerController.js # Unified control
+│   │   │   └── PlayerInterface.js  # Unified player control
 │   │   └── vite.config.js # Renderer build config
 │   ├── web/               # Web admin interface
 │   │   ├── App.jsx        # Web admin root
@@ -431,8 +430,7 @@ loukai/
 │   │   ├── components/    # Reusable React components
 │   │   ├── services/      # Business logic
 │   │   └── utils/         # Utility functions
-│   ├── native/            # Native modules
-│   │   └── autotune.js    # Auto-tune utilities
+│   ├── utils/             # Node.js utilities (m4a/cdg loaders)
 │   └── test/              # Test setup
 │       └── setup.js       # Vitest config
 ├── static/                # Static assets
@@ -490,12 +488,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 |----------|-------------|
 | [m4a_format.md](./docs/m4a_format.md) | M4A Stems karaoke format specification |
 | [architecture.md](./docs/architecture.md) | System architecture and design |
-| [PHASE2-SUMMARY.md](./docs/PHASE2-SUMMARY.md) | Testing infrastructure guide |
-| [MODERNIZATION-PLAN.md](./docs/MODERNIZATION-PLAN.md) | Development roadmap |
 | [PACKAGING.md](./PACKAGING.md) | Build and packaging guide |
-| [WEB-API-REFERENCE.md](./docs/wip/WEB-API-REFERENCE.md) | REST API documentation |
-| [SECURITY-MODEL.md](./docs/wip/SECURITY-MODEL.md) | Security architecture |
-| [REFACTORING-SUMMARY.md](./docs/wip/REFACTORING-SUMMARY.md) | Architecture decisions |
 
 ---
 
@@ -515,7 +508,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 ### Web Server Not Accessible
 - Check firewall settings
 - Verify server is enabled in Settings
-- Check port is not in use (default: 3000)
+- Check port is not in use (default: 3069)
 - Try accessing via IP address instead of hostname
 
 ### Build Errors
