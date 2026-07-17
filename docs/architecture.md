@@ -2,7 +2,7 @@
 
 ## Overview
 
-Loukai is a professional karaoke system that uses AI stem separation and dual-output audio routing to provide coaching capabilities. The system separates vocals from backing music and routes them to different audio devices - vocals to in-ear monitors (IEM) for the singer, music to PA speakers for the audience.
+Loukai is a professional karaoke system built on AI stem separation and dual-output audio routing. The system separates vocals from backing music and routes them to different audio devices - the recorded guide vocals to in-ear monitors (IEM) for the singer, music to PA speakers for the audience, and the live microphone (with optional auto-tune) to the PA.
 
 **Key Design Decision:** Loukai uses an open file format (`.stem.mp4`) that serves dual purposes:
 - **DJ Software**: Files work in Traktor and Mixxx via standard NI Stems metadata
@@ -21,7 +21,7 @@ graph TB
     end
 
     subgraph "Web Interface"
-        WebServer[Express + Socket.io<br/>Port 3000]
+        WebServer[Express + Socket.io<br/>Port 3069]
         WebUI[React SPA<br/>Admin + User]
     end
 
@@ -52,7 +52,7 @@ src/
 │   ├── main.js             # Application entry, IPC handlers (~77KB)
 │   ├── webServer.js        # Express + Socket.io server (~75KB)
 │   ├── appState.js         # EventEmitter-based state
-│   ├── audioEngine.js      # Main process audio coordination
+│   ├── audioEngine.js      # Legacy state stub (NO audio I/O — all audio is renderer Web Audio)
 │   ├── settingsManager.js  # JSON settings persistence
 │   ├── statePersistence.js # Auto-save state changes
 │   ├── preload.js          # Context bridge API
@@ -70,11 +70,13 @@ src/
 ├── renderer/               # Electron renderer (React)
 │   ├── components/         # Renderer-specific components
 │   ├── js/                 # Audio engine (vanilla JS)
-│   │   ├── kaiPlayer.js
+│   │   ├── kaiPlayer.js            # Stem playback + PA/IEM routing
 │   │   ├── cdgPlayer.js
 │   │   ├── karaokeRenderer.js
-│   │   ├── microphoneEngine.js
-│   │   └── autoTuneWorklet.js  # (audio worklets live directly in js/)
+│   │   ├── microphoneEngine.js     # Mic capture + auto-tune chain
+│   │   ├── micPitchDetectorWorklet.js   # (worklets live directly in js/)
+│   │   ├── phaseVocoderWorklet.js       # Production pitch shifter
+│   │   └── musicAnalysisWorklet.js      # Reference pitch for auto-tune
 │   └── styles/
 ├── shared/                 # Shared across all contexts
 │   ├── components/         # Shared React components
@@ -325,10 +327,87 @@ graph TB
     Methods --> CDGAudio
 ```
 
-**Dual-Output Routing (M4A Stems):**
-- **Vocals** → Individual Gain → **IEM Bus** → Headphones
-- **Music/Bass/Drums** → Individual Gain → **PA Bus** → Speakers
-- **Microphone** → Mic Gain → Auto-tune → **PA Bus ONLY**
+## Audio Engine & Routing (Web Audio)
+
+All audible audio lives in the **renderer** as Web Audio. The main-process
+`audioEngine.js` is a legacy state stub with no audio I/O.
+
+### Two AudioContexts, one per output device
+
+`KAIPlayer` creates **two independent `AudioContext`s** — PA and IEM — each bound
+to its physical output device via the `AudioContext({ sinkId })` constructor
+option (not `setSinkId()` on media elements). Changing an output device closes
+and rebuilds that entire context (and, for PA, the microphone engine and its
+worklets).
+
+```
+PA context (sinkId: PA device)                 IEM context (sinkId: IEM device)
+──────────────────────────────                 ────────────────────────────────
+non-vocal stem sources ─► per-stem gain ─┐     vocal stem sources ─► per-stem gain
+vocal "backup" source ─► vocalsPAGain(0) ─┤        └─(iemMonoVocals?)─► ChannelMerger(1)
+mic ─► micGain ─► [auto-tune chain] ──────┤                              │
+                                          ▼                              ▼
+                                    PA.masterGain                  IEM.masterGain
+                                     ├─► destination (PA device)    └─► destination (IEM device)
+                                     └─► streamDestination (MediaStream → WebRTC viewers)
+       (per-source pre-gain tap ─► AnalyserNode ─► Butterchurn)
+```
+
+### Routing rules
+
+- Stems are classified **by name keywords** at source-start time
+  (`isVocalStem`: vocals/vocal/voice/lead/singing/vox). Vocals get sources in the
+  IEM context; everything else gets sources in the PA context. `AudioBuffer`s are
+  decoded once (PA context) and shared — buffers are context-agnostic.
+- **IEM carries the recorded guide-vocal stem, never the live mic.** It defaults
+  to muted (user opts in) and mono-sums vocals through a `ChannelMerger(1)` by
+  default ("single earpiece" mode).
+- **The live mic goes to PA only** and lives in the PA context. Mic → IEM would
+  require bridging contexts (nodes cannot span `AudioContext`s).
+- **`backup:PA` punchthrough**: the vocal stem is *always also playing* into the
+  PA context through `vocalsPAGain` at gain 0; lyric lines tagged
+  `singer: "backup:PA"` ramp it up/down over 50 ms (`linearRampToValueAtTime`).
+  This always-running-muted-source + gain-ramp pattern is the template for any
+  glitch-free rerouting; other topology changes (e.g. IEM mono toggle) do a full
+  stop-and-rebuild of sources.
+- Mixer model: three master faders (PA / IEM / mic) mapped to `masterGain` nodes
+  and `microphoneGain`. Per-stem gains are static dB trims from song metadata;
+  there is no runtime per-stem fader/mute/solo in the audio path.
+
+### Clocks and scheduling
+
+- Within one context, stems are sample-locked: every source is scheduled at that
+  context's own `currentTime + 0.1`.
+- **PA and IEM are separate hardware clocks** — start instants are aligned, but
+  the two devices drift freely over a long song (no resync exists).
+- Playback position truth is the PA clock. Pause/seek/resume rebuild all source
+  nodes (sources are throwaway; gain topology persists per `createAudioGraph()`).
+
+### Microphone chain
+
+Captured with `getUserMedia` (mono, echoCancellation/noiseSuppression/
+autoGainControl all **disabled**), in the PA context:
+
+```
+micSource ─► microphoneGain ─► [auto-tune off: straight to PA.masterGain]
+                          └──► [auto-tune on:]
+                               mic-pitch-detector (pass-through + pitch messages)
+                               ─► phase-vocoder-processor (pitchSemitones, FFT 2048/hop 512)
+                               ─► makeup gain (1.2x) ─► DynamicsCompressor (-24 dB, 3:1)
+                               ─► PA.masterGain
+```
+
+There are currently **no reverb/echo/delay effects** in the audible chain
+(`effectsService` is Butterchurn visual presets, not vocal effects).
+
+### Taps
+
+- **Butterchurn** reads a PA `AnalyserNode` fed per-source *pre-gain* (hears full
+  level even when PA is muted; does not hear vocals or mic).
+- **Web streaming** reads `PA.streamDestination` (post-masterGain, so viewers hear
+  the full PA mix including mic/auto-tune; PA mute silences the stream).
+- CDG playback uses the same PA context/masterGain (single-bus), so legacy songs
+  inherit PA device selection, mute, and streaming automatically.
 
 ## Song Editor
 
@@ -363,20 +442,31 @@ Save writes updated kara atom to file
 
 ## Auto-Tune System
 
-Real-time pitch correction using AudioWorklet:
+Real-time pitch correction toward the **recorded guide-vocal stem's pitch**
+(not a musical key/scale). Three AudioWorklets, all in the mic → PA chain:
 
 **Components:**
-- `autoTuneWorklet.js` - Low-latency audio processing
-- `micPitchDetectorWorklet.js` - Pitch detection
-- `phaseVocoderWorklet.js` - Pitch shifting (future)
+- `micPitchDetectorWorklet.js` - Autocorrelation pitch detection (80-800 Hz,
+  2048-sample buffer), audio passes through unchanged
+- `phaseVocoderWorklet.js` - The production pitch shifter (FFT 2048 / hop 512,
+  Hann window, formant preservation; ~43 ms inherent algorithmic latency)
+- `musicAnalysisWorklet.js` - Detects the reference pitch from the vocal +
+  melodic stem sources (via `ReferencePitchTracker`)
+
+A 20 Hz main-thread loop compares detected mic pitch to the reference, computes
+a semitone offset (octave-folded to ±12, clamped ±24), scales by strength,
+smooths by speed, and writes the phase vocoder's `pitchSemitones` AudioParam.
 
 **Parameters:**
 | Parameter | Range | Default | Description |
 |-----------|-------|---------|-------------|
 | Enabled | on/off | off | Master enable |
-| Strength | 0-100% | 50% | Effect intensity |
-| Speed | 1-100ms | 5ms | Correction speed |
-| Key | C-B | C | Musical key |
+| Strength | 0-100% | 50% | Fraction of the computed correction applied |
+| Speed | 1-100 | 20 | Smoothing factor (low = natural glide, high = hard snap) |
+
+There is no key/scale parameter — the target comes from the song itself.
+(`autoTuneWorklet.js` and `soundtouch-worklet.js` are unused legacy files; the
+phase vocoder is the live path.)
 
 ## IPC Communication
 
