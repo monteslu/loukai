@@ -57,16 +57,16 @@ src/
 │   ├── statePersistence.js # Auto-save state changes
 │   ├── preload.js          # Context bridge API
 │   ├── handlers/           # IPC handler modules
-│   └── creator/            # Song creation pipeline
-│       ├── conversionService.js
-│       ├── downloadManager.js
-│       ├── ffmpegService.js
+│   └── creator/            # Song creation (main-process side)
+│       ├── audioInfo.js        # Pure-JS audio inspection
+│       ├── creatorJob.js       # Single observable job status (IPC + web)
+│       ├── hostCreateRelay.js  # main↔renderer protocol for host-create jobs
 │       ├── keyDetection.js
 │       ├── llmService.js
 │       ├── lrclibService.js
-│       ├── pythonRunner.js
 │       ├── stemBuilder.js
-│       └── systemChecker.js
+│       ├── systemChecker.js    # Cache-directory helper
+│       └── webgpuAssets.js     # Same-origin caching proxy for JS/wasm/ONNX assets
 ├── renderer/               # Electron renderer (React)
 │   ├── components/         # Renderer-specific components
 │   ├── js/                 # Audio engine (vanilla JS)
@@ -74,10 +74,11 @@ src/
 │   │   ├── cdgPlayer.js
 │   │   ├── karaokeRenderer.js
 │   │   ├── microphoneEngine.js
-│   │   └── worklets/
+│   │   └── autoTuneWorklet.js  # (audio worklets live directly in js/)
 │   └── styles/
 ├── shared/                 # Shared across all contexts
 │   ├── components/         # Shared React components
+│   ├── creator/            # In-browser WebGPU creation pipeline (Demucs/Whisper/CREPE/AAC)
 │   ├── services/           # Business logic services
 │   ├── adapters/           # Bridge pattern implementations
 │   ├── hooks/              # React hooks
@@ -89,6 +90,7 @@ src/
 │   ├── pages/
 │   ├── components/
 │   └── adapters/
+├── offsite/                # Standalone offsite creator page
 └── utils/                  # File loaders
     ├── m4aLoader.js
     └── cdgLoader.js
@@ -158,7 +160,7 @@ Two distinct React SPAs served by the Express server:
 
 ### 4. Creator Pipeline
 
-Song creation system for converting regular audio to karaoke format:
+Song creation runs **entirely in-browser** (renderer or web page) on WebGPU via onnxruntime-web, with WASM fallback — no Python, native modules, or system ffmpeg. Main-process code only proxies/caches assets, tracks job status, and muxes/saves output. A web-admin "host-create" path lets a phone upload audio to `POST /admin/creator/host-create`; the desktop player's renderer then runs the GPU creation (see `hostCreateRelay.js`).
 
 ```mermaid
 graph LR
@@ -170,9 +172,10 @@ graph LR
 ```
 
 **Components:**
-- `systemChecker.js` - Verifies Python, FFmpeg, ML models
-- `downloadManager.js` - Downloads FFmpeg, Python packages
-- `conversionService.js` - Orchestrates conversion pipeline
+- `src/shared/creator/createKaraoke.js` (+ `.worker.js`) - Orchestrates the in-browser pipeline
+- `webgpuAssets.js` - Same-origin caching proxy (`/webgpu-assets`): downloads onnxruntime-web, transformers.js, @ffmpeg/core wasm, and ONNX models once from jsdelivr/Hugging Face, then serves them offline
+- `creatorJob.js` - Single observable job descriptor shared by the Electron tab and web admins
+- `systemChecker.js` - Cache-directory helper (`getCacheDir`)
 - `stemBuilder.js` - Creates .stem.mp4 with NI Stems + karaoke atoms
 - `llmService.js` - AI-powered lyrics correction
 - `lrclibService.js` - External lyrics lookup
@@ -399,7 +402,7 @@ Channels organized by domain:
 ## Technology Stack
 
 ### Main Process
-- **Electron 38** - Desktop framework
+- **Electron 42** - Desktop framework
 - **Express 5** - Web server
 - **Socket.io 4** - Real-time communication
 - **stem-mp4** - NI Stems + karaoke atom reading/writing
@@ -414,10 +417,12 @@ Channels organized by domain:
 - **Butterchurn 2** - Visualizations
 - **Canvas API** - Graphics rendering
 
-### AI/ML (Creator)
-- **Demucs** - Stem separation (Python)
-- **Whisper** - Speech-to-text (Python)
-- **CREPE** - Pitch detection (Python)
+### AI/ML (Creator) — 100% in-browser, WebGPU with WASM fallback
+- **Demucs** - Stem separation (htdemucs ONNX via onnxruntime-web; optional htdemucs_ft ensemble)
+- **Whisper** - Speech-to-text (@huggingface/transformers, timestamped ONNX models)
+- **CREPE** - Pitch/key detection (crepe_tiny.onnx bundled in static/webgpu)
+- **AAC encode** - ffmpeg-wasm (@ffmpeg/core single-thread, in a web worker)
+- **aubiojs** - Realtime pitch tracking
 - **OpenAI/Anthropic/Google** - LLM lyrics correction
 
 ### Build & Distribution

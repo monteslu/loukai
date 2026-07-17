@@ -89,3 +89,33 @@ presets distributed under that package.
 - Package: `cdgraphics`
 - Source: https://github.com/bhj/cdgraphics
 - License: ISC
+
+---
+
+## aubio / aubiojs
+
+- Package: `aubiojs` (WASM build of aubio, used for realtime pitch tracking)
+- Source: https://github.com/aubio/aubio — https://github.com/qiuxiang/aubiojs
+- License: GPL-3.0 (compatible with this project's AGPL-3.0)
+
+---
+
+## Runtime-fetched Creator components
+
+The in-browser Creator fetches the following at first use from jsdelivr /
+Hugging Face via the app's same-origin caching proxy
+(`src/main/creator/webgpuAssets.js`); they are cached locally and re-served by
+the app rather than bundled via npm:
+
+- **onnxruntime-web** (Microsoft) — MIT — https://github.com/microsoft/onnxruntime
+- **@huggingface/transformers** (transformers.js) — Apache-2.0 —
+  https://github.com/huggingface/transformers.js — including OpenAI **Whisper**
+  model weights (MIT) via onnx-community exports
+- **@ffmpeg/core** (ffmpeg.wasm core) — MIT wrapper around **FFmpeg**
+  (LGPL-2.1+) — https://github.com/ffmpegwasm/ffmpeg.wasm — https://ffmpeg.org
+- **Demucs / htdemucs** stem-separation models (Meta AI) — MIT —
+  https://github.com/facebookresearch/demucs — ONNX exports served from
+  Hugging Face (incl. `monteslu/htdemucs-ft-webgpu`; provenance in
+  `tools/webgpu-ft-export/model-card.md`)
+- **Silero VAD** — MIT — https://github.com/snakers4/silero-vad — used by the
+  vocal-gating step (`static/webgpu/vad-gate.js`)
