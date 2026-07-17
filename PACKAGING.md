@@ -525,7 +525,7 @@ open dist/Loukai-1.0.0.dmg
 
 ### ARM64 Build Fails
 
-**Issue:** bcrypt compilation fails for ARM64
+**Issue:** ARM64 emulation not available for the cross-arch build
 
 **Solution:**
 1. Install QEMU:
@@ -538,18 +538,9 @@ open dist/Loukai-1.0.0.dmg
    ls /proc/sys/fs/binfmt_misc/qemu-aarch64
    ```
 
-### Native Module Errors
-
-**Issue:** `Error: Cannot find module 'bcrypt'`
-
-**Solution:**
-```bash
-# Rebuild native modules
-npm run rebuild
-
-# OR manually
-npx electron-rebuild
-```
+> Note: loukai has no native (compiled) node modules — all dependencies are pure
+> JS/WASM, so no compiler toolchain or `electron-rebuild` step is needed on any
+> platform.
 
 ### macOS Code Signing
 

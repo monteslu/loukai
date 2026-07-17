@@ -17,7 +17,6 @@
     "build:linux": "npm run build:all && electron-builder --linux && node scripts/rename-artifacts.js",
     "build:win": "npm run build:all && electron-builder --win && node scripts/rename-artifacts.js",
     "build:mac": "npm run build:all && electron-builder --mac && node scripts/rename-artifacts.js",
-    "rebuild": "electron-rebuild",
     "postinstall": "node scripts/ensure-electron.js",
     "test": "vitest",
     "test:ui": "vitest --ui",
