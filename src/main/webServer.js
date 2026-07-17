@@ -2027,7 +2027,7 @@ class WebServer {
     // localhost → WebGPU works) to do the full creation on the host GPU. main relays
     // the job to the renderer, streams progress back over the creator:job broadcast (so
     // this phone — and every other admin — sees it live), then muxes + saves the result.
-    const ALLOWED_AUDIO = /\.(mp3|wav|flac|ogg|m4a|aac|mp4|mkv|avi|mov|webm)$/i;
+    const ALLOWED_AUDIO = /\.(mp3|wav|flac|ogg|m4a|aac|aif|aiff|mp4|mkv|avi|mov|webm)$/i;
     const hostCreateHandler = multer({
       storage: multer.diskStorage({
         destination: (_req, _file, cb) => cb(null, wsd),

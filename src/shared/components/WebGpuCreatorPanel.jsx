@@ -827,7 +827,7 @@ export default function WebGpuCreatorPanel() {
               <input
                 ref={fileRef}
                 type="file"
-                accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,.mp4,.stem.mp4"
+                accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,.aif,.aiff,.mp4,.stem.mp4"
                 className="hidden"
                 disabled={busy}
                 onChange={() => onFileSelect()}

@@ -18,7 +18,7 @@ import { WHISPER_LANGUAGES } from '../../shared/creator/creatorAudio.js';
  */
 
 const ONLINE_CREATOR_URL = 'https://karaoke-creator.loukai.com';
-const AUDIO_ACCEPT = '.mp3,.wav,.flac,.ogg,.m4a,.aac,.mp4,.mkv,.mov,.webm';
+const AUDIO_ACCEPT = '.mp3,.wav,.flac,.ogg,.m4a,.aac,.aif,.aiff,.mp4,.mkv,.mov,.webm';
 
 export default function CreatorImportPanel({ bridge }) {
   // Live single-job descriptor + whether a host player is present to run creation.
