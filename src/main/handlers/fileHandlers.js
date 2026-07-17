@@ -11,12 +11,12 @@ import { validateSongPath } from '../utils/pathValidator.js';
  * @param {Object} mainApp - Main application instance
  */
 export function registerFileHandlers(mainApp) {
-  // Open file dialog to select karaoke file (M4A or KAI)
+  // Open file dialog to select karaoke file (Stem MP4 or KAI)
   ipcMain.handle('file:openKai', async () => {
     const result = await dialog.showOpenDialog(mainApp.mainWindow, {
       filters: [
-        { name: 'Karaoke Files', extensions: ['m4a', 'kai'] },
-        { name: 'M4A Stems (recommended)', extensions: ['m4a'] },
+        { name: 'Karaoke Files', extensions: ['mp4', 'm4a', 'kai'] },
+        { name: 'Stem MP4 (recommended)', extensions: ['mp4', 'm4a'] },
         { name: 'KAI Files (legacy)', extensions: ['kai'] },
       ],
       properties: ['openFile'],

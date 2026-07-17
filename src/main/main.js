@@ -9,7 +9,8 @@ import { io } from 'socket.io-client';
 import AudioEngine from './audioEngine.js';
 import CDGLoader from '../utils/cdgLoader.js';
 import M4ALoader from '../utils/m4aLoader.js';
-import { Atoms as M4AAtoms } from 'm4a-stems';
+import { Atoms as M4AAtoms } from 'stem-mp4';
+import { STEM_MP4_FORMAT } from '../shared/formatUtils.js';
 import SettingsManager from './settingsManager.js';
 import WebServer from './webServer.js';
 import AppState from './appState.js';
@@ -18,6 +19,8 @@ import * as queueService from '../shared/services/queueService.js';
 import * as libraryService from '../shared/services/libraryService.js';
 import * as playerService from '../shared/services/playerService.js';
 import * as serverSettingsService from '../shared/services/serverSettingsService.js';
+import * as creatorJob from './creator/creatorJob.js';
+import { runHostCreateRelay } from './creator/hostCreateRelay.js';
 import {
   initSettingsService,
   loadAndSync,
@@ -42,6 +45,22 @@ const __dirname = dirname(__filename);
 // - Use custom select component (breaks design principle of using native elements)
 // - Wait for Electron to fix Wayland popup positioning
 // - Let users manually set --ozone-platform=x11 if they prefer working dropdowns over WebGL
+
+// --- WebGPU enablement (for the in-browser Creator: Demucs/Whisper via WebGPU) ---
+// Electron on Linux does NOT expose navigator.gpu without these switches, even
+// though the same machine runs WebGPU fine in Chrome (electron#41763). BOTH are
+// required: enable-unsafe-webgpu makes navigator.gpu appear, and Vulkan provides
+// the actual Dawn backend (without it WebGPU is "super slow" or absent).
+// On macOS → Metal, Windows → D3D12, Linux → Vulkan, all under the hood.
+app.commandLine.appendSwitch('enable-unsafe-webgpu');
+app.commandLine.appendSwitch('enable-features', 'Vulkan');
+// On Linux the Vulkan backend is incompatible with the Wayland ozone backend
+// (vkAcquireNextImageKHR hangs / GPU process crash), so WebGPU needs X11 ozone.
+// Gated behind LOUKAI_WEBGPU=1 because X11 mode has the dropdown popup bug noted
+// above; default Wayland users fall back to WASM until Electron fixes Wayland.
+if (process.platform === 'linux' && process.env.LOUKAI_WEBGPU === '1') {
+  app.commandLine.appendSwitch('ozone-platform', 'x11');
+}
 
 class KaiPlayerApp {
   constructor() {
@@ -151,6 +170,19 @@ class KaiPlayerApp {
       // Send to renderer so it can sync
       this.sendToRenderer('preferences:updated', preferences);
     });
+
+    // When the creator job changes (start / progress / finish), fan the descriptor
+    // out to BOTH the player renderer (IPC) and every web admin (socket), so "a
+    // creation is running" is observable on every surface — including one opened or
+    // refreshed mid-job (it also pulls the same descriptor via getStatus on mount).
+    // The job lives in the shared creatorJob module so a save from either surface
+    // drives the same single-job state. Mirrors the broadcasts above.
+    creatorJob.onChange((job) => {
+      if (this.webServer) {
+        this.webServer.io?.to('admin-clients').emit('creator:job', job);
+      }
+      this.sendToRenderer('creator:job', job);
+    });
   }
 
   async initialize() {
@@ -180,11 +212,15 @@ class KaiPlayerApp {
     // Load persisted state (queue, mixer, effects)
     await this.statePersistence.load();
 
-    this.createMainWindow();
-    this.createApplicationMenu();
+    // Start the web server BEFORE the window so the renderer can be loaded over
+    // http://localhost (required for the in-browser WebGPU Creator: dynamic
+    // import + cross-origin isolation + WASM threads only work on an http origin,
+    // not file://). IPC handlers are set up first so the preload has them.
     this.setupIPC();
     this.initializeAudioEngine();
     await this.initializeWebServer();
+    this.createMainWindow();
+    this.createApplicationMenu();
 
     // Start periodic state persistence
     this.statePersistence.startPeriodicSave();
@@ -194,12 +230,17 @@ class KaiPlayerApp {
   }
 
   createMainWindow() {
-    // In production, resources are in app.asar or Resources folder
-    const resourcesPath = app.isPackaged ? process.resourcesPath : path.join(__dirname, '../..');
-
-    const iconPath = app.isPackaged
-      ? path.join(resourcesPath, 'static', 'images', 'logo.png')
-      : path.join(process.cwd(), 'static', 'images', 'logo.png');
+    // Resolve the app icon across dev + all packaging formats (AppImage, Flatpak,
+    // DMG, NSIS). `static/` may live inside app.asar (__dirname/../../static),
+    // unpacked next to it, or under process.resourcesPath depending on the build.
+    const iconCandidates = [
+      path.join(__dirname, '..', '..', 'static', 'images', 'logo.png'), // asar / source layout
+      app.isPackaged && path.join(process.resourcesPath, 'static', 'images', 'logo.png'),
+      app.isPackaged &&
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'static', 'images', 'logo.png'),
+      path.join(process.cwd(), 'static', 'images', 'logo.png'),
+    ].filter(Boolean);
+    const iconPath = iconCandidates.find((p) => fs.existsSync(p)) || iconCandidates[0];
 
     const windowOptions = {
       width: 1200,
@@ -224,8 +265,29 @@ class KaiPlayerApp {
 
     this.mainWindow = new BrowserWindow(windowOptions);
 
-    const rendererPath = path.join(__dirname, '../renderer/index.html');
-    this.mainWindow.loadFile(rendererPath);
+    // Make the renderer cross-origin-isolated so the WebGPU Creator's WASM
+    // fallback can use multi-threading (SharedArrayBuffer needs COOP+COEP).
+    // loadFile() serves file:// with no headers, so inject them here.
+    this.mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Cross-Origin-Opener-Policy': ['same-origin'],
+          'Cross-Origin-Embedder-Policy': ['credentialless'],
+        },
+      });
+    });
+
+    // Load the renderer over http://localhost so it runs on an http origin
+    // (required for the WebGPU Creator — see the session header note above).
+    // Fall back to file:// if the web server didn't start (player still works).
+    const port = this.webServer?.getPort?.();
+    if (port) {
+      this.mainWindow.loadURL(`http://localhost:${port}/app/index.html`);
+    } else {
+      console.warn('⚠️ Web server not running; loading renderer from file:// (WebGPU disabled)');
+      this.mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    }
 
     // DevTools: Use Ctrl+Shift+I (or Cmd+Option+I on Mac) to open manually
 
@@ -825,7 +887,7 @@ class KaiPlayerApp {
               size: stats.size,
               modified: stats.mtime,
               folder: path.relative(this.settings.getSongsFolder(), folderPath) || '.',
-              format: 'm4a-stems',
+              format: STEM_MP4_FORMAT,
               ...metadata,
             });
           }
@@ -1114,7 +1176,7 @@ class KaiPlayerApp {
         metadata.duration = mmData.format.duration;
       }
 
-      // Check for stem atom using m4a-stems (source of truth for audio tracks)
+      // Check for stem atom using stem-mp4 (source of truth for audio tracks)
       try {
         const stemData = await M4AAtoms.readNiStemsMetadata(m4aFilePath);
         if (stemData && stemData.stems) {
@@ -1125,7 +1187,7 @@ class KaiPlayerApp {
         // No stem atom - not a stem file
       }
 
-      // Check for kara atom using m4a-stems (lyrics and karaoke data)
+      // Check for kara atom using stem-mp4 (lyrics and karaoke data)
       try {
         const karaData = await M4AAtoms.readKaraAtom(m4aFilePath);
 
@@ -1202,7 +1264,7 @@ class KaiPlayerApp {
 
     // Check for M4A/MP4 format (hasKaraoke check filters non-karaoke files)
     if (lowerPath.endsWith('.m4a') || lowerPath.endsWith('.mp4')) {
-      return { type: 'm4a', format: 'm4a-stems', cdgPath: null };
+      return { type: 'm4a', format: STEM_MP4_FORMAT, cdgPath: null };
     }
 
     // Check for CDG archive (.kar or .zip)
@@ -1324,7 +1386,7 @@ class KaiPlayerApp {
         duration: m4aData.metadata?.duration || 0,
         requester: requester,
         isLoading: true, // Song is being loaded
-        format: 'm4a-stems', // Format for display icon
+        format: STEM_MP4_FORMAT, // Format for display icon
         queueItemId: queueItemId, // Track which queue item (for duplicate songs)
       };
       this.appState.setCurrentSong(songData);
@@ -1400,7 +1462,7 @@ class KaiPlayerApp {
           if (this.webServer) {
             this.webServer.cachedSongs = files;
             this.webServer.songsCacheTime = Date.now();
-            this.webServer.fuse = null;
+            libraryService.resetSongSearchIndex();
           }
 
           // Notify renderer
@@ -1436,7 +1498,7 @@ class KaiPlayerApp {
       if (this.webServer) {
         this.webServer.cachedSongs = files;
         this.webServer.songsCacheTime = Date.now();
-        this.webServer.fuse = null; // Reset Fuse.js - will rebuild on next search
+        libraryService.resetSongSearchIndex();
       }
 
       // Save to disk cache
@@ -1513,7 +1575,17 @@ class KaiPlayerApp {
           }
           // M4A/MP4 files
           else if (lowerName.endsWith('.m4a') || lowerName.endsWith('.mp4')) {
-            fileInfos.push({ path: fullPath, type: 'm4a' });
+            // Capture mtime so sync can detect a RE-CREATED file (same path,
+            // new contents) and re-parse it — otherwise overwriting a song keeps
+            // the stale cached metadata/lyrics.
+            let mtimeMs = 0;
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              mtimeMs = (await fsPromises.stat(fullPath)).mtimeMs;
+            } catch {
+              /* ignore */
+            }
+            fileInfos.push({ path: fullPath, type: 'm4a', mtimeMs });
           }
         }
       }
@@ -1579,7 +1651,7 @@ class KaiPlayerApp {
               name: fullPath,
               path: fullPath,
               file: fullPath,
-              format: 'm4a-stems',
+              format: STEM_MP4_FORMAT,
               title: metadata.title,
               artist: metadata.artist,
               album: metadata.album,
@@ -1590,6 +1662,9 @@ class KaiPlayerApp {
               stems: metadata.stems,
               stemCount: metadata.stemCount,
               tags: metadata.tags,
+              // Stamp mtime so a later sync can detect a re-created (overwritten)
+              // file and re-parse it instead of reusing this cached entry.
+              mtimeMs: fileInfo.mtimeMs || 0,
             });
           }
         }
@@ -1858,10 +1933,18 @@ class KaiPlayerApp {
             // eslint-disable-next-line no-await-in-loop
             const metadata = await self.extractM4AMetadata(fullPath);
             if (metadata && metadata.hasKaraoke) {
+              // mtime so a later sync can detect a re-created (overwritten) file.
+              let mtimeMs = 0;
+              try {
+                // eslint-disable-next-line no-await-in-loop
+                mtimeMs = (await fsPromises.stat(fullPath)).mtimeMs;
+              } catch {
+                /* ignore */
+              }
               files.push({
                 name: fullPath,
                 path: fullPath,
-                format: 'm4a-stems',
+                format: STEM_MP4_FORMAT,
                 title: metadata.title,
                 artist: metadata.artist,
                 album: metadata.album,
@@ -1872,6 +1955,7 @@ class KaiPlayerApp {
                 stems: metadata.stems,
                 stemCount: metadata.stemCount,
                 tags: metadata.tags,
+                mtimeMs,
               });
             }
             processedCount++;
@@ -1954,6 +2038,29 @@ class KaiPlayerApp {
         resolve(null);
       }
     });
+  }
+
+  /**
+   * Long-job relay: ask the PLAYER renderer to run a full WebGPU creation (a phone
+   * web-admin has no secure context for WebGPU, so the host does the compute). Unlike
+   * sendToRendererAndWait this (a) forwards the payload, (b) has NO short timeout
+   * (creation takes ~30-90s), and (c) streams intermediate progress back to `onProgress`
+   * before resolving with the final result. The renderer side is useHostCreateListener.
+   *
+   * @param {string} jobId
+   * @param {Uint8Array|Buffer} audioBytes  uploaded source audio
+   * @param {Object} opts  creator options (asrModel/demucsModel/language/…)
+   * @param {(p:object)=>void} [onProgress]  {phase?,progress?,log?,stemProgress?}
+   * @returns {Promise<object>} the renderer result { success, stems, lyrics, key, pitch, ... }
+   */
+  runHostCreate(jobId, audioBytes, opts = {}, onProgress = () => {}) {
+    // The relay protocol (watchdog / settle-once / window-gone / cleanup) lives in a
+    // pure, unit-tested module; here we just inject the real Electron dependencies.
+    return runHostCreateRelay(
+      { ipc: ipcMain, webContents: this.mainWindow?.webContents },
+      { jobId, audioBytes, opts },
+      onProgress
+    );
   }
 
   /**

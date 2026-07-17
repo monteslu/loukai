@@ -11,6 +11,7 @@ tasks.md
 dist/
 src/renderer/dist/
 src/web/dist/
+src/offsite/dist/
 
 # OS files
 .DS_Store
@@ -30,3 +31,12 @@ yarn-error.log*
 *.temp
 .cache/
 *.yml
+# ...but the Flatpak/Flathub manifest and launcher MUST be tracked
+# (the blanket *.yml rule above was silently ignoring the manifest)
+!flathub-manifest.yml
+!flatpak/*.sh
+# local flatpak build artifacts
+.flatpak-builder/
+build-dir/
+.flatpak/
+__pycache__/

@@ -65,30 +65,37 @@ export async function searchLyrics(title, artist) {
   }
 
   try {
-    const params = new URLSearchParams({
-      track_name: title,
-    });
-
-    if (artist) {
-      params.set('artist_name', artist);
-    }
-
-    const url = `${LRCLIB_API_BASE}/search?${params}`;
     log(`Searching LRCLIB for: ${title} by ${artist || 'unknown'}`);
 
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Loukai/1.0',
-      },
-      signal: AbortSignal.timeout(10000),
-    });
+    // LRCLIB's free-text `q` search is far more forgiving than the structured
+    // track_name/artist_name params (which need near-exact matches and miss mangled
+    // tags like "Ac-Dc" vs "AC/DC", or titles with trailing junk). Query q first, then
+    // fall back to the structured search. (Verified: q finds songs the structured
+    // params return empty for.)
+    const queries = [];
+    queries.push(
+      `${LRCLIB_API_BASE}/search?q=${encodeURIComponent(`${title} ${artist || ''}`.trim())}`
+    );
+    const sp = new URLSearchParams({ track_name: title });
+    if (artist) sp.set('artist_name', artist);
+    queries.push(`${LRCLIB_API_BASE}/search?${sp}`);
 
-    if (!response.ok) {
-      console.warn(`LRCLIB search failed: ${response.status}`);
-      return null;
+    let results = null;
+    for (const url of queries) {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'Loukai/1.0' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) {
+        console.warn(`LRCLIB search failed: ${response.status}`);
+        continue;
+      }
+      const json = await response.json();
+      if (Array.isArray(json) && json.length) {
+        results = json;
+        break;
+      }
     }
-
-    const results = await response.json();
 
     if (!results || results.length === 0) {
       console.warn('No lyrics found on LRCLIB');

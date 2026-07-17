@@ -3,11 +3,21 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getFormatIcon, formatDuration, formatTime, formatFileSize } from './formatUtils.js';
+import {
+  getFormatIcon,
+  formatDuration,
+  formatTime,
+  formatFileSize,
+  isStemMp4Format,
+} from './formatUtils.js';
 
 describe('formatUtils', () => {
   describe('getFormatIcon', () => {
-    it('should return lightning icon for m4a-stems format', () => {
+    it('should return lightning icon for stem-mp4 format', () => {
+      expect(getFormatIcon('stem-mp4')).toBe('⚡');
+    });
+
+    it('should return lightning icon for legacy m4a-stems format', () => {
       expect(getFormatIcon('m4a-stems')).toBe('⚡');
     });
 
@@ -28,6 +38,24 @@ describe('formatUtils', () => {
     it('should return default icon for null/undefined', () => {
       expect(getFormatIcon(null)).toBe('🎵');
       expect(getFormatIcon(undefined)).toBe('🎵');
+    });
+  });
+
+  describe('isStemMp4Format', () => {
+    it('should accept the canonical stem-mp4 format', () => {
+      expect(isStemMp4Format('stem-mp4')).toBe(true);
+    });
+
+    it('should accept the legacy m4a-stems format', () => {
+      expect(isStemMp4Format('m4a-stems')).toBe(true);
+    });
+
+    it('should reject other formats', () => {
+      expect(isStemMp4Format('cdg-archive')).toBe(false);
+      expect(isStemMp4Format('kai')).toBe(false);
+      expect(isStemMp4Format('')).toBe(false);
+      expect(isStemMp4Format(null)).toBe(false);
+      expect(isStemMp4Format(undefined)).toBe(false);
     });
   });
 
@@ -188,7 +216,7 @@ describe('formatUtils', () => {
       const duration = formatDuration(225); // 3:45
       const position = formatTime(125.5); // 2:05.5
       const size = formatFileSize(5242880); // 5 MB
-      const icon = getFormatIcon('m4a-stems');
+      const icon = getFormatIcon('stem-mp4');
 
       expect(duration).toBe('3:45');
       expect(position).toBe('2:05.5');

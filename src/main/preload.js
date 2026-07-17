@@ -242,40 +242,54 @@ const api = {
   },
 
   creator: {
-    checkComponents: () => ipcRenderer.invoke('creator:checkComponents'),
-    installComponents: () => ipcRenderer.invoke('creator:installComponents'),
+    // The creator runs entirely in-browser (WebGPU) — no native install/convert.
     getStatus: () => ipcRenderer.invoke('creator:getStatus'),
-    cancelInstall: () => ipcRenderer.invoke('creator:cancelInstall'),
-    searchLyrics: (title, artist) => ipcRenderer.invoke('creator:searchLyrics', title, artist),
-    prepareWhisperContext: (title, artist, existingLyrics) =>
-      ipcRenderer.invoke('creator:prepareWhisperContext', title, artist, existingLyrics),
+    // Accept EITHER an object payload ({ title, artist[, existingLyrics] }) OR positional
+    // args; normalize to an object (a positional object had been landing in `title`,
+    // producing "[object Object]" lyric queries).
+    searchLyrics: (a, b) =>
+      ipcRenderer.invoke(
+        'creator:searchLyrics',
+        a && typeof a === 'object' ? a : { title: a, artist: b }
+      ),
+    prepareWhisperContext: (a, b, c) =>
+      ipcRenderer.invoke(
+        'creator:prepareWhisperContext',
+        a && typeof a === 'object' ? a : { title: a, artist: b, existingLyrics: c }
+      ),
     selectFile: () => ipcRenderer.invoke('creator:selectFile'),
-    startConversion: (options) => ipcRenderer.invoke('creator:startConversion', options),
-    cancelConversion: () => ipcRenderer.invoke('creator:cancelConversion'),
+    saveWebGpuStems: (payload) => ipcRenderer.invoke('creator:saveWebGpuStems', payload),
+    correctLyrics: (payload) => ipcRenderer.invoke('creator:correctLyrics', payload),
+    updateStemLyrics: (payload) => ipcRenderer.invoke('creator:updateStemLyrics', payload),
 
-    // LLM settings
+    // LLM settings (powers server-side lyric correction)
     getLLMSettings: () => ipcRenderer.invoke('creator:getLLMSettings'),
     saveLLMSettings: (settings) => ipcRenderer.invoke('creator:saveLLMSettings', settings),
     testLLMConnection: (settings) => ipcRenderer.invoke('creator:testLLMConnection', settings),
 
-    onInstallProgress: (callback) => ipcRenderer.on('creator:installProgress', callback),
-    onInstallError: (callback) => ipcRenderer.on('creator:installError', callback),
-    onConversionProgress: (callback) => ipcRenderer.on('creator:conversionProgress', callback),
-    onConversionConsole: (callback) => ipcRenderer.on('creator:conversionConsole', callback),
-    onConversionComplete: (callback) => ipcRenderer.on('creator:conversionComplete', callback),
-    onConversionError: (callback) => ipcRenderer.on('creator:conversionError', callback),
-    removeInstallProgressListener: (callback) =>
-      ipcRenderer.removeListener('creator:installProgress', callback),
-    removeInstallErrorListener: (callback) =>
-      ipcRenderer.removeListener('creator:installError', callback),
-    removeConversionProgressListener: (callback) =>
-      ipcRenderer.removeListener('creator:conversionProgress', callback),
-    removeConversionConsoleListener: (callback) =>
-      ipcRenderer.removeListener('creator:conversionConsole', callback),
-    removeConversionCompleteListener: (callback) =>
-      ipcRenderer.removeListener('creator:conversionComplete', callback),
-    removeConversionErrorListener: (callback) =>
-      ipcRenderer.removeListener('creator:conversionError', callback),
+    // Subscribe to the single-job descriptor (start / progress / finish), broadcast by
+    // main whenever a creation runs on ANY surface. Returns an unsubscribe fn so a
+    // React effect can clean up. Lets a Create tab opened/refreshed mid-job show the
+    // live job instead of a blank form.
+    onJob: (callback) => {
+      const handler = (_e, job) => callback(job);
+      ipcRenderer.on('creator:job', handler);
+      return () => ipcRenderer.removeListener('creator:job', handler);
+    },
+
+    // ---- Headless host-create (a phone commands the player to create on its GPU) ----
+    // main → renderer: a 'create this' command { jobId, audioBytes, opts }. The player
+    // app root registers this once and runs the same compute the panel uses.
+    onHostCreate: (callback) => {
+      const handler = (_e, payload) => callback(payload);
+      ipcRenderer.on('creator:hostCreate', handler);
+      return () => ipcRenderer.removeListener('creator:hostCreate', handler);
+    },
+    // renderer → main: stream progress, then the final result (or error), keyed by jobId.
+    sendHostCreateProgress: (jobId, progress) =>
+      ipcRenderer.send('creator:hostCreate:progress', { jobId, progress }),
+    sendHostCreateResult: (jobId, result) =>
+      ipcRenderer.send(`creator:hostCreate:response:${jobId}`, result),
   },
 };
 

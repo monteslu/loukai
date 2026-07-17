@@ -5,6 +5,7 @@ import { log } from '../logger.js';
  */
 
 import { ipcMain } from 'electron';
+import { STEM_MP4_FORMAT } from '../../shared/formatUtils.js';
 
 /**
  * Register all editor-related IPC handlers
@@ -47,7 +48,7 @@ export function registerEditorHandlers(mainApp) {
       if (lowerPath.endsWith('.kai')) {
         format = 'kai';
       } else if (lowerPath.endsWith('.m4a') || lowerPath.endsWith('.mp4')) {
-        format = 'm4a-stems';
+        format = STEM_MP4_FORMAT;
       } else {
         throw new Error('Unsupported file format');
       }

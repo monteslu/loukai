@@ -11,7 +11,6 @@ import Keygrip from 'keygrip';
 import { Server } from 'socket.io';
 import http from 'http';
 import rateLimit from 'express-rate-limit';
-import Fuse from 'fuse.js';
 import { log } from './logger.js';
 import * as queueService from '../shared/services/queueService.js';
 import * as libraryService from '../shared/services/libraryService.js';
@@ -21,10 +20,16 @@ import * as effectsService from '../shared/services/effectsService.js';
 import * as mixerService from '../shared/services/mixerService.js';
 import * as requestsService from '../shared/services/requestsService.js';
 import { SERVER_DEFAULTS, WAVEFORM_DEFAULTS, AUTOTUNE_DEFAULTS } from '../shared/defaults.js';
+import { STEM_MP4_FORMAT, isStemMp4Format } from '../shared/formatUtils.js';
 import { getSetting } from '../shared/services/settingsService.js';
 import * as serverSettingsService from '../shared/services/serverSettingsService.js';
 import * as creatorService from '../shared/services/creatorService.js';
+import * as creatorJob from './creator/creatorJob.js';
+import * as llmService from './creator/llmService.js';
 import { validateSongPath, validateBase64Path } from './utils/pathValidator.js';
+import { getCacheDir } from './creator/systemChecker.js';
+import { registerWebGpuAssets } from './creator/webgpuAssets.js';
+import multer from 'multer';
 import { forwardViewerEvent } from './handlers/streamingHandlers.js';
 
 // ESM equivalent of __dirname
@@ -46,7 +51,6 @@ class WebServer {
     this.settings = { ...SERVER_DEFAULTS };
 
     // Fuzzy search instance - will be initialized when songs are loaded
-    this.fuse = null;
 
     // Songs cache to avoid scanning directory on every request
     this.cachedSongs = null;
@@ -170,6 +174,37 @@ class WebServer {
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
       })
     );
+    // Security headers. Cross-origin isolation (COOP + COEP) enables
+    // SharedArrayBuffer / WASM threads, which onnxruntime-web + transformers.js
+    // use for the in-browser WebGPU/WASM Creator. COEP=credentialless (vs
+    // require-corp) keeps isolation while still allowing the cross-origin CDN /
+    // HuggingFace model fetches the WebGPU pipeline needs.
+    this.app.use((req, res, next) => {
+      res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+      res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      res.setHeader(
+        'Content-Security-Policy',
+        [
+          "default-src 'self'",
+          // WebGPU libs/models are served same-origin from /webgpu-assets +
+          // /webgpu-models (backend-cached) — the UI never loads external sites.
+          // wasm-unsafe-eval for onnxruntime-web; eval/inline for the bundlers.
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'",
+          "style-src 'self' 'unsafe-inline'",
+          "connect-src 'self' ws: wss:",
+          "img-src 'self' data: blob:",
+          "media-src 'self' blob: data:",
+          "worker-src 'self' blob:",
+          "font-src 'self' data:",
+          "object-src 'none'",
+          "base-uri 'self'",
+        ].join('; ')
+      );
+      next();
+    });
     this.app.use(express.json());
     this.app.use(express.urlencoded({ extended: true }));
 
@@ -187,6 +222,13 @@ class WebServer {
 
     // Serve static files (shared between main app and web interface)
     this.app.use('/static', express.static(path.join(__dirname, '../../static')));
+
+    // Serve the Electron renderer over http://localhost/app so the main window
+    // loads from an http origin (not file://). This is REQUIRED for the WebGPU
+    // Creator: dynamic import() of the same-origin libs, cross-origin isolation,
+    // and WASM threads (SharedArrayBuffer) only work on an http origin. index.html
+    // uses relative dist/ + lib/ paths, so serving the whole renderer dir works.
+    this.app.use('/app', express.static(path.join(__dirname, '../renderer')));
 
     // Serve Butterchurn libraries for the screenshot generator (both root and admin paths)
     this.app.use('/lib', express.static(path.join(__dirname, '../renderer/lib')));
@@ -248,6 +290,11 @@ class WebServer {
   }
 
   setupRoutes() {
+    // WebGPU Creator assets (JS libs + WASM + models) — fetched/cached by the
+    // backend and served SAME-ORIGIN so the UI never touches external sites
+    // (avoids CORS/COEP in the web admin; works offline after first fetch).
+    registerWebGpuAssets(this.app);
+
     // Main song request page (React app - public)
     this.app.get('/', (req, res) => {
       const webDistPath = path.join(__dirname, '../web/dist');
@@ -457,20 +504,8 @@ class WebServer {
         let songs = allSongs;
 
         if (search) {
-          // Initialize or update Fuse.js if not already done or songs changed
-          if (!this.fuse || this.fuse._docs.length !== allSongs.length) {
-            this.fuse = new Fuse(allSongs, {
-              keys: ['title', 'artist', 'album'],
-              threshold: 0.3, // 0 = exact match, 1 = match anything
-              includeScore: true,
-              ignoreLocation: true,
-              findAllMatches: true,
-            });
-          }
-
-          // Use fuzzy search
-          const fuseResults = this.fuse.search(search);
-          songs = fuseResults.map((result) => result.item);
+          // Shared search (same tuning as desktop/admin). No per-route Fuse config.
+          songs = libraryService.searchSongList(allSongs, search, allSongs.length);
         } else {
           // Sort alphabetically by title when no search
           songs = allSongs.sort((a, b) => a.title.localeCompare(b.title));
@@ -502,22 +537,10 @@ class WebServer {
         // Get songs from cache
         const allSongs = await this.getCachedSongs();
 
-        // Initialize or update Fuse.js if needed
-        if (!this.fuse || this.fuse._docs.length !== allSongs.length) {
-          this.fuse = new Fuse(allSongs, {
-            keys: ['title', 'artist', 'album'],
-            threshold: 0.3,
-            includeScore: true,
-            ignoreLocation: true,
-            findAllMatches: true,
-          });
-        }
-
-        // Use fuzzy search
-        const fuseResults = this.fuse.search(query);
-        const results = fuseResults
-          .slice(0, limit)
-          .map((result) => this.sanitizeSongForPublic(result.item));
+        // Shared search (same tuning as desktop/admin). No per-route Fuse config.
+        const results = libraryService
+          .searchSongList(allSongs, query, limit)
+          .map((song) => this.sanitizeSongForPublic(song));
 
         res.json({ results });
       } catch (error) {
@@ -1122,8 +1145,8 @@ class WebServer {
               songJson: result.kaiData.originalSongJson || {},
             },
           });
-        } else if (result.format === 'm4a-stems') {
-          // For M4A files, add download URLs for extracted audio tracks
+        } else if (isStemMp4Format(result.format)) {
+          // For Stem MP4 files, add download URLs for extracted audio tracks
           const audioFiles = result.kaiData.audio.sources.map((source) => {
             const trackName = source.name;
             const fileId = Buffer.from(
@@ -1140,7 +1163,7 @@ class WebServer {
           res.json({
             success: true,
             data: {
-              format: 'm4a-stems',
+              format: STEM_MP4_FORMAT,
               metadata: result.kaiData.metadata || {},
               lyrics: result.kaiData.lyrics || [],
               audioFiles: audioFiles,
@@ -1221,7 +1244,7 @@ class WebServer {
       }
     });
 
-    // Download M4A audio track (extracted from M4A Stems file)
+    // Download M4A audio track (extracted from Stem MP4 file)
     this.app.get('/admin/editor/m4a-audio/:fileId', async (req, res) => {
       try {
         const { fileId } = req.params;
@@ -1799,54 +1822,19 @@ class WebServer {
 
     // ===== Creator Endpoints =====
 
-    // Check creator components status
-    this.app.get('/admin/creator/status', async (req, res) => {
+    // Creator status (cache dir + current save job). The creator runs in-browser
+    // (WebGPU) — no native components to check or install.
+    this.app.get('/admin/creator/status', (req, res) => {
       try {
-        const components = await creatorService.checkComponents();
-        const status = creatorService.getStatus();
-        res.json({
-          ...components,
-          ...status,
-        });
+        // hostAvailable: is a player renderer present to run host-side creation? A web
+        // admin uses this to offer "Create on host" instead of only the signpost.
+        const hostAvailable = Boolean(
+          this.mainApp.mainWindow && !this.mainApp.mainWindow.isDestroyed()
+        );
+        res.json({ ...creatorService.getStatus(), hostAvailable });
       } catch (error) {
         console.error('Error checking creator status:', error);
         res.status(500).json({ error: 'Failed to check creator status' });
-      }
-    });
-
-    // Install creator components
-    this.app.post('/admin/creator/install', async (req, res) => {
-      try {
-        // Start installation with Socket.IO progress updates
-        const result = await creatorService.installComponents((progress) => {
-          this.io.to('admin-clients').emit('creator:install-progress', progress);
-        });
-
-        if (result.success) {
-          res.json(result);
-        } else {
-          this.io.to('admin-clients').emit('creator:install-error', {
-            error: result.error,
-          });
-          res.status(500).json(result);
-        }
-      } catch (error) {
-        console.error('Error installing creator components:', error);
-        this.io.to('admin-clients').emit('creator:install-error', {
-          error: error.message,
-        });
-        res.status(500).json({ error: 'Failed to install components' });
-      }
-    });
-
-    // Cancel creator installation
-    this.app.post('/admin/creator/cancel-install', (req, res) => {
-      try {
-        const result = creatorService.cancelInstall();
-        res.json(result);
-      } catch (error) {
-        console.error('Error cancelling installation:', error);
-        res.status(500).json({ error: 'Failed to cancel installation' });
       }
     });
 
@@ -1864,6 +1852,383 @@ class WebServer {
       } catch (error) {
         console.error('Error searching lyrics:', error);
         res.status(500).json({ error: 'Failed to search lyrics' });
+      }
+    });
+
+    // Whisper context (vocab hints) — web admin path; the Electron player uses the
+    // creator:prepareWhisperContext IPC. Returns the SAME initialPrompt the native
+    // creator builds, so the web transcription can be prompted identically.
+    this.app.post('/admin/creator/whisper-context', async (req, res) => {
+      try {
+        const { title, artist, existingLyrics } = req.body;
+        const result = await creatorService.getWhisperContext(title, artist, existingLyrics);
+        res.json(result);
+      } catch (error) {
+        console.error('Error preparing whisper context:', error);
+        res.status(500).json({ error: error.message || 'Failed to prepare context' });
+      }
+    });
+
+    // LLM lyric correction (web admin path; the Electron player uses the
+    // creator:correctLyrics IPC). Resolves stored LLM settings server-side.
+    this.app.post('/admin/creator/correct', async (req, res) => {
+      try {
+        const { whisperOutput, referenceLyrics } = req.body;
+        if (!whisperOutput) return res.status(400).json({ error: 'whisperOutput is required' });
+        const settings = llmService.resolveRuntimeSettings(
+          this.mainApp.settings,
+          llmService.getLLMSettingsRaw(this.mainApp.settings)
+        );
+        const result = await llmService.correctLyrics(whisperOutput, referenceLyrics, settings);
+        res.json({ success: true, ...result });
+      } catch (error) {
+        console.error('Error correcting lyrics:', error);
+        res.status(500).json({ error: error.message || 'Failed to correct lyrics' });
+      }
+    });
+
+    // LLM settings (web admin path; Electron uses creator:getLLMSettings etc).
+    this.app.get('/admin/creator/llm-settings', (req, res) => {
+      res.json(llmService.getLLMSettings(this.mainApp.settings));
+    });
+    this.app.post('/admin/creator/llm-settings', (req, res) => {
+      llmService.saveLLMSettings(this.mainApp.settings, req.body || {});
+      res.json({ success: true });
+    });
+    this.app.post('/admin/creator/llm-test', async (req, res) => {
+      const resolved = llmService.resolveRuntimeSettings(this.mainApp.settings, req.body || {});
+      res.json(await llmService.testLLMConnection(resolved));
+    });
+
+    // ---- WebGPU Creator: save in-browser result as .stem.mp4 ----
+    // The WebGPU tab separates + transcribes AND encodes stems to AAC in the
+    // browser (ffmpeg-wasm, no Python, no native ffmpeg). It POSTs the 5 AAC .m4a
+    // stems + lyrics JSON here; the backend muxes them into a NI-Stems .stem.mp4
+    // via stem-mp4's pure-JS StemMp4Writer (kara/stem atoms) in the songs library.
+    const wsd = path.join(getCacheDir(), 'webgpu-creator');
+    try {
+      fs.mkdirSync(wsd, { recursive: true });
+    } catch {
+      /* best-effort */
+    }
+    // Startup sweep: a crash mid-job (save or host-create) can orphan uploaded sources
+    // + stem temp files here. Each request cleans its own temps on every path, so any
+    // leftovers at boot are from a prior crashed run — safe to delete. Best-effort.
+    try {
+      for (const name of fs.readdirSync(wsd)) {
+        try {
+          fs.rmSync(path.join(wsd, name), { force: true });
+        } catch {
+          /* ignore individual failures */
+        }
+      }
+    } catch {
+      /* dir unreadable → nothing to sweep */
+    }
+    const wsSaveHandler = multer({
+      storage: multer.diskStorage({
+        destination: (_req, _file, cb) => cb(null, wsd),
+        filename: (_req, file, cb) =>
+          cb(null, `${crypto.randomBytes(8).toString('hex')}_${file.fieldname}.wav`),
+      }),
+      limits: { fileSize: 200 * 1024 * 1024, files: 5 },
+      fileFilter: (_req, file, cb) =>
+        cb(null, ['master', 'drums', 'bass', 'other', 'vocals'].includes(file.fieldname)),
+    }).fields([
+      { name: 'master', maxCount: 1 },
+      { name: 'drums', maxCount: 1 },
+      { name: 'bass', maxCount: 1 },
+      { name: 'other', maxCount: 1 },
+      { name: 'vocals', maxCount: 1 },
+    ]);
+
+    this.app.post('/admin/webgpu-creator/save', (req, res) => {
+      wsSaveHandler(req, res, async (err) => {
+        const cleanup = () => {
+          for (const fld of ['master', 'drums', 'bass', 'other', 'vocals']) {
+            const f = req.files?.[fld]?.[0]?.path;
+            if (f) {
+              try {
+                fs.rmSync(f, { force: true });
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+        };
+        try {
+          if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+          const stems = {};
+          for (const fld of ['master', 'drums', 'bass', 'other', 'vocals']) {
+            const f = req.files?.[fld]?.[0]?.path;
+            if (!f) return res.status(400).json({ error: `missing stem: ${fld}` });
+            stems[fld] = f;
+          }
+          const title = (req.body.title || 'Untitled').toString().slice(0, 200);
+          const artist = (req.body.artist || 'Unknown').toString().slice(0, 200);
+          const album = req.body.album ? req.body.album.toString().slice(0, 200) : undefined;
+          const year = req.body.year ? parseInt(req.body.year, 10) || undefined : undefined;
+          const genre = req.body.genre ? req.body.genre.toString().slice(0, 100) : undefined;
+          const track = req.body.track ? parseInt(req.body.track, 10) || undefined : undefined;
+          const duration = parseFloat(req.body.duration) || 0;
+          const key = req.body.key ? req.body.key.toString().slice(0, 16) : undefined;
+          let lyrics = {};
+          try {
+            lyrics = req.body.lyrics ? JSON.parse(req.body.lyrics) : {};
+          } catch {
+            /* ignore malformed lyrics */
+          }
+          let pitch;
+          try {
+            pitch = req.body.pitch ? JSON.parse(req.body.pitch) : undefined;
+          } catch {
+            /* ignore malformed pitch */
+          }
+          let refLyrics;
+          try {
+            refLyrics = req.body.referenceLyrics ? req.body.referenceLyrics.toString() : undefined;
+          } catch {
+            /* ignore */
+          }
+          const result = await creatorService.saveWebGpuStems({
+            stems,
+            metadata: { title, artist, album, year, genre, track, duration, key },
+            lyrics,
+            pitch,
+            referenceLyrics: refLyrics,
+            settingsManager: this.mainApp.settings, // backend runs LLM correction
+            songsFolder: this.mainApp.settings?.getSongsFolder?.(),
+            source: 'web', // observable job: this save came from a web admin
+          });
+          cleanup();
+          // Re-sync the library so the new song shows up immediately (like native).
+          try {
+            await libraryService.syncLibrary(this.mainApp);
+          } catch (err) {
+            console.warn('library sync after WebGPU save failed:', err.message);
+          }
+          res.json({ success: true, ...result });
+        } catch (e) {
+          cleanup();
+          // Single-job contract: a save started while another is running gets a 409
+          // with the live job, so the UI can attach instead of seeing a 500.
+          if (e.busy) {
+            return res.status(409).json({ error: e.message, busy: true, job: e.job });
+          }
+          console.error('webgpu-creator save failed:', e);
+          res.status(500).json({ error: e.message || 'Save failed' });
+        }
+      });
+    });
+
+    // ---- Host-create: a phone web-admin commands the HOST player to create ----
+    // A browser on http://<LAN-IP> has no WebGPU secure context, so instead of running
+    // the compute here it uploads the source audio and asks the player renderer (on
+    // localhost → WebGPU works) to do the full creation on the host GPU. main relays
+    // the job to the renderer, streams progress back over the creator:job broadcast (so
+    // this phone — and every other admin — sees it live), then muxes + saves the result.
+    const ALLOWED_AUDIO = /\.(mp3|wav|flac|ogg|m4a|aac|mp4|mkv|avi|mov|webm)$/i;
+    const hostCreateHandler = multer({
+      storage: multer.diskStorage({
+        destination: (_req, _file, cb) => cb(null, wsd),
+        filename: (_req, file, cb) =>
+          cb(
+            null,
+            `${crypto.randomBytes(8).toString('hex')}_src${path.extname(file.originalname || '')}`
+          ),
+      }),
+      limits: { fileSize: 500 * 1024 * 1024, files: 1 },
+      fileFilter: (_req, file, cb) =>
+        cb(null, file.fieldname === 'file' && ALLOWED_AUDIO.test(file.originalname || '')),
+    }).single('file');
+
+    this.app.post('/admin/creator/host-create', (req, res) => {
+      hostCreateHandler(req, res, async (err) => {
+        const srcPath = req.file?.path;
+        const tmpStems = [];
+        const cleanup = () => {
+          for (const p of [srcPath, ...tmpStems]) {
+            if (p) {
+              try {
+                fs.rmSync(p, { force: true });
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+        };
+        try {
+          if (err) {
+            cleanup();
+            return res.status(400).json({ error: err.message || 'Upload failed' });
+          }
+          if (!srcPath) return res.status(400).json({ error: 'no audio file uploaded' });
+
+          const songsFolder = this.mainApp.settings?.getSongsFolder?.();
+          if (!songsFolder) {
+            cleanup();
+            return res.status(400).json({ error: 'songs folder not set' });
+          }
+
+          // Single-job contract: 409 if a creation is already running anywhere.
+          if (creatorJob.isRunning()) {
+            cleanup();
+            return res.status(409).json({
+              error: 'A creation is already in progress',
+              busy: true,
+              job: creatorJob.getJob(),
+            });
+          }
+
+          const title = (req.body.title || 'Untitled').toString().slice(0, 200);
+          const artist = (req.body.artist || 'Unknown').toString().slice(0, 200);
+          const album = req.body.album ? req.body.album.toString().slice(0, 200) : undefined;
+          const referenceLyrics = req.body.referenceLyrics
+            ? req.body.referenceLyrics.toString()
+            : undefined;
+          let opts = {};
+          try {
+            opts = req.body.opts ? JSON.parse(req.body.opts) : {};
+          } catch {
+            /* ignore malformed opts → defaults */
+          }
+
+          // This route owns the job for its full span (compute on the host + save).
+          const jobId = `host-${crypto.randomBytes(6).toString('hex')}`;
+          creatorJob.startJob({ id: jobId, title, artist, source: 'web', startedAt: Date.now() });
+
+          // Respond immediately — the phone watches progress via the creator:job socket
+          // broadcast (started above + driven below), not this HTTP response.
+          res.json({ success: true, accepted: true, jobId });
+
+          try {
+            const audioBytes = fs.readFileSync(srcPath);
+            const created = await this.mainApp.runHostCreate(jobId, audioBytes, opts, (p) => {
+              if (p.phase) creatorJob.updateProgress({ step: p.phase, progress: p.progress });
+              else if (typeof p.progress === 'number')
+                creatorJob.updateProgress({ progress: p.progress });
+              if (p.log) creatorJob.appendConsole(p.log);
+            });
+
+            // Write the renderer-returned AAC stems to temp files, then mux + save.
+            creatorJob.updateProgress({ step: 'saving', progress: 95 });
+            const stemPaths = {};
+            for (const name of ['master', 'drums', 'bass', 'other', 'vocals']) {
+              const bytes = created.stems?.[name];
+              if (!bytes) throw new Error(`renderer returned no ${name} stem`);
+              const p = path.join(wsd, `${jobId}_${name}.m4a`);
+              fs.writeFileSync(p, Buffer.from(bytes));
+              tmpStems.push(p);
+              stemPaths[name] = p;
+            }
+            const saved = await creatorService.saveWebGpuStems({
+              stems: stemPaths,
+              metadata: { title, artist, album, key: created.key, duration: created.duration },
+              lyrics: created.lyrics,
+              pitch: created.pitch,
+              referenceLyrics,
+              settingsManager: this.mainApp.settings,
+              songsFolder,
+              manageJob: false, // this route owns the creatorJob lifecycle
+            });
+            creatorJob.finishJob('complete', {
+              outputPath: saved.outputPath,
+              finishedAt: Date.now(),
+            });
+            try {
+              await libraryService.syncLibrary(this.mainApp);
+            } catch (e) {
+              console.warn('library sync after host-create failed:', e.message);
+            }
+            cleanup();
+          } catch (e) {
+            creatorJob.finishJob('error', { error: e.message, finishedAt: Date.now() });
+            console.error('host-create failed:', e);
+            cleanup();
+          }
+        } catch (e) {
+          cleanup();
+          // If we already responded (accepted), this just logs; else surface the error.
+          if (!res.headersSent) res.status(500).json({ error: e.message || 'host-create failed' });
+        }
+      });
+    });
+
+    // Import an already-created .stem.mp4 (e.g. from the offsite WebGPU creator at
+    // karaoke-creator.loukai.com) into the library. Validates karaoke metadata,
+    // copies into the songs folder, optionally runs LRCLIB lookup + LLM correction.
+    const importHandler = multer({
+      storage: multer.diskStorage({
+        destination: (_req, _file, cb) => cb(null, wsd),
+        filename: (_req, _file, cb) =>
+          cb(null, `${crypto.randomBytes(8).toString('hex')}.stem.mp4`),
+      }),
+      limits: { fileSize: 500 * 1024 * 1024, files: 1 },
+      fileFilter: (_req, file, cb) => cb(null, file.fieldname === 'file'),
+    }).single('file');
+
+    this.app.post('/admin/library/import-stem', (req, res) => {
+      importHandler(req, res, async (err) => {
+        const tmpPath = req.file?.path;
+        const cleanup = () => {
+          if (tmpPath) {
+            try {
+              fs.rmSync(tmpPath, { force: true });
+            } catch {
+              /* ignore */
+            }
+          }
+        };
+        try {
+          if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+          if (!tmpPath) return res.status(400).json({ error: 'no file uploaded' });
+          // Default ON; the client sends 'false' to skip correction.
+          const correctLyrics = String(req.body.correctLyrics ?? 'true') !== 'false';
+          const result = await creatorService.importStemFile({
+            tmpPath,
+            originalName: req.file.originalname,
+            correctLyrics,
+            settingsManager: this.mainApp.settings,
+            songsFolder: this.mainApp.settings?.getSongsFolder?.(),
+          });
+          cleanup();
+          try {
+            await libraryService.syncLibrary(this.mainApp);
+          } catch (e) {
+            console.warn('library sync after import failed:', e.message);
+          }
+          res.json(result);
+        } catch (e) {
+          cleanup();
+          console.error('stem import failed:', e);
+          res.status(400).json({ error: e.message || 'Import failed' });
+        }
+      });
+    });
+
+    // Lyrics-only update (web admin): rewrite the kara atom (+key) on an existing
+    // library .stem.mp4 by filename — no re-upload of the audio. The file must
+    // resolve inside the songs folder (traversal-guarded).
+    this.app.post('/admin/webgpu-creator/update-lyrics', async (req, res) => {
+      try {
+        const songsFolder = this.mainApp.settings?.getSongsFolder?.();
+        if (!songsFolder) return res.status(400).json({ error: 'songs folder not set' });
+        const name = (req.body.file || '').toString();
+        if (!name || name.includes('..') || name.includes('/') || name.includes('\\')) {
+          return res.status(400).json({ error: 'invalid file name' });
+        }
+        const inputPath = path.join(songsFolder, name);
+        const key = req.body.key ? req.body.key.toString().slice(0, 16) : undefined;
+        const result = await creatorService.updateStemLyrics({
+          inputPath,
+          lyrics: req.body.lyrics || {},
+          key,
+          pitch: req.body.pitch,
+        });
+        res.json({ success: true, ...result });
+      } catch (e) {
+        console.error('update-lyrics failed:', e);
+        res.status(500).json({ error: e.message || 'Update failed' });
       }
     });
 
@@ -1889,116 +2254,6 @@ class WebServer {
       } catch (error) {
         console.error('Error getting file info:', error);
         res.status(500).json({ error: 'Failed to get file info' });
-      }
-    });
-
-    // Start conversion
-    this.app.post('/admin/creator/convert', async (req, res) => {
-      try {
-        const options = req.body;
-
-        if (!options.inputPath) {
-          return res.status(400).json({ error: 'Input path is required' });
-        }
-
-        // Validate input path is within songs directory (prevent path traversal)
-        const songsFolder = this.mainApp.settings?.getSongsFolder?.();
-        const validation = validateSongPath(options.inputPath, songsFolder);
-        if (!validation.valid) {
-          console.error('🚫 Path validation failed:', validation.error, options.inputPath);
-          return res.status(403).json({ error: validation.error });
-        }
-        // Use validated path
-        options.inputPath = validation.resolvedPath;
-
-        // Send immediate response that conversion started
-        res.json({ success: true, message: 'Conversion started' });
-
-        // Run conversion with Socket.IO progress updates
-        const result = await creatorService.startConversion(
-          options,
-          (progress) => {
-            this.io.to('admin-clients').emit('creator:conversion-progress', progress);
-          },
-          (consoleLine) => {
-            this.io.to('admin-clients').emit('creator:conversion-console', { line: consoleLine });
-          },
-          this.mainApp.settings // Pass settings manager for LLM
-        );
-
-        if (result.success) {
-          this.io.to('admin-clients').emit('creator:conversion-complete', {
-            outputPath: result.outputPath,
-            duration: result.duration,
-            stems: result.stems,
-            hasLyrics: result.hasLyrics,
-            hasPitch: result.hasPitch,
-            llmStats: result.llmStats,
-          });
-        } else if (result.cancelled) {
-          // User cancelled - no error event needed
-        } else {
-          this.io.to('admin-clients').emit('creator:conversion-error', {
-            error: result.error,
-          });
-        }
-      } catch (error) {
-        console.error('Error during conversion:', error);
-        this.io.to('admin-clients').emit('creator:conversion-error', {
-          error: error.message,
-        });
-      }
-    });
-
-    // Cancel conversion
-    this.app.post('/admin/creator/cancel-convert', (req, res) => {
-      try {
-        const result = creatorService.stopConversion();
-        res.json(result);
-      } catch (error) {
-        console.error('Error cancelling conversion:', error);
-        res.status(500).json({ error: 'Failed to cancel conversion' });
-      }
-    });
-
-    // Get audio files that can be converted (from library or direct path)
-    this.app.get('/admin/creator/sources', async (req, res) => {
-      try {
-        // Get library songs that are audio files (not already .stem.mp4)
-        const allSongs = await this.getCachedSongs();
-
-        // Filter to songs that could be source files for conversion
-        // (exclude .stem.mp4 which are already karaoke files)
-        const sourceCandidates = allSongs.filter((song) => {
-          const ext = song.path.split('.').pop().toLowerCase();
-          return [
-            'mp3',
-            'wav',
-            'flac',
-            'ogg',
-            'm4a',
-            'aac',
-            'mp4',
-            'mkv',
-            'avi',
-            'mov',
-            'webm',
-          ].includes(ext);
-        });
-
-        res.json({
-          success: true,
-          sources: sourceCandidates.map((song) => ({
-            path: song.path,
-            title: song.title,
-            artist: song.artist,
-            duration: song.duration,
-            format: song.path.split('.').pop().toLowerCase(),
-          })),
-        });
-      } catch (error) {
-        console.error('Error getting source files:', error);
-        res.status(500).json({ error: 'Failed to get source files' });
       }
     });
 
@@ -2534,8 +2789,7 @@ class WebServer {
       this.cachedSongs = (await this.mainApp.getLibrarySongs?.()) || [];
       this.songsCacheTime = Date.now();
 
-      // Reset Fuse.js instance since songs changed
-      this.fuse = null;
+      libraryService.resetSongSearchIndex(); // songs changed → rebuild on next search
 
       log(`✅ Cached ${this.cachedSongs.length} songs`);
     } catch (error) {
@@ -2549,7 +2803,7 @@ class WebServer {
     log('🗑️ Clearing songs cache...');
     this.cachedSongs = null;
     this.songsCacheTime = null;
-    this.fuse = null;
+    libraryService.resetSongSearchIndex();
   }
 
   // Get or create a persistent secret key for cookie encryption

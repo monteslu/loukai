@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { Atoms as M4AAtoms, Extractor } from 'm4a-stems';
+import { Atoms as M4AAtoms, Extractor } from 'stem-mp4';
+import { STEM_MP4_FORMAT } from '../shared/formatUtils.js';
 
 class M4ALoader {
   /**
@@ -48,7 +49,7 @@ class M4ALoader {
   }
 
   /**
-   * Load M4A Stems format with karaoke extensions
+   * Load Stem MP4 format with karaoke extensions
    * @param {string} m4aPath - Path to .stem.mp4 file
    * @returns {Promise<Object>} M4A data object compatible with KAI structure
    */
@@ -98,7 +99,7 @@ class M4ALoader {
         profile = 'STEMS-1';
       }
 
-      // Extract kara atom (karaoke data) using m4a-stems
+      // Extract kara atom (karaoke data) using stem-mp4
       let karaData = null;
       try {
         karaData = await M4AAtoms.readKaraAtom(m4aPath);
@@ -185,7 +186,7 @@ class M4ALoader {
         metadata,
 
         meta: {
-          format: 'm4a-stems',
+          format: STEM_MP4_FORMAT,
           profile,
           encoder_delay_samples: karaData.timing?.encoder_delay_samples || 0,
           // Include corrections metadata from kara atom
@@ -248,7 +249,7 @@ class M4ALoader {
   }
 
   /**
-   * Generate default presets for M4A stems
+   * Generate default presets for Stem MP4
    */
   static generatePresets(sources) {
     const presets = [

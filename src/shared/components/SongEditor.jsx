@@ -5,13 +5,13 @@
  * - Search and load any song from library
  * - Edit ID3 metadata for CDG+MP3 files
  * - Edit ID3 metadata + lyrics for KAI files
- * - Edit metadata + lyrics for M4A Stems files
+ * - Edit metadata + lyrics for Stem MP4 files
  * - Auto-detects file format and shows appropriate editing options
  * - Supports both Electron (IPC) and Web (REST) environments
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { getFormatIcon } from '../formatUtils.js';
+import { getFormatIcon, isStemMp4Format } from '../formatUtils.js';
 import { LyricsEditorCanvas } from './LyricsEditorCanvas.jsx';
 import { LineDetailCanvas } from './LineDetailCanvas.jsx';
 import { LyricLine } from './LyricLine.jsx';
@@ -366,7 +366,7 @@ export function SongEditor({ bridge }) {
         });
 
         // Populate lyrics if KAI or M4A file - server sends actual array with timing
-        const hasLyrics = result.data.format === 'kai' || result.data.format === 'm4a-stems';
+        const hasLyrics = result.data.format === 'kai' || isStemMp4Format(result.data.format);
         if (hasLyrics) {
           const lyrics = result.data.lyrics || [];
           // Sort lyrics by start time to ensure proper order
@@ -801,8 +801,8 @@ export function SongEditor({ bridge }) {
           rejections,
           suggestions,
         },
-        // Include lyrics for both KAI and M4A formats
-        ...((songData.format === 'kai' || songData.format === 'm4a-stems') && {
+        // Include lyrics for both KAI and Stem MP4 formats
+        ...((songData.format === 'kai' || isStemMp4Format(songData.format)) && {
           lyrics: sortedLyrics,
         }),
       };
@@ -1087,8 +1087,8 @@ export function SongEditor({ bridge }) {
             </div>
           </div>
 
-          {/* Tab navigation for KAI and M4A files */}
-          {(songData.format === 'kai' || songData.format === 'm4a-stems') && (
+          {/* Tab navigation for KAI and Stem MP4 files */}
+          {(songData.format === 'kai' || isStemMp4Format(songData.format)) && (
             <div className="flex gap-1 border-b-2 border-gray-200 dark:border-gray-700 pb-0">
               <button
                 className={`px-6 py-3 bg-transparent border-none border-b-[3px] font-semibold text-[15px] cursor-pointer transition-all -mb-0.5 ${activeTab === 'lyrics' ? 'text-blue-600 border-b-blue-600' : 'text-gray-600 dark:text-gray-400 border-b-transparent hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700'}`}
@@ -1107,7 +1107,7 @@ export function SongEditor({ bridge }) {
 
           {/* Metadata form */}
           {(activeTab === 'metadata' ||
-            (songData.format !== 'kai' && songData.format !== 'm4a-stems')) && (
+            (songData.format !== 'kai' && !isStemMp4Format(songData.format))) && (
             <div className="flex flex-col gap-6 overflow-y-auto flex-1 pb-6">
               <h3 className="text-lg font-semibold m-0 text-gray-900 dark:text-white">Metadata</h3>
               <div className="grid grid-cols-[repeat(auto-fit,minmax(250px,1fr))] gap-5">
@@ -1181,8 +1181,8 @@ export function SongEditor({ bridge }) {
             </div>
           )}
 
-          {/* Lyrics editor for KAI and M4A files */}
-          {(songData.format === 'kai' || songData.format === 'm4a-stems') &&
+          {/* Lyrics editor for KAI and Stem MP4 files */}
+          {(songData.format === 'kai' || isStemMp4Format(songData.format)) &&
             activeTab === 'lyrics' && (
               <>
                 {/* Waveform canvas */}

@@ -16,6 +16,7 @@ export default [
       'src/renderer/dist/**',
       'src/web/build/**',
       'src/web/dist/**',
+      'src/offsite/dist/**',
       '**/*.min.js',
       'src/renderer/lib/butterchurn.min.js',
       'src/renderer/lib/butterchurnPresets.min.js',
