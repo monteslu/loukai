@@ -173,7 +173,7 @@ graph LR
 
 **Components:**
 - `src/shared/creator/createKaraoke.js` (+ `.worker.js`) - Orchestrates the in-browser pipeline
-- `webgpuAssets.js` - Same-origin caching proxy (`/webgpu-assets`): downloads onnxruntime-web, transformers.js, @ffmpeg/core wasm, and ONNX models once from jsdelivr/Hugging Face, then serves them offline
+- `webgpuAssets.js` - Same-origin asset server (`/webgpu-assets`): serves the vendored libs (onnxruntime-web, transformers.js, @ffmpeg/core wasm — bundled into static/webgpu at build time by `scripts/vendor-webgpu-assets.js`) and proxies+caches the ONNX models from Hugging Face on first use, then serves everything offline
 - `creatorJob.js` - Single observable job descriptor shared by the Electron tab and web admins
 - `systemChecker.js` - Cache-directory helper (`getCacheDir`)
 - `stemBuilder.js` - Creates .stem.mp4 with NI Stems + karaoke atoms

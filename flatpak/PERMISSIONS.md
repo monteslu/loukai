@@ -35,9 +35,11 @@ commonly accept it for media-library apps with a clear rationale.
 ## Creator runtime deps
 
 The Creator runs entirely in-browser (WebGPU via onnxruntime-web, WASM fallback) —
-no Python, PyTorch, native modules, or system ffmpeg. On first use it downloads JS
-libraries, wasm binaries, and ONNX models (onnxruntime-web, transformers.js /
-Whisper, htdemucs ONNX, @ffmpeg/core wasm) through the app's same-origin caching
-proxy (`src/main/creator/webgpuAssets.js`) into the user cache dir; subsequent
-runs are fully offline. `--share=network` covers these one-time CDN (jsdelivr) /
-Hugging Face fetches.
+no Python, PyTorch, native modules, or system ffmpeg. Its JS/wasm libraries are
+vendored into the package at build time when the build has network access
+(`scripts/vendor-webgpu-assets.js`); in the offline Flathub build they are instead
+fetched at first use through the app's same-origin caching proxy
+(`src/main/creator/webgpuAssets.js`), like the ONNX models (Whisper, htdemucs,
+Silero VAD) always are. Everything is cached in the user cache dir; subsequent
+runs are fully offline. `--share=network` covers these one-time pinned-version
+CDN (jsdelivr) / Hugging Face fetches.
