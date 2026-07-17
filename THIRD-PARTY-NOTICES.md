@@ -100,19 +100,30 @@ presets distributed under that package.
 
 ---
 
-## Runtime-fetched Creator components
+## Vendored Creator libraries (shipped in packages)
 
-The in-browser Creator fetches the following at first use from jsdelivr /
-Hugging Face via the app's same-origin caching proxy
-(`src/main/creator/webgpuAssets.js`); they are cached locally and re-served by
-the app rather than bundled via npm:
+The in-browser Creator's JS/wasm libraries are downloaded at build time by
+`scripts/vendor-webgpu-assets.js` (pinned versions in
+`src/main/creator/webgpuAssets.js`) into `static/webgpu/` and shipped inside
+the installers and the npm package:
 
 - **onnxruntime-web** (Microsoft) — MIT — https://github.com/microsoft/onnxruntime
 - **@huggingface/transformers** (transformers.js) — Apache-2.0 —
-  https://github.com/huggingface/transformers.js — including OpenAI **Whisper**
-  model weights (MIT) via onnx-community exports
+  https://github.com/huggingface/transformers.js
 - **@ffmpeg/core** (ffmpeg.wasm core) — MIT wrapper around **FFmpeg**
   (LGPL-2.1+) — https://github.com/ffmpegwasm/ffmpeg.wasm — https://ffmpeg.org
+
+(Builds produced without network access — e.g. the Flathub-from-source build —
+omit them; there the app fetches the same pinned files at runtime through its
+same-origin caching proxy instead.)
+
+## Runtime-fetched Creator models
+
+The ML models are fetched at first Creator use from Hugging Face via the app's
+same-origin caching proxy, cached locally, and re-served by the app:
+
+- **Whisper** speech-to-text model weights (OpenAI) — MIT — via onnx-community
+  timestamped exports
 - **Demucs / htdemucs** stem-separation models (Meta AI) — MIT —
   https://github.com/facebookresearch/demucs — ONNX exports served from
   Hugging Face (incl. `monteslu/htdemucs-ft-webgpu`; provenance in
