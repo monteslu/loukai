@@ -393,7 +393,11 @@ describe('queueService', () => {
       expect(mainApp.loadKaiFile).not.toHaveBeenCalled();
     });
 
-    it('should return error for unsupported file format', async () => {
+    it('propagates the loader error for genuinely unsupported files', async () => {
+      // Format judgment lives in main.loadKaiFile (the universal dispatcher) now;
+      // the queue service no longer keeps its own extension list (it used to, and
+      // its list was missing .stem.mp4 — the PRIMARY format — so queue loads threw
+      // a bogus 'Unsupported file format').
       const song = appState.addToQueue({
         path: '/music/song.txt',
         title: 'Test Song',
@@ -401,13 +405,14 @@ describe('queueService', () => {
 
       const mainApp = {
         appState,
-        loadKaiFile: vi.fn(),
+        loadKaiFile: vi.fn().mockRejectedValue(new Error('Unsupported file format: song.txt')),
       };
 
       const result = await queueService.loadFromQueue(mainApp, song.id);
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Unsupported file format');
+      expect(mainApp.loadKaiFile).toHaveBeenCalledWith('/music/song.txt', song.id);
     });
 
     it('should handle loader errors gracefully', async () => {
@@ -426,5 +431,34 @@ describe('queueService', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBe('File not found');
     });
+  });
+});
+
+describe('loadFromQueue: stem.mp4 (the primary format)', () => {
+  it('routes .stem.mp4 through the universal loader instead of throwing', async () => {
+    const mainApp = {
+      appState: {
+        getQueue: () => [
+          { id: 42, path: "/music/The Beatles - Can't Buy Me Love.stem.mp4", title: 'CBML' },
+        ],
+      },
+      loadKaiFile: vi.fn().mockResolvedValue(true),
+    };
+    const result = await queueService.loadFromQueue(mainApp, 42);
+    expect(result.success).toBe(true);
+    expect(mainApp.loadKaiFile).toHaveBeenCalledWith(
+      "/music/The Beatles - Can't Buy Me Love.stem.mp4",
+      42
+    );
+  });
+
+  it('routes .m4a the same way', async () => {
+    const mainApp = {
+      appState: { getQueue: () => [{ id: 7, path: '/music/song.m4a', title: 'S' }] },
+      loadKaiFile: vi.fn().mockResolvedValue(true),
+    };
+    const result = await queueService.loadFromQueue(mainApp, 7);
+    expect(result.success).toBe(true);
+    expect(mainApp.loadKaiFile).toHaveBeenCalledWith('/music/song.m4a', 7);
   });
 });

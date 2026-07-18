@@ -198,18 +198,21 @@ export async function loadFromQueue(mainApp, itemId) {
   console.log('✅ Found item in queue:', item);
 
   try {
-    // Determine file format and call appropriate loader
+    // Load via the universal dispatcher. This used to keep its OWN extension
+    // check that only knew .kai and .cdg/.mp3 — so queue-loading a .stem.mp4
+    // (the PRIMARY format) threw a bogus 'Unsupported file format' even though
+    // the same file loads fine from the library. main.loadKaiFile detects the
+    // real format (CDG pairs, m4a/stem.mp4) and errors properly for genuinely
+    // unknown files; don't second-guess it here.
     const ext = item.path.toLowerCase();
-    if (ext.endsWith('.kai')) {
-      console.log('🎵 Loading KAI file:', item.path, 'queueItemId:', item.id);
-      await mainApp.loadKaiFile(item.path, item.id);
-    } else if (ext.endsWith('.cdg') || ext.endsWith('.mp3')) {
+    if (ext.endsWith('.cdg') || ext.endsWith('.mp3')) {
       console.log('💿 Loading CDG file:', item.path, 'queueItemId:', item.id);
       // For CDG, the path might be .mp3 or .cdg, loadCDGFile handles both
       const basePath = item.path.replace(/\.(mp3|cdg)$/i, '');
       await mainApp.loadCDGFile(`${basePath}.mp3`, `${basePath}.cdg`, 'cdg-pair', item.id);
     } else {
-      throw new Error(`Unsupported file format: ${item.path}`);
+      console.log('🎵 Loading song from queue:', item.path, 'queueItemId:', item.id);
+      await mainApp.loadKaiFile(item.path, item.id);
     }
 
     return {
