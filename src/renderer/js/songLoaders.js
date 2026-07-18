@@ -35,7 +35,13 @@ export async function loadCDGSong(app, songData, metadata) {
   cdgGainNode.connect(analyserNode);
 
   // Set audio context in CDG renderer (PA context for playback)
-  app.player.cdgPlayer.setAudioContext(paContext, cdgGainNode, analyserNode);
+  // micOutputNode = PA.masterGain: the mic must bypass the music fader (§8).
+  app.player.cdgPlayer.setAudioContext(paContext, cdgGainNode, analyserNode, paMasterGain);
+
+  // Register the CDG music node with the mixer: the PA "music" strip drives it
+  // through kaiPlayer.setStemGain/setStemMute (state lives in stemMix.PA.music and
+  // persists like any stem). Initialize from the persisted entry.
+  app.kaiPlayer.attachCdgMusicNode(cdgGainNode);
 
   // Load CDG data
   await app.player.cdgPlayer.loadSong(songData);

@@ -397,6 +397,8 @@ export class KAIPlayer extends PlayerInterface {
   }
 
   async loadSong(songData) {
+    this.cdgMusicNode = null; // stems song replaces any CDG music-node registration
+
     this.songData = songData;
 
     // Reset position using base class method
@@ -728,6 +730,7 @@ export class KAIPlayer extends PlayerInterface {
     const entry = resolveStemEntry(this.mixerState.stemMix, bus, stemName);
     this.mixerState.stemMix[bus][stemName] = { ...entry, gain: clampStemGain(gain) };
     this.applyStemNodeGain(bus, stemName);
+    if (bus === 'PA' && stemName === 'music') this.applyCdgMusicGain();
     if (report) this.reportMixerState();
     return true;
   }
@@ -739,12 +742,33 @@ export class KAIPlayer extends PlayerInterface {
     const entry = resolveStemEntry(this.mixerState.stemMix, bus, stemName);
     this.mixerState.stemMix[bus][stemName] = { ...entry, muted: Boolean(muted) };
     this.applyStemNodeGain(bus, stemName);
+    if (bus === 'PA' && stemName === 'music') this.applyCdgMusicGain();
     if (report) this.reportMixerState();
     return true;
   }
 
   getStemMix() {
     return this.mixerState.stemMix;
+  }
+
+  /**
+   * CDG mode (§8): the loaded CDG song's single music gain node, driven by the PA
+   * "music" strip through the same stemMix state (persists like any stem key).
+   * Registered by the CDG loader; cleared when a stems song loads.
+   */
+  attachCdgMusicNode(gainNode) {
+    this.cdgMusicNode = gainNode;
+    this.applyCdgMusicGain(0); // initialize from the persisted entry, no ramp
+  }
+
+  applyCdgMusicGain(rampSec = 0.03) {
+    if (!this.cdgMusicNode || !this.audioContexts.PA) return;
+    const entry = resolveStemEntry(this.mixerState.stemMix, 'PA', 'music');
+    const target = entry.muted ? 0 : entry.gain;
+    const now = this.audioContexts.PA.currentTime;
+    this.cdgMusicNode.gain.cancelScheduledValues(now);
+    this.cdgMusicNode.gain.setValueAtTime(this.cdgMusicNode.gain.value, now);
+    this.cdgMusicNode.gain.linearRampToValueAtTime(target, now + Math.max(rampSec, 0.001));
   }
 
   startAudioSources() {

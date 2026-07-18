@@ -18,6 +18,7 @@ export function MixerPanel({
   onMuteToggle, // Alias for web compatibility
   onSetStemGain, // (bus, stem, gain 0..1.5) — stem×bus mixer (#49)
   onSetStemMute, // (bus, stem, muted)
+  songType, // 'cdg' renders the single-music-fader variant (§8)
   className = '',
 }) {
   // Support both prop names - prefer mixerState if provided, then mixer, then empty object
@@ -99,6 +100,28 @@ export function MixerPanel({
               <div className="w-full border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
                 <div className="flex gap-2 justify-center flex-wrap">
                   {(() => {
+                    // CDG (single mixdown, PA-only): one "music" strip on PA; IEM has
+                    // no stems to offer (§8).
+                    if (songType === 'cdg') {
+                      if (bus.id === 'IEM') {
+                        return (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 py-2">
+                            Stems available on M4A Stems songs
+                          </div>
+                        );
+                      }
+                      const entry = resolveStemEntry(state.stemMix, 'PA', 'music');
+                      return (
+                        <StemStrip
+                          bus="PA"
+                          name="music"
+                          gain={entry.gain}
+                          muted={entry.muted}
+                          onGain={onSetStemGain}
+                          onMute={onSetStemMute}
+                        />
+                      );
+                    }
                     const songStems = (state.stems || [])
                       .map((st) => st.name)
                       .filter((n) => n && !isMixdownStem(n));
