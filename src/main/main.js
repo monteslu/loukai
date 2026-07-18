@@ -421,6 +421,17 @@ class KaiPlayerApp {
       this.canvasWindow.show();
       // Don't start streaming immediately - wait for child to signal ready
     });
+    // ready-to-show is not guaranteed on every platform/compositor combo
+    // (notably Wayland with software compositing). If it never fires the
+    // window exists invisibly and every further popout click just focuses
+    // the phantom. Force the show after a beat.
+    const showFallback = setTimeout(() => {
+      if (this.canvasWindow && !this.canvasWindow.isDestroyed() && !this.canvasWindow.isVisible()) {
+        log('canvas window: ready-to-show never fired - showing anyway');
+        this.canvasWindow.show();
+      }
+    }, 1200);
+    this.canvasWindow.once('closed', () => clearTimeout(showFallback));
 
     this.canvasWindow.on('closed', () => {
       log('🔴 Child window closed, stopping streaming and cleanup');
