@@ -6,7 +6,7 @@
   "main": "src/main/main.js",
   "homepage": "./",
   "scripts": {
-    "start": "electron . --no-sandbox",
+    "start": "node scripts/start-electron.mjs . --no-sandbox",
     "dev": "npm run build:all && electron . --dev --no-sandbox",
     "build": "npm run build:all && electron-builder && node scripts/rename-artifacts.js",
     "build:all": "npm run vendor:webgpu && npm run build:renderer && npm run build:web",
