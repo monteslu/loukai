@@ -86,7 +86,10 @@ export async function createKaraoke(
   const onRtf = emit.onRtf || (() => {});
 
   const {
-    asrModel,
+    // Same default as the panel and offsite creator. Without one, host-create
+    // (which only sends language) fell through to transformers.js's built-in
+    // pipeline default: whisper-tiny.en — tiny AND English-only.
+    asrModel = 'onnx-community/whisper-large-v3-turbo_timestamped',
     demucsModel,
     ftAvailable = true,
     device = 'wasm',
