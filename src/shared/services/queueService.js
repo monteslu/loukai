@@ -164,7 +164,7 @@ export function reorderQueue(appState, songId, newIndex) {
 
 /**
  * Load a song from the queue by ID
- * @param {Object} mainApp - Main app instance with loadKaiFile method
+ * @param {Object} mainApp - Main app instance with loadSongFile method
  * @param {string|number} itemId - Queue item ID to load
  * @returns {Object} Result with success status
  */
@@ -201,7 +201,7 @@ export async function loadFromQueue(mainApp, itemId) {
     // Load via the universal dispatcher. This used to keep its OWN extension
     // check that only knew .kai and .cdg/.mp3 — so queue-loading a .stem.mp4
     // (the PRIMARY format) threw a bogus 'Unsupported file format' even though
-    // the same file loads fine from the library. main.loadKaiFile detects the
+    // the same file loads fine from the library. main.loadSongFile detects the
     // real format (CDG pairs, m4a/stem.mp4) and errors properly for genuinely
     // unknown files; don't second-guess it here.
     const ext = item.path.toLowerCase();
@@ -212,7 +212,7 @@ export async function loadFromQueue(mainApp, itemId) {
       await mainApp.loadCDGFile(`${basePath}.mp3`, `${basePath}.cdg`, 'cdg-pair', item.id);
     } else {
       console.log('🎵 Loading song from queue:', item.path, 'queueItemId:', item.id);
-      await mainApp.loadKaiFile(item.path, item.id);
+      await mainApp.loadSongFile(item.path, item.id);
     }
 
     return {

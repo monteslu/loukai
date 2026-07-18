@@ -7,8 +7,8 @@ const api = {
   },
 
   file: {
-    openKai: () => ipcRenderer.invoke('file:openKai'),
-    loadKaiFromPath: (filePath) => ipcRenderer.invoke('file:loadKaiFromPath', filePath),
+    openSong: () => ipcRenderer.invoke('file:openSong'),
+    loadSongFromPath: (filePath) => ipcRenderer.invoke('file:loadSongFromPath', filePath),
   },
 
   audio: {
@@ -80,9 +80,9 @@ const api = {
   },
 
   editor: {
-    loadKai: (filePath) => ipcRenderer.invoke('editor:loadKai', filePath),
-    saveKai: (kaiData, originalPath) => ipcRenderer.invoke('editor:saveKai', kaiData, originalPath),
-    reloadKai: (filePath) => ipcRenderer.invoke('editor:reloadKai', filePath),
+    load: (filePath) => ipcRenderer.invoke('editor:load', filePath),
+    save: (songData, originalPath) => ipcRenderer.invoke('editor:save', songData, originalPath),
+    reload: (filePath) => ipcRenderer.invoke('editor:reload', filePath),
   },
 
   window: {

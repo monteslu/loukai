@@ -39,7 +39,7 @@ export function QuickSearch({ bridge, requester = 'KJ' }) {
   const handleAddFromSearch = async (song) => {
     const queueItem = {
       path: song.path,
-      title: song.title || song.name.replace('.kai', ''),
+      title: song.title || song.name,
       artist: song.artist || 'Unknown Artist',
       duration: song.duration,
       requester: requester,

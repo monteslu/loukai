@@ -100,7 +100,7 @@ export async function loadSong(mainApp, filePath) {
       };
     }
 
-    const result = await mainApp.loadKaiFile(filePath);
+    const result = await mainApp.loadSongFile(filePath);
 
     if (result && result.success) {
       return {
@@ -152,7 +152,7 @@ export async function playNext(mainApp) {
     const newQueue = mainApp.appState.getQueue();
     if (newQueue.length > 0) {
       const nextSong = newQueue[0];
-      await mainApp.loadKaiFile(nextSong.path, nextSong.id);
+      await mainApp.loadSongFile(nextSong.path, nextSong.id);
 
       return {
         success: true,

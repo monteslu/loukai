@@ -628,16 +628,18 @@ class KaiPlayerApp {
         label: 'File',
         submenu: [
           {
-            label: 'Open KAI File...',
+            label: 'Open Song File...',
             accelerator: 'CmdOrCtrl+O',
             click: async () => {
               const result = await dialog.showOpenDialog(this.mainWindow, {
-                filters: [{ name: 'KAI Files', extensions: ['kai'] }],
+                filters: [
+                  { name: 'Karaoke Files', extensions: ['mp4', 'm4a', 'mp3', 'kar', 'zip'] },
+                ],
                 properties: ['openFile'],
               });
 
               if (!result.canceled && result.filePaths.length > 0) {
-                await this.loadKaiFile(result.filePaths[0]);
+                await this.loadSongFile(result.filePaths[0]);
               }
             },
           },
@@ -1262,7 +1264,7 @@ class KaiPlayerApp {
     return metadata;
   }
 
-  async loadKaiFile(filePath, queueItemId = null) {
+  async loadSongFile(filePath, queueItemId = null) {
     // Detect format and load accordingly
     const format = await this.detectSongFormat(filePath);
 
@@ -1324,7 +1326,7 @@ class KaiPlayerApp {
 
       const cdgData = await CDGLoader.load(mp3Path, cdgPath, format);
 
-      // TODO: Load CDG into audio engine (different path than KAI)
+      // TODO: Load CDG into audio engine (different path than stem-mp4)
       // For now, just set current song and notify renderer
       // Add requester to cdgData so it's available in renderer
       cdgData.requester = requester;
@@ -1502,7 +1504,7 @@ class KaiPlayerApp {
 
       // First, quickly count all files
       log('📊 Counting files...');
-      const allFiles = await this.findAllKaiFiles(songsFolder);
+      const allFiles = await this.findAllSongFiles(songsFolder);
       const totalFiles = allFiles.length;
       log(`📊 Found ${totalFiles} files to process`);
 
@@ -1707,7 +1709,7 @@ class KaiPlayerApp {
     return files;
   }
 
-  async findAllKaiFiles(folderPath) {
+  async findAllSongFiles(folderPath) {
     const allFiles = [];
     const processedPairs = new Set();
 
@@ -2267,7 +2269,7 @@ class KaiPlayerApp {
       log(`🎵 Queue was empty, auto-loading "${result.queueItem.title}"`);
       try {
         // Use the returned queueItem which has the generated ID
-        await this.loadKaiFile(result.queueItem.path, result.queueItem.id);
+        await this.loadSongFile(result.queueItem.path, result.queueItem.id);
         log('✅ Successfully auto-loaded song from queue');
       } catch (error) {
         console.error('❌ Failed to auto-load song from queue:', error);

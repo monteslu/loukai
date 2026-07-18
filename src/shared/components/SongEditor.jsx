@@ -375,7 +375,7 @@ export function SongEditor({ bridge }) {
         });
 
         // Populate lyrics if KAI or M4A file - server sends actual array with timing
-        const hasLyrics = result.data.format === 'kai' || isStemMp4Format(result.data.format);
+        const hasLyrics = isStemMp4Format(result.data.format);
         if (hasLyrics) {
           const lyrics = result.data.lyrics || [];
           // Sort lyrics by start time to ensure proper order
@@ -811,7 +811,7 @@ export function SongEditor({ bridge }) {
           suggestions,
         },
         // Include lyrics for both KAI and Stem MP4 formats
-        ...((songData.format === 'kai' || isStemMp4Format(songData.format)) && {
+        ...(isStemMp4Format(songData.format) && {
           lyrics: sortedLyrics,
         }),
       };
@@ -1097,7 +1097,7 @@ export function SongEditor({ bridge }) {
           </div>
 
           {/* Tab navigation for KAI and Stem MP4 files */}
-          {(songData.format === 'kai' || isStemMp4Format(songData.format)) && (
+          {isStemMp4Format(songData.format) && (
             <div className="flex gap-1 border-b-2 border-gray-200 dark:border-gray-700 pb-0">
               <button
                 className={`px-6 py-3 bg-transparent border-none border-b-[3px] font-semibold text-[15px] cursor-pointer transition-all -mb-0.5 ${activeTab === 'lyrics' ? 'text-blue-600 border-b-blue-600' : 'text-gray-600 dark:text-gray-400 border-b-transparent hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700'}`}
@@ -1191,188 +1191,187 @@ export function SongEditor({ bridge }) {
           )}
 
           {/* Lyrics editor for KAI and Stem MP4 files */}
-          {(songData.format === 'kai' || isStemMp4Format(songData.format)) &&
-            activeTab === 'lyrics' && (
-              <>
-                {/* Waveform canvas */}
-                <LyricsEditorCanvas
-                  lyricsData={lyricsData}
-                  selectedLineIndex={selectedLineIndex}
-                  onLineSelect={setSelectedLineIndex}
-                  vocalsWaveform={vocalsWaveform}
-                  songDuration={songDuration}
-                  currentPosition={currentPosition}
-                  isPlaying={isPlaying}
-                />
+          {isStemMp4Format(songData.format) && activeTab === 'lyrics' && (
+            <>
+              {/* Waveform canvas */}
+              <LyricsEditorCanvas
+                lyricsData={lyricsData}
+                selectedLineIndex={selectedLineIndex}
+                onLineSelect={setSelectedLineIndex}
+                vocalsWaveform={vocalsWaveform}
+                songDuration={songDuration}
+                currentPosition={currentPosition}
+                isPlaying={isPlaying}
+              />
 
-                {/* Line detail canvas - zoomed view of selected line */}
-                <LineDetailCanvas
-                  selectedLine={selectedLineIndex !== null ? lyricsData[selectedLineIndex] : null}
-                  vocalsWaveform={vocalsWaveform}
-                  songDuration={songDuration}
-                  currentPosition={currentPosition}
-                  isPlaying={isPlaying}
-                />
+              {/* Line detail canvas - zoomed view of selected line */}
+              <LineDetailCanvas
+                selectedLine={selectedLineIndex !== null ? lyricsData[selectedLineIndex] : null}
+                vocalsWaveform={vocalsWaveform}
+                songDuration={songDuration}
+                currentPosition={currentPosition}
+                isPlaying={isPlaying}
+              />
 
-                {/* Audio playback controls */}
-                {audioElements.length > 0 && (
-                  <div className="flex items-center gap-2 px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded flex-shrink-0">
-                    <button
-                      onClick={togglePlayback}
-                      className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 border-blue-600 rounded text-white cursor-pointer text-xs transition-colors hover:bg-blue-700"
-                    >
-                      <span className="material-icons text-base">
-                        {isPlaying ? 'pause' : 'play_arrow'}
-                      </span>
-                      {isPlaying ? 'Pause' : 'Play'}
-                    </button>
-                    {/* Elapsed time (issue #67 request): tenths so lyric timing can be
-                        checked against the start/end numbers while playing. */}
-                    <span
-                      className="font-mono text-xs text-gray-900 dark:text-white tabular-nums px-1.5 whitespace-nowrap"
-                      title={`${currentPosition.toFixed(2)}s`}
-                    >
-                      {formatEditorTime(currentPosition)}
-                      <span className="text-gray-500 dark:text-gray-400">
-                        {' / '}
-                        {formatEditorTime(songDuration)}
-                      </span>
+              {/* Audio playback controls */}
+              {audioElements.length > 0 && (
+                <div className="flex items-center gap-2 px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded flex-shrink-0">
+                  <button
+                    onClick={togglePlayback}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 border-blue-600 rounded text-white cursor-pointer text-xs transition-colors hover:bg-blue-700"
+                  >
+                    <span className="material-icons text-base">
+                      {isPlaying ? 'pause' : 'play_arrow'}
                     </span>
-                    <div className="flex gap-1.5 flex-wrap flex-1 items-center">
-                      {audioElements.map((el, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
+                    {isPlaying ? 'Pause' : 'Play'}
+                  </button>
+                  {/* Elapsed time (issue #67 request): tenths so lyric timing can be
+                        checked against the start/end numbers while playing. */}
+                  <span
+                    className="font-mono text-xs text-gray-900 dark:text-white tabular-nums px-1.5 whitespace-nowrap"
+                    title={`${currentPosition.toFixed(2)}s`}
+                  >
+                    {formatEditorTime(currentPosition)}
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {' / '}
+                      {formatEditorTime(songDuration)}
+                    </span>
+                  </span>
+                  <div className="flex gap-1.5 flex-wrap flex-1 items-center">
+                    {audioElements.map((el, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
+                      >
+                        <span className="text-[11px] font-semibold text-gray-900 dark:text-white min-w-[45px]">
+                          {el.name}
+                        </span>
+                        <button
+                          onClick={() => toggleMute(index)}
+                          className={`flex items-center justify-center w-6 h-6 p-0.5 rounded cursor-pointer transition-colors ${el.muted ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-green-600 text-white hover:bg-green-700'}`}
+                          title={el.muted ? 'Unmute' : 'Mute'}
                         >
-                          <span className="text-[11px] font-semibold text-gray-900 dark:text-white min-w-[45px]">
-                            {el.name}
+                          <span className="material-icons text-sm">
+                            {el.muted ? 'volume_off' : 'volume_up'}
                           </span>
-                          <button
-                            onClick={() => toggleMute(index)}
-                            className={`flex items-center justify-center w-6 h-6 p-0.5 rounded cursor-pointer transition-colors ${el.muted ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-green-600 text-white hover:bg-green-700'}`}
-                            title={el.muted ? 'Unmute' : 'Mute'}
-                          >
-                            <span className="material-icons text-sm">
-                              {el.muted ? 'volume_off' : 'volume_up'}
-                            </span>
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <button
-                      onClick={handleExportLyrics}
-                      className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={!lyricsData || lyricsData.length === 0}
-                      title="Export lyrics as text file"
-                    >
-                      <span className="material-icons text-base">download</span>
-                      Export
-                    </button>
-                    <button
-                      onClick={handleResetLyrics}
-                      className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={!hasChanges}
-                      title="Reset to original lyrics"
-                    >
-                      <span className="material-icons text-base">restore</span>
-                      Reset
-                    </button>
-                    <button
-                      onClick={handleAddLineAtStart}
-                      className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={!canAddLineAtStart()}
-                      title={
-                        canAddLineAtStart()
-                          ? 'Add line at beginning'
-                          : 'Not enough space (need 0.6s gap)'
-                      }
-                    >
-                      <span className="material-icons text-base">add</span>
-                      Add First Line
-                    </button>
-                  </div>
-                )}
-
-                {/* Scrollable container for lyrics and corrections */}
-                <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
-                  {/* Lyrics lines */}
-                  <div className="flex flex-col gap-0 p-3 overflow-y-auto flex-1">
-                    {lyricsData && lyricsData.length > 0 ? (
-                      lyricsData.map((line, index) => (
-                        <LyricLine
-                          key={`lyric-${index}`}
-                          line={line}
-                          index={index}
-                          isSelected={selectedLineIndex === index}
-                          onSelect={setSelectedLineIndex}
-                          onUpdate={handleLineUpdate}
-                          onDelete={handleLineDelete}
-                          onAddAfter={handleAddLineAfter}
-                          onSplit={handleLineSplit}
-                          onPlaySection={handlePlayLineSection}
-                          onAdjustStartTime={(delta) => {
-                            setSelectedLineIndex(index);
-                            const currentStart = line.start || line.startTimeSec || 0;
-                            const newStart = Math.max(0, currentStart + delta);
-                            handleLineUpdate(index, {
-                              ...line,
-                              start: newStart,
-                              startTimeSec: newStart,
-                            });
-                          }}
-                          onAdjustEndTime={(delta) => {
-                            setSelectedLineIndex(index);
-                            const currentEnd = line.end || line.endTimeSec || 0;
-                            const newEnd = Math.max(0, currentEnd + delta);
-                            handleLineUpdate(index, {
-                              ...line,
-                              end: newEnd,
-                              endTimeSec: newEnd,
-                            });
-                          }}
-                          canAddAfter={canAddLineAfter(index)}
-                          canSplit={canSplit(index)}
-                          hasOverlap={checkOverlap(index)}
-                        />
-                      ))
-                    ) : (
-                      <div className="text-center p-10 text-gray-500 dark:text-gray-400 text-base">
-                        No lyrics available. Load a KAI file with lyrics to edit.
+                        </button>
                       </div>
-                    )}
+                    ))}
                   </div>
+                  <button
+                    onClick={handleExportLyrics}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!lyricsData || lyricsData.length === 0}
+                    title="Export lyrics as text file"
+                  >
+                    <span className="material-icons text-base">download</span>
+                    Export
+                  </button>
+                  <button
+                    onClick={handleResetLyrics}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!hasChanges}
+                    title="Reset to original lyrics"
+                  >
+                    <span className="material-icons text-base">restore</span>
+                    Reset
+                  </button>
+                  <button
+                    onClick={handleAddLineAtStart}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!canAddLineAtStart()}
+                    title={
+                      canAddLineAtStart()
+                        ? 'Add line at beginning'
+                        : 'Not enough space (need 0.6s gap)'
+                    }
+                  >
+                    <span className="material-icons text-base">add</span>
+                    Add First Line
+                  </button>
+                </div>
+              )}
 
-                  {/* AI Corrections Section */}
-                  {(rejections.length > 0 || suggestions.length > 0) && (
-                    <div className="mb-6 p-4 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md">
-                      <h3 className="text-base font-semibold m-0 mb-4 text-gray-900 dark:text-white">
-                        AI Corrections & Suggestions
-                      </h3>
-
-                      {rejections.map((rejection, rejectionIndex) => (
-                        <LyricRejection
-                          key={`rejection-${rejectionIndex}`}
-                          rejection={rejection}
-                          rejectionIndex={rejectionIndex}
-                          onAccept={handleAcceptRejection}
-                          onDelete={handleDeleteRejection}
-                        />
-                      ))}
-
-                      {suggestions.map((suggestion, suggestionIndex) => (
-                        <LyricSuggestion
-                          key={`suggestion-${suggestionIndex}`}
-                          suggestion={suggestion}
-                          suggestionIndex={suggestionIndex}
-                          onAccept={handleAcceptSuggestion}
-                          onDelete={handleDeleteSuggestion}
-                        />
-                      ))}
+              {/* Scrollable container for lyrics and corrections */}
+              <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+                {/* Lyrics lines */}
+                <div className="flex flex-col gap-0 p-3 overflow-y-auto flex-1">
+                  {lyricsData && lyricsData.length > 0 ? (
+                    lyricsData.map((line, index) => (
+                      <LyricLine
+                        key={`lyric-${index}`}
+                        line={line}
+                        index={index}
+                        isSelected={selectedLineIndex === index}
+                        onSelect={setSelectedLineIndex}
+                        onUpdate={handleLineUpdate}
+                        onDelete={handleLineDelete}
+                        onAddAfter={handleAddLineAfter}
+                        onSplit={handleLineSplit}
+                        onPlaySection={handlePlayLineSection}
+                        onAdjustStartTime={(delta) => {
+                          setSelectedLineIndex(index);
+                          const currentStart = line.start || line.startTimeSec || 0;
+                          const newStart = Math.max(0, currentStart + delta);
+                          handleLineUpdate(index, {
+                            ...line,
+                            start: newStart,
+                            startTimeSec: newStart,
+                          });
+                        }}
+                        onAdjustEndTime={(delta) => {
+                          setSelectedLineIndex(index);
+                          const currentEnd = line.end || line.endTimeSec || 0;
+                          const newEnd = Math.max(0, currentEnd + delta);
+                          handleLineUpdate(index, {
+                            ...line,
+                            end: newEnd,
+                            endTimeSec: newEnd,
+                          });
+                        }}
+                        canAddAfter={canAddLineAfter(index)}
+                        canSplit={canSplit(index)}
+                        hasOverlap={checkOverlap(index)}
+                      />
+                    ))
+                  ) : (
+                    <div className="text-center p-10 text-gray-500 dark:text-gray-400 text-base">
+                      No lyrics available. Load a KAI file with lyrics to edit.
                     </div>
                   )}
                 </div>
-              </>
-            )}
+
+                {/* AI Corrections Section */}
+                {(rejections.length > 0 || suggestions.length > 0) && (
+                  <div className="mb-6 p-4 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md">
+                    <h3 className="text-base font-semibold m-0 mb-4 text-gray-900 dark:text-white">
+                      AI Corrections & Suggestions
+                    </h3>
+
+                    {rejections.map((rejection, rejectionIndex) => (
+                      <LyricRejection
+                        key={`rejection-${rejectionIndex}`}
+                        rejection={rejection}
+                        rejectionIndex={rejectionIndex}
+                        onAccept={handleAcceptRejection}
+                        onDelete={handleDeleteRejection}
+                      />
+                    ))}
+
+                    {suggestions.map((suggestion, suggestionIndex) => (
+                      <LyricSuggestion
+                        key={`suggestion-${suggestionIndex}`}
+                        suggestion={suggestion}
+                        suggestionIndex={suggestionIndex}
+                        onAccept={handleAcceptSuggestion}
+                        onDelete={handleDeleteSuggestion}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 

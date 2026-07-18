@@ -323,14 +323,14 @@ export class ElectronBridge extends BridgeInterface {
   }
 
   async loadSong(path) {
-    return await this.api.file.loadKaiFromPath(path);
+    return await this.api.file.loadSongFromPath(path);
   }
 
   // ===== Song Editor =====
 
   async loadSongForEditing(path) {
-    // Load the KAI file for editing (using editor.loadKai which doesn't affect playback)
-    const result = await this.api.editor.loadKai(path);
+    // Load the song for editing (editor.load doesn't affect playback)
+    const result = await this.api.editor.load(path);
     if (!result.success) {
       return { success: false, error: result.error };
     }
@@ -356,7 +356,7 @@ export class ElectronBridge extends BridgeInterface {
     return {
       success: true,
       data: {
-        format: 'kai',
+        format: 'stem-mp4',
         metadata: songData.metadata || {},
         lyrics: songData.lyrics || [],
         audioFiles: audioFiles,
@@ -368,8 +368,8 @@ export class ElectronBridge extends BridgeInterface {
   async saveSongEdits(updates) {
     const { path, metadata, lyrics, format } = updates;
 
-    if (format === 'kai') {
-      // Build the song object for KaiWriter
+    if (format === 'stem-mp4') {
+      // Build the song object for the editor save
       const songData = {
         song: {
           title: metadata.title,
@@ -410,7 +410,7 @@ export class ElectronBridge extends BridgeInterface {
         }
       }
 
-      const result = await this.api.editor.saveKai(songData, path);
+      const result = await this.api.editor.save(songData, path);
       return result;
     }
 

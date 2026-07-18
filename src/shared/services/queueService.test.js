@@ -292,14 +292,14 @@ describe('queueService', () => {
 
       const mainApp = {
         appState,
-        loadKaiFile: vi.fn().mockResolvedValue(true),
+        loadSongFile: vi.fn().mockResolvedValue(true),
       };
 
       const result = await queueService.loadFromQueue(mainApp, song.id);
 
       expect(result.success).toBe(true);
       expect(result.song).toBeDefined();
-      expect(mainApp.loadKaiFile).toHaveBeenCalledWith('/music/song.kai', song.id);
+      expect(mainApp.loadSongFile).toHaveBeenCalledWith('/music/song.kai', song.id);
     });
 
     it('should load a CDG file from queue (mp3 path)', async () => {
@@ -354,13 +354,13 @@ describe('queueService', () => {
 
       const mainApp = {
         appState,
-        loadKaiFile: vi.fn().mockResolvedValue(true),
+        loadSongFile: vi.fn().mockResolvedValue(true),
       };
 
       const result = await queueService.loadFromQueue(mainApp, song.id);
 
       expect(result.success).toBe(true);
-      expect(mainApp.loadKaiFile).toHaveBeenCalled();
+      expect(mainApp.loadSongFile).toHaveBeenCalled();
     });
 
     it('should handle numeric itemId as string', async () => {
@@ -371,30 +371,30 @@ describe('queueService', () => {
 
       const mainApp = {
         appState,
-        loadKaiFile: vi.fn().mockResolvedValue(true),
+        loadSongFile: vi.fn().mockResolvedValue(true),
       };
 
       const result = await queueService.loadFromQueue(mainApp, String(song.id));
 
       expect(result.success).toBe(true);
-      expect(mainApp.loadKaiFile).toHaveBeenCalled();
+      expect(mainApp.loadSongFile).toHaveBeenCalled();
     });
 
     it('should return error when song not found in queue', async () => {
       const mainApp = {
         appState,
-        loadKaiFile: vi.fn(),
+        loadSongFile: vi.fn(),
       };
 
       const result = await queueService.loadFromQueue(mainApp, 99999);
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Song not found in queue');
-      expect(mainApp.loadKaiFile).not.toHaveBeenCalled();
+      expect(mainApp.loadSongFile).not.toHaveBeenCalled();
     });
 
     it('propagates the loader error for genuinely unsupported files', async () => {
-      // Format judgment lives in main.loadKaiFile (the universal dispatcher) now;
+      // Format judgment lives in main.loadSongFile (the universal dispatcher) now;
       // the queue service no longer keeps its own extension list (it used to, and
       // its list was missing .stem.mp4 — the PRIMARY format — so queue loads threw
       // a bogus 'Unsupported file format').
@@ -405,14 +405,14 @@ describe('queueService', () => {
 
       const mainApp = {
         appState,
-        loadKaiFile: vi.fn().mockRejectedValue(new Error('Unsupported file format: song.txt')),
+        loadSongFile: vi.fn().mockRejectedValue(new Error('Unsupported file format: song.txt')),
       };
 
       const result = await queueService.loadFromQueue(mainApp, song.id);
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Unsupported file format');
-      expect(mainApp.loadKaiFile).toHaveBeenCalledWith('/music/song.txt', song.id);
+      expect(mainApp.loadSongFile).toHaveBeenCalledWith('/music/song.txt', song.id);
     });
 
     it('should handle loader errors gracefully', async () => {
@@ -423,7 +423,7 @@ describe('queueService', () => {
 
       const mainApp = {
         appState,
-        loadKaiFile: vi.fn().mockRejectedValue(new Error('File not found')),
+        loadSongFile: vi.fn().mockRejectedValue(new Error('File not found')),
       };
 
       const result = await queueService.loadFromQueue(mainApp, song.id);
@@ -442,11 +442,11 @@ describe('loadFromQueue: stem.mp4 (the primary format)', () => {
           { id: 42, path: "/music/The Beatles - Can't Buy Me Love.stem.mp4", title: 'CBML' },
         ],
       },
-      loadKaiFile: vi.fn().mockResolvedValue(true),
+      loadSongFile: vi.fn().mockResolvedValue(true),
     };
     const result = await queueService.loadFromQueue(mainApp, 42);
     expect(result.success).toBe(true);
-    expect(mainApp.loadKaiFile).toHaveBeenCalledWith(
+    expect(mainApp.loadSongFile).toHaveBeenCalledWith(
       "/music/The Beatles - Can't Buy Me Love.stem.mp4",
       42
     );
@@ -455,10 +455,10 @@ describe('loadFromQueue: stem.mp4 (the primary format)', () => {
   it('routes .m4a the same way', async () => {
     const mainApp = {
       appState: { getQueue: () => [{ id: 7, path: '/music/song.m4a', title: 'S' }] },
-      loadKaiFile: vi.fn().mockResolvedValue(true),
+      loadSongFile: vi.fn().mockResolvedValue(true),
     };
     const result = await queueService.loadFromQueue(mainApp, 7);
     expect(result.success).toBe(true);
-    expect(mainApp.loadKaiFile).toHaveBeenCalledWith('/music/song.m4a', 7);
+    expect(mainApp.loadSongFile).toHaveBeenCalledWith('/music/song.m4a', 7);
   });
 });

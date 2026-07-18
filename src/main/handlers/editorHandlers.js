@@ -13,7 +13,7 @@ import { STEM_MP4_FORMAT } from '../../shared/formatUtils.js';
  */
 export function registerEditorHandlers(mainApp) {
   // Load song file for editing (KAI or M4A)
-  ipcMain.handle('editor:loadKai', async (event, filePath) => {
+  ipcMain.handle('editor:load', async (event, filePath) => {
     try {
       log('Load song file for editing:', filePath);
 
@@ -37,27 +37,22 @@ export function registerEditorHandlers(mainApp) {
   });
 
   // Save song file (KAI or M4A)
-  ipcMain.handle('editor:saveKai', async (event, kaiData, originalPath) => {
+  ipcMain.handle('editor:save', async (event, songData, originalPath) => {
     try {
       log('Save song file request:', originalPath);
-      log('Updated lyrics:', kaiData.lyrics?.length || 0, 'lines');
+      log('Updated lyrics:', songData.lyrics?.length || 0, 'lines');
 
-      // Determine format from file extension
       const lowerPath = originalPath.toLowerCase();
-      let format;
-      if (lowerPath.endsWith('.kai')) {
-        format = 'kai';
-      } else if (lowerPath.endsWith('.m4a') || lowerPath.endsWith('.mp4')) {
-        format = STEM_MP4_FORMAT;
-      } else {
+      if (!lowerPath.endsWith('.m4a') && !lowerPath.endsWith('.mp4')) {
         throw new Error('Unsupported file format');
       }
+      const format = STEM_MP4_FORMAT;
 
       const editorService = await import('../../shared/services/editorService.js');
       const _result = await editorService.saveSong(originalPath, {
         format: format,
-        metadata: kaiData.song || kaiData.metadata || {},
-        lyrics: kaiData.lyrics,
+        metadata: songData.song || songData.metadata || {},
+        lyrics: songData.lyrics,
       });
 
       log(`${format.toUpperCase()} file saved successfully`);
@@ -68,22 +63,16 @@ export function registerEditorHandlers(mainApp) {
     }
   });
 
-  // Reload song file in player (KAI or M4A)
-  ipcMain.handle('editor:reloadKai', async (event, filePath) => {
+  // Reload song file in player
+  ipcMain.handle('editor:reload', async (event, filePath) => {
     try {
       log('Reload song file request:', filePath);
 
-      // Determine format and call appropriate loader
       const lowerPath = filePath.toLowerCase();
-      let result;
-
-      if (lowerPath.endsWith('.kai')) {
-        result = await mainApp.loadKaiFile(filePath);
-      } else if (lowerPath.endsWith('.m4a') || lowerPath.endsWith('.mp4')) {
-        result = await mainApp.loadM4AFile(filePath);
-      } else {
+      if (!lowerPath.endsWith('.m4a') && !lowerPath.endsWith('.mp4')) {
         throw new Error('Unsupported file format');
       }
+      const result = await mainApp.loadM4AFile(filePath);
 
       if (result && result.success) {
         log('Song file reloaded successfully');

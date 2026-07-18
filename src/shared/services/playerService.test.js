@@ -30,7 +30,7 @@ class MockMainApp {
     };
     this.songQueue = [];
     this.currentSong = null;
-    this.loadKaiFile = vi.fn();
+    this.loadSongFile = vi.fn();
   }
 }
 
@@ -144,7 +144,7 @@ describe('playerService', () => {
 
   describe('loadSong', () => {
     it('should load a song successfully', async () => {
-      mainApp.loadKaiFile.mockResolvedValue({
+      mainApp.loadSongFile.mockResolvedValue({
         success: true,
         song: { title: 'Test Song', artist: 'Test Artist' },
       });
@@ -154,7 +154,7 @@ describe('playerService', () => {
       expect(result.success).toBe(true);
       expect(result.song.title).toBe('Test Song');
       expect(result.message).toBe('Song loaded successfully');
-      expect(mainApp.loadKaiFile).toHaveBeenCalledWith('/music/test.kai');
+      expect(mainApp.loadSongFile).toHaveBeenCalledWith('/music/test.kai');
     });
 
     it('should return error when file path is missing', async () => {
@@ -162,11 +162,11 @@ describe('playerService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('File path is required');
-      expect(mainApp.loadKaiFile).not.toHaveBeenCalled();
+      expect(mainApp.loadSongFile).not.toHaveBeenCalled();
     });
 
     it('should return error when load fails', async () => {
-      mainApp.loadKaiFile.mockResolvedValue({
+      mainApp.loadSongFile.mockResolvedValue({
         success: false,
       });
 
@@ -177,7 +177,7 @@ describe('playerService', () => {
     });
 
     it('should handle exceptions', async () => {
-      mainApp.loadKaiFile.mockRejectedValue(new Error('File not found'));
+      mainApp.loadSongFile.mockRejectedValue(new Error('File not found'));
 
       const result = await playerService.loadSong(mainApp, '/music/test.kai');
 
@@ -200,7 +200,7 @@ describe('playerService', () => {
       mainApp.appState.getQueue.mockReturnValueOnce(mockQueue);
       mainApp.appState.getQueue.mockReturnValueOnce([mockQueue[1]]);
       mainApp.appState.getQueue.mockReturnValueOnce([mockQueue[1]]);
-      mainApp.loadKaiFile.mockResolvedValue({ success: true });
+      mainApp.loadSongFile.mockResolvedValue({ success: true });
 
       const result = await playerService.playNext(mainApp);
 
@@ -209,7 +209,7 @@ describe('playerService', () => {
       expect(result.song.title).toBe('Song 2');
       expect(result.message).toBe('Playing next song');
       expect(mainApp.appState.removeFromQueue).toHaveBeenCalledWith(1);
-      expect(mainApp.loadKaiFile).toHaveBeenCalledWith('/music/song2.kai', 2);
+      expect(mainApp.loadSongFile).toHaveBeenCalledWith('/music/song2.kai', 2);
     });
 
     it('should return error when queue is empty', async () => {
@@ -243,7 +243,7 @@ describe('playerService', () => {
         .mockReturnValueOnce(mockQueue)
         .mockReturnValueOnce(queueAfterRemoval)
         .mockReturnValueOnce(queueAfterRemoval);
-      mainApp.loadKaiFile.mockRejectedValue(new Error('Load failed'));
+      mainApp.loadSongFile.mockRejectedValue(new Error('Load failed'));
 
       const result = await playerService.playNext(mainApp);
 

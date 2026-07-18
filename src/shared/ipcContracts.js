@@ -26,8 +26,8 @@ export const APP_CHANNELS = {
 // ============================================================================
 
 export const FILE_CHANNELS = {
-  OPEN_KAI: 'file:openKai',
-  LOAD_KAI_FROM_PATH: 'file:loadKaiFromPath',
+  OPEN_SONG: 'file:openSong',
+  LOAD_SONG_FROM_PATH: 'file:loadSongFromPath',
 };
 
 // ============================================================================
@@ -101,8 +101,8 @@ export const SONG_CHANNELS = {
 // ============================================================================
 
 export const EDITOR_CHANNELS = {
-  SAVE_KAI: 'editor:saveKai',
-  RELOAD_KAI: 'editor:reloadKai',
+  SAVE: 'editor:save',
+  RELOAD: 'editor:reload',
 };
 
 // ============================================================================
