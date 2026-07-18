@@ -71,7 +71,7 @@ export function MixerPanel({
 
             {/* Compact master cluster on one line (a full-width slider + giant MUTE
                 bar read as broken; the fader is a trim, not the star of the row). */}
-            <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-3 flex-wrap justify-center">
               <span className="text-sm text-gray-600 dark:text-gray-400 w-14 shrink-0">Master</span>
               <input
                 type="range"
@@ -105,7 +105,7 @@ export function MixerPanel({
                 song the canonical 4 render disabled, showing the persisted values. */}
             {(bus.id === 'PA' || bus.id === 'IEM') && onSetStemGain && (
               <div className="w-full border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
-                <div className="flex gap-3 justify-start flex-wrap">
+                <div className="flex gap-3 justify-center flex-wrap">
                   {(() => {
                     // CDG (single mixdown, PA-only): one "music" strip on PA; IEM has
                     // no stems to offer (§8).
