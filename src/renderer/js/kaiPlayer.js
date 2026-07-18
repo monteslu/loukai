@@ -1,5 +1,12 @@
 import { PlayerInterface } from './PlayerInterface.js';
 import { MicrophoneEngine } from './microphoneEngine.js';
+import {
+  effectiveStemGain,
+  resolveStemEntry,
+  clampStemGain,
+  mergeStemMix,
+} from '../../shared/utils/stemGain.js';
+import { isVocalStem, isMixdownStem, isMelodicStem } from '../../shared/utils/stemClassify.js';
 
 export class KAIPlayer extends PlayerInterface {
   constructor() {
@@ -29,7 +36,6 @@ export class KAIPlayer extends PlayerInterface {
         gainNodes: new Map(),
         masterGain: null,
         analyser: null, // For butterchurn visualization
-        vocalsPAGain: null, // For backup:PA feature - vocals to PA routing
         streamDestination: null, // MediaStreamAudioDestinationNode for browser viewer streaming
       },
       IEM: {
@@ -65,6 +71,10 @@ export class KAIPlayer extends PlayerInterface {
         gain: 0, // dB
         muted: true, // Default muted - user must explicitly enable mic
       },
+      // Per-bus per-stem user mix (stem×bus mixer, #49): linear gain multiplier on the
+      // authored trim + independent mute, keyed [bus][stemName]. Seeded from the D1
+      // defaults; persisted state merges over it in loadDevicePreferences.
+      stemMix: mergeStemMix(undefined),
       // Per-song data (for internal use)
       stems: [],
       // Mic routing settings (deprecated - now in micEngine, kept for compatibility)
@@ -102,10 +112,8 @@ export class KAIPlayer extends PlayerInterface {
       this.outputNodes.PA.analyser.fftSize = 2048;
       this.outputNodes.PA.analyser.smoothingTimeConstant = 0.8;
 
-      // Create vocalsPAGain node for backup:PA feature (vocals to PA routing, muted by default)
-      this.outputNodes.PA.vocalsPAGain = this.audioContexts.PA.createGain();
-      this.outputNodes.PA.vocalsPAGain.gain.value = 0; // Muted by default
-      this.outputNodes.PA.vocalsPAGain.connect(this.outputNodes.PA.masterGain);
+      // (backup:PA punchthrough now rides the ordinary PA vocals gain node via the
+      // stem×bus mixer formula — the old dedicated vocalsPAGain node is gone.)
 
       // Parallel MediaStream destination for browser viewer streaming.
       // Connected to masterGain in addition to (not instead of) the audio device destination
@@ -250,6 +258,9 @@ export class KAIPlayer extends PlayerInterface {
           if (typeof appState.mixer.mic?.muted === 'boolean') {
             this.mixerState.mic.muted = appState.mixer.mic.muted;
           }
+          // Per-stem mix: merge persisted values over the D1 seed (handles old saved
+          // states with no stemMix at all, junk values, and unknown stem keys).
+          this.mixerState.stemMix = mergeStemMix(appState.mixer.stemMix);
         }
       }
     } catch (error) {
@@ -336,12 +347,13 @@ export class KAIPlayer extends PlayerInterface {
         this.outputNodes.PA.analyser.fftSize = 2048;
         this.outputNodes.PA.analyser.smoothingTimeConstant = 0.8;
 
-        // Recreate vocalsPAGain node for backup:PA feature
-        this.outputNodes.PA.vocalsPAGain = this.audioContexts.PA.createGain();
-        this.outputNodes.PA.vocalsPAGain.gain.value = this.vocalsPAEnabled
-          ? this.dbToLinear(this.mixerState.IEM.gain)
-          : 0;
-        this.outputNodes.PA.vocalsPAGain.connect(this.outputNodes.PA.masterGain);
+        // Recreate the streaming tap on the NEW context. This was the silent-viewers
+        // bug: the old streamDestination belonged to the closed context, so WebRTC
+        // viewers lost audio until the next song load. Consumers re-pull
+        // getPAStream() on song load; recreating here makes that pull correct.
+        this.outputNodes.PA.streamDestination =
+          this.audioContexts.PA.createMediaStreamDestination();
+        this.outputNodes.PA.masterGain.connect(this.outputNodes.PA.streamDestination);
       }
 
       // Clear old audio nodes
@@ -673,8 +685,61 @@ export class KAIPlayer extends PlayerInterface {
 
       this.outputNodes.IEM.gainNodes.set(stem.name, iemGainNode);
 
-      this.updateStemGain(stem);
+      // Initialize BOTH nodes from the single effective-gain formula (the graph is
+      // rebuilt on every play(), so this is the only init path — plan §11.2).
+      this.applyStemNodeGain('PA', stem.name);
+      this.applyStemNodeGain('IEM', stem.name);
     });
+  }
+
+  /**
+   * Compute + apply the effective gain for one stem's node on one bus, from the
+   * authored trim × the user's stemMix entry (× the backup:PA punchthrough overlay
+   * for PA vocals). Ramped to avoid zipper noise; resilient to no-song / unknown
+   * stem / mid-rebuild (state-only in those cases).
+   */
+  applyStemNodeGain(bus, stemName, rampSec = 0.03) {
+    const ctx = this.audioContexts[bus];
+    const gainNode = this.outputNodes[bus]?.gainNodes?.get(stemName);
+    if (!ctx || !gainNode) return; // state-only; applied at next createAudioGraph()
+
+    const stem = this.mixerState.stems.find((s) => s.name === stemName);
+    const entry = resolveStemEntry(this.mixerState.stemMix, bus, stemName);
+    const target = effectiveStemGain({
+      fileTrimDb: stem?.gain || 0,
+      userGain: entry.gain,
+      muted: entry.muted,
+      punchthroughActive: bus === 'PA' && this.vocalsPAEnabled && this.isVocalStem(stemName),
+    });
+
+    const now = ctx.currentTime;
+    gainNode.gain.cancelScheduledValues(now);
+    gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+    gainNode.gain.linearRampToValueAtTime(target, now + rampSec);
+  }
+
+  /** Set a per-bus per-stem slider (0..1.5 linear, 1.0 = authored mix). */
+  setStemGain(bus, stemName, gain) {
+    if (bus !== 'PA' && bus !== 'IEM') return false;
+    if (!this.mixerState.stemMix[bus]) this.mixerState.stemMix[bus] = {};
+    const entry = resolveStemEntry(this.mixerState.stemMix, bus, stemName);
+    this.mixerState.stemMix[bus][stemName] = { ...entry, gain: clampStemGain(gain) };
+    this.applyStemNodeGain(bus, stemName);
+    return true;
+  }
+
+  /** Mute/unmute one stem on one bus (independent of the slider value). */
+  setStemMute(bus, stemName, muted) {
+    if (bus !== 'PA' && bus !== 'IEM') return false;
+    if (!this.mixerState.stemMix[bus]) this.mixerState.stemMix[bus] = {};
+    const entry = resolveStemEntry(this.mixerState.stemMix, bus, stemName);
+    this.mixerState.stemMix[bus][stemName] = { ...entry, muted: Boolean(muted) };
+    this.applyStemNodeGain(bus, stemName);
+    return true;
+  }
+
+  getStemMix() {
+    return this.mixerState.stemMix;
   }
 
   startAudioSources() {
@@ -703,59 +768,43 @@ export class KAIPlayer extends PlayerInterface {
           const offset = Math.min(this.currentPosition, audioBuffer.duration);
           const isVocals = this.isVocalStem(stem.name);
 
-          // Proper karaoke routing: vocals to IEM only, music/backing tracks to PA only
-          // Exception: backup:PA feature routes vocals to PA when enabled
-          if (isVocals) {
-            // Vocals go to IEM (singer's ears)
-            const iemSource = this.audioContexts.IEM.createBufferSource();
-            iemSource.buffer = audioBuffer;
-            iemSource.connect(iemGainNode);
-            iemSource.start(iemStart, offset);
-            this.outputNodes.IEM.sourceNodes.set(stem.name, iemSource);
+          // Stem×bus mixer (D4): EVERY stem gets an always-running source on BOTH
+          // buses; audibility is entirely the per-bus gain nodes' business (muted
+          // paths run at gain 0). Buffers are decoded once and shared, so the extra
+          // sources are near-free — and mute/unmute becomes a click-free ramp
+          // instead of a graph rebuild (the generalized backup:PA pattern).
+          const paSource = this.audioContexts.PA.createBufferSource();
+          paSource.buffer = audioBuffer;
+          paSource.connect(paGainNode);
 
-            // Also create PA source for backup:PA feature (muted by default via vocalsPAGain)
-            if (this.outputNodes.PA.vocalsPAGain) {
-              const paSource = this.audioContexts.PA.createBufferSource();
-              paSource.buffer = audioBuffer; // Reuse the same decoded buffer
-              paSource.connect(this.outputNodes.PA.vocalsPAGain);
-
-              // Connect vocals to pitch detection for auto-tune reference
-              // This enables real-time pitch tracking from the vocal stem
-              if (this.micEngine) {
-                this.micEngine.connectMusicSource(paSource);
-              }
-
-              paSource.start(paStart, offset);
-              this.outputNodes.PA.sourceNodes.set(stem.name + '_vocalsPA', paSource);
-            }
-          } else {
-            // Backing tracks go to PA only (audience)
-            const paSource = this.audioContexts.PA.createBufferSource();
-            paSource.buffer = audioBuffer;
-            paSource.connect(paGainNode);
-
-            // Connect to analyser for butterchurn visualization (before gain affects signal)
-            if (this.outputNodes.PA.analyser) {
-              paSource.connect(this.outputNodes.PA.analyser);
-            }
-
-            // If this is a melodic stem, connect to microphone engine for pitch detection
-            if (this.isMelodicStem(stem.name) && this.micEngine) {
-              this.micEngine.connectMusicSource(paSource);
-            }
-
-            paSource.start(paStart, offset);
-            this.outputNodes.PA.sourceNodes.set(stem.name, paSource);
-
-            // Add onended handler as backup to position monitoring
-            paSource.onended = () => {
-              if (this.isPlaying) {
-                // Let the position monitoring handle the cleanup
-                // This serves as a backup in case position monitoring misses it
-                setTimeout(() => this.checkForSongEnd(), 10);
-              }
-            };
+          // Butterchurn analyser taps the PA source PRE-gain: visuals react to the
+          // full mix (now including vocals) even when stems are muted for the room.
+          if (this.outputNodes.PA.analyser) {
+            paSource.connect(this.outputNodes.PA.analyser);
           }
+
+          // Auto-tune reference: vocal + melodic PA sources feed pitch detection,
+          // pre-gain, so correction keeps working when the user mutes them on PA.
+          if (this.micEngine && (isVocals || this.isMelodicStem(stem.name))) {
+            this.micEngine.connectMusicSource(paSource);
+          }
+
+          paSource.start(paStart, offset);
+          this.outputNodes.PA.sourceNodes.set(stem.name, paSource);
+
+          // End detection keys off PA sources only — PA is the position-truth
+          // clock; IEM device clocks can drift.
+          paSource.onended = () => {
+            if (this.isPlaying) {
+              setTimeout(() => this.checkForSongEnd(), 10);
+            }
+          };
+
+          const iemSource = this.audioContexts.IEM.createBufferSource();
+          iemSource.buffer = audioBuffer;
+          iemSource.connect(iemGainNode);
+          iemSource.start(iemStart, offset);
+          this.outputNodes.IEM.sourceNodes.set(stem.name, iemSource);
         } catch (error) {
           console.error(`Failed to start source for ${stem.name}:`, error);
         }
@@ -770,66 +819,18 @@ export class KAIPlayer extends PlayerInterface {
     // });
   }
 
+  // Classification heuristics live in shared/utils/stemClassify.js (unit-tested,
+  // shared with the mixer's runtime defaults); these wrappers keep the call sites.
   isVocalStem(stemName) {
-    const vocalsKeywords = ['vocals', 'vocal', 'voice', 'lead', 'singing', 'vox'];
-    const lowerName = stemName.toLowerCase();
-    return vocalsKeywords.some((keyword) => lowerName.includes(keyword));
+    return isVocalStem(stemName);
   }
 
   isMixdownStem(stemName) {
-    // Mixdown stems contain the full mix and should be skipped when individual stems are available
-    const mixdownKeywords = ['mixdown', 'mix', 'master', 'full mix', 'stereo mix'];
-    const lowerName = stemName.toLowerCase();
-    return mixdownKeywords.some(
-      (keyword) =>
-        lowerName === keyword ||
-        lowerName.includes(`_${keyword}`) ||
-        lowerName.includes(`${keyword}_`)
-    );
+    return isMixdownStem(stemName);
   }
 
   isMelodicStem(stemName) {
-    // Returns true for stems containing melodic instruments (typically "other")
-    // These are best for pitch detection as melody reference
-    const lowerName = stemName.toLowerCase();
-
-    // Explicitly melodic stems
-    if (
-      lowerName.includes('other') ||
-      lowerName.includes('music') ||
-      lowerName.includes('instrumental') ||
-      lowerName.includes('accompaniment') ||
-      lowerName.includes('melody')
-    ) {
-      return true;
-    }
-
-    // Exclude non-melodic stems
-    if (this.isVocalStem(stemName)) return false;
-    if (lowerName.includes('drum') || lowerName.includes('percussion')) return false;
-    if (lowerName.includes('bass')) return false;
-
-    // Default to true for unknown stems (likely melodic)
-    return true;
-  }
-
-  updateStemGain(stem) {
-    const paGainNode = this.outputNodes.PA.gainNodes.get(stem.name);
-    const iemGainNode = this.outputNodes.IEM.gainNodes.get(stem.name);
-    const isVocals = this.isVocalStem(stem.name);
-
-    if (!this.audioContexts.PA || !this.audioContexts.IEM) return;
-
-    // Convert stem gain from dB to linear (per-stem balancing)
-    const baseGain = Math.pow(10, stem.gain / 20);
-
-    // Simple routing: vocals to IEM, backing tracks to PA
-    // Master faders control overall output level
-    if (isVocals && iemGainNode) {
-      iemGainNode.gain.setValueAtTime(baseGain, this.audioContexts.IEM.currentTime);
-    } else if (!isVocals && paGainNode) {
-      paGainNode.gain.setValueAtTime(baseGain, this.audioContexts.PA.currentTime);
-    }
+    return isMelodicStem(stemName);
   }
 
   // New simple mixer controls
@@ -907,28 +908,24 @@ export class KAIPlayer extends PlayerInterface {
   }
 
   /**
-   * Enable/disable vocals routing to PA (for backup:PA feature)
-   * When a lyric line has singer="backup:PA", the original vocals should play through PA
-   * @param {boolean} enabled - Whether to route vocals to PA
-   * @param {number} fadeTime - Fade duration in seconds (default 50ms to avoid clicks)
+   * backup:PA punchthrough (lyric lines tagged singer="backup:PA"). Rides the
+   * ordinary PA vocals gain node via the mixer formula: while active, the node
+   * targets max(user's PA-vocals level, authored level) — the line can only ADD
+   * vocals, never fight the user (D2). User-muted vocals rise for the line and
+   * fall back after; a user already at/above authored level hears no change.
+   * @param {boolean} enabled - Whether the punchthrough overlay is active
+   * @param {number} fadeTime - Ramp duration in seconds (default 50ms, no clicks)
    */
   setVocalsPAEnabled(enabled, fadeTime = 0.05) {
-    if (!this.outputNodes.PA.vocalsPAGain || !this.audioContexts.PA) return;
-
-    // Avoid redundant changes
     if (this.vocalsPAEnabled === enabled) return;
     this.vocalsPAEnabled = enabled;
 
-    // Use IEM gain as reference for vocals volume (since that's where vocals normally go)
-    const targetGain = enabled ? this.dbToLinear(this.mixerState.IEM.gain) : 0;
-
-    // Smooth fade to avoid clicks/pops
-    const currentTime = this.audioContexts.PA.currentTime;
-    this.outputNodes.PA.vocalsPAGain.gain.cancelScheduledValues(currentTime);
-    this.outputNodes.PA.vocalsPAGain.gain.linearRampToValueAtTime(
-      targetGain,
-      currentTime + fadeTime
-    );
+    // Recompute every vocal stem's PA node (multi-vocal-stem files: all of them).
+    this.mixerState.stems.forEach((stem) => {
+      if (this.isVocalStem(stem.name)) {
+        this.applyStemNodeGain('PA', stem.name, fadeTime);
+      }
+    });
   }
 
   // Preset system removed - routing is now automatic with master faders
