@@ -398,6 +398,7 @@ export class KAIPlayer extends PlayerInterface {
 
   async loadSong(songData) {
     this.cdgMusicNode = null; // stems song replaces any CDG music-node registration
+    this.mixerState.songType = 'kai';
 
     this.songData = songData;
 
@@ -758,7 +759,11 @@ export class KAIPlayer extends PlayerInterface {
    */
   attachCdgMusicNode(gainNode) {
     this.cdgMusicNode = gainNode;
+    // The mixer UIs render the single-music-fader variant off this flag (it rides
+    // the same mixer broadcast every surface already subscribes to).
+    this.mixerState.songType = 'cdg';
     this.applyCdgMusicGain(0); // initialize from the persisted entry, no ramp
+    this.reportMixerState();
   }
 
   applyCdgMusicGain(rampSec = 0.03) {

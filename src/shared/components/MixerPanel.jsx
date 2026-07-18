@@ -19,6 +19,7 @@ export function MixerPanel({
   onSetStemGain, // (bus, stem, gain 0..1.5) — stem×bus mixer (#49)
   onSetStemMute, // (bus, stem, muted)
   songType, // 'cdg' renders the single-music-fader variant (§8)
+  busExtras, // optional {PA?, IEM?, mic?} JSX per row (device pickers etc. — Electron only)
   className = '',
 }) {
   // Support both prop names - prefer mixerState if provided, then mixer, then empty object
@@ -49,7 +50,7 @@ export function MixerPanel({
   };
 
   return (
-    <div className={`flex gap-4 p-4 ${className}`}>
+    <div className={`flex flex-col gap-4 p-4 ${className}`}>
       {buses.map((bus) => {
         const gain = state[bus.id]?.gain ?? 0;
         const muted = state[bus.id]?.muted ?? false;
@@ -57,12 +58,15 @@ export function MixerPanel({
         return (
           <div
             key={bus.id}
-            className="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex flex-col items-center gap-3"
+            className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex flex-col gap-3"
             data-bus={bus.id}
           >
-            <div className="text-center">
-              <div className="font-semibold text-gray-900 dark:text-gray-100">{bus.label}</div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">{bus.description}</div>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="font-semibold text-gray-900 dark:text-gray-100">{bus.label}</div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">{bus.description}</div>
+              </div>
+              {busExtras?.[bus.id] || null}
             </div>
 
             <div className="flex flex-col items-center gap-2 w-full">
