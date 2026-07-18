@@ -357,7 +357,10 @@ class KaiPlayerApp {
     // Prevent JavaScript errors from showing as alert dialogs
     this.mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
       if (level === 3) {
-        // Error level
+        // onnxruntime logs EVERYTHING through console.error, including its
+        // info/warning-severity lines ([I:...]/[W:...] tags). Only real ORT
+        // errors deserve the siren; the rest drowned out actual failures.
+        if (/\[[IWV]:onnxruntime/.test(message)) return;
         console.error(`🚨 Renderer error at ${sourceId}:${line}:`, message);
         event.preventDefault();
       }

@@ -298,11 +298,21 @@ export async function transcribeVocals(input, opts = {}, emit = {}) {
   const SR16 = 16000;
   const totalSamples = mono.length;
   const allChunks = [];
+  // English-only models (whisper-*.en) REJECT language/task outright
+  // ('Cannot specify `task` or `language` for an English-only model'), while
+  // multilingual models need the resolved language passed explicitly (omitting
+  // it silently forces English). Pass it only where it is accepted.
+  const multilingual = Boolean(
+    asr?.model?.generation_config?.is_multilingual ?? asr?.model?.generation_config?.lang_to_id
+  );
+  if (!multilingual && effectiveLanguage && effectiveLanguage !== 'en') {
+    onLog(
+      `model is English-only but language is '${effectiveLanguage}' - pick a multilingual whisper model for non-English lyrics`
+    );
+  }
   const baseOpts = {
     return_timestamps: useWordTs ? 'word' : true,
-    // Always pass the RESOLVED language ('auto' was detected above). Omitting it makes
-    // transformers.js silently force English — never rely on that default.
-    ...(effectiveLanguage ? { language: effectiveLanguage } : {}),
+    ...(effectiveLanguage && multilingual ? { language: effectiveLanguage } : {}),
     ...(promptIds ? { prompt_ids: promptIds } : promptText ? { prompt: promptText } : {}),
     repetition_penalty: 1.2,
     no_repeat_ngram_size: 3,
