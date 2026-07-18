@@ -498,6 +498,12 @@ export async function updateLibraryCache(mainApp, files) {
       }
     }
 
+    // Notify the Electron renderer too - its LibraryPanel keeps a local copy
+    // and only reloads on this event. Without it, a song created via
+    // host-create or the creator panel is searchable in the web admin but
+    // invisible in the app's Library tab until a manual sync.
+    mainApp.sendToRenderer?.('library:scanComplete', { count: files.length });
+
     // Save to disk cache (Electron only)
     if (mainApp.settings?.getSongsFolder) {
       const path = await import('path');
