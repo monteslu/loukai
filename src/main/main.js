@@ -2461,7 +2461,25 @@ class KaiPlayerApp {
   }
 }
 
+// One Loukai at a time. Without this lock a second launch fights the first
+// for port 3069 and the Chromium profile lock and dies in confusing ways
+// (looks like the app 'won't fire up'). Instead: tell the user, focus the
+// running window, and exit cleanly.
+if (!app.requestSingleInstanceLock()) {
+  console.error('Loukai is already running - focusing the existing window and exiting.');
+  app.quit();
+  process.exit(0);
+}
+
 const kaiApp = new KaiPlayerApp();
+
+app.on('second-instance', () => {
+  const win = kaiApp.mainWindow;
+  if (win && !win.isDestroyed()) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+  }
+});
 
 // Handle uncaught exceptions and errors without showing alert dialogs
 process.on('uncaughtException', (error) => {
