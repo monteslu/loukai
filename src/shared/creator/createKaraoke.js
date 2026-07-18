@@ -120,7 +120,9 @@ export async function createKaraoke(
     if (device !== 'webgpu') {
       throw new Error(
         'WebGPU is required for stem separation (no real GPU adapter available). ' +
-          'Refusing the CPU/WASM demucs path.'
+          'Refusing the CPU/WASM demucs path. On Linux this usually means the app ' +
+          'was launched without the X11/Vulkan environment - relaunch via npm start ' +
+          'or the desktop entry.'
       );
     }
     let modelDef = [
