@@ -11,25 +11,21 @@ import { validateSongPath } from '../utils/pathValidator.js';
  * @param {Object} mainApp - Main application instance
  */
 export function registerFileHandlers(mainApp) {
-  // Open file dialog to select karaoke file (Stem MP4 or KAI)
-  ipcMain.handle('file:openKai', async () => {
+  // Open file dialog to select a karaoke file
+  ipcMain.handle('file:openSong', async () => {
     const result = await dialog.showOpenDialog(mainApp.mainWindow, {
-      filters: [
-        { name: 'Karaoke Files', extensions: ['mp4', 'm4a', 'kai'] },
-        { name: 'Stem MP4 (recommended)', extensions: ['mp4', 'm4a'] },
-        { name: 'KAI Files (legacy)', extensions: ['kai'] },
-      ],
+      filters: [{ name: 'Stem MP4', extensions: ['mp4', 'm4a'] }],
       properties: ['openFile'],
     });
 
     if (!result.canceled && result.filePaths.length > 0) {
-      return await mainApp.loadKaiFile(result.filePaths[0]);
+      return await mainApp.loadSongFile(result.filePaths[0]);
     }
     return null;
   });
 
-  // Load KAI file from path (with path traversal protection)
-  ipcMain.handle('file:loadKaiFromPath', async (event, filePath) => {
+  // Load a song file from path (with path traversal protection)
+  ipcMain.handle('file:loadSongFromPath', async (event, filePath) => {
     // Get the songs folder from settings
     const songsFolder = mainApp.settings?.getSongsFolder?.();
 
@@ -40,6 +36,6 @@ export function registerFileHandlers(mainApp) {
       return { error: validation.error };
     }
 
-    return await mainApp.loadKaiFile(validation.resolvedPath);
+    return await mainApp.loadSongFile(validation.resolvedPath);
   });
 }

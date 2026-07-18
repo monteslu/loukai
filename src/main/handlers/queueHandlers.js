@@ -25,7 +25,7 @@ export function registerQueueHandlers(mainApp) {
       log(`🎵 Queue was empty, auto-loading "${result.queueItem.title}"`);
       try {
         // Use the returned queueItem which has the generated ID
-        await mainApp.loadKaiFile(result.queueItem.path, result.queueItem.id);
+        await mainApp.loadSongFile(result.queueItem.path, result.queueItem.id);
         log('✅ Successfully auto-loaded song from queue');
       } catch (error) {
         console.error('❌ Failed to auto-load song from queue:', error);

@@ -15,7 +15,7 @@ class MockMainApp {
     this.webServer = null;
     this.scanForKaiFiles = vi.fn();
     this.scanForKaiFilesWithProgress = vi.fn();
-    this.findAllKaiFiles = vi.fn();
+    this.findAllSongFiles = vi.fn();
     this.scanFilesystemForSync = vi.fn();
     this.parseMetadataWithProgress = vi.fn();
     this.extractM4AMetadata = vi.fn();
@@ -139,7 +139,7 @@ describe('libraryService', () => {
         { title: 'Song 2', path: '/music/song2.kai' },
       ];
       mainApp.settings.getSongsFolder.mockReturnValue('/music/karaoke');
-      mainApp.findAllKaiFiles.mockResolvedValue(mockFiles);
+      mainApp.findAllSongFiles.mockResolvedValue(mockFiles);
       mainApp.scanForKaiFilesWithProgress.mockResolvedValue(mockFiles);
 
       const result = await libraryService.scanLibrary(mainApp);
@@ -154,7 +154,7 @@ describe('libraryService', () => {
     it('should call progress callback during scan', async () => {
       const mockFiles = [{ title: 'Song 1', path: '/music/song1.kai' }];
       mainApp.settings.getSongsFolder.mockReturnValue('/music/karaoke');
-      mainApp.findAllKaiFiles.mockResolvedValue(mockFiles);
+      mainApp.findAllSongFiles.mockResolvedValue(mockFiles);
       mainApp.scanForKaiFilesWithProgress.mockResolvedValue(mockFiles);
 
       const progressCallback = vi.fn();
@@ -175,7 +175,7 @@ describe('libraryService', () => {
 
     it('should handle scan errors gracefully', async () => {
       mainApp.settings.getSongsFolder.mockReturnValue('/music/karaoke');
-      mainApp.findAllKaiFiles.mockRejectedValue(new Error('Access denied'));
+      mainApp.findAllSongFiles.mockRejectedValue(new Error('Access denied'));
 
       const result = await libraryService.scanLibrary(mainApp);
 

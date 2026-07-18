@@ -2862,11 +2862,7 @@ export class KaraokeRenderer {
     ctx.save();
 
     // Get song info from various possible locations
-    const title =
-      songData.title ||
-      songData.metadata?.title ||
-      songData.name?.replace('.kai', '') ||
-      'Unknown Title';
+    const title = songData.title || songData.metadata?.title || songData.name || 'Unknown Title';
     const artist = songData.artist || songData.metadata?.artist || 'Unknown Artist';
     const requester = songData.requester;
 

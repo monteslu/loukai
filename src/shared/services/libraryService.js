@@ -157,7 +157,7 @@ export async function scanLibrary(mainApp, progressCallback) {
     }
 
     // Get total file count for progress
-    const allFiles = (await mainApp.findAllKaiFiles?.(songsFolder)) || [];
+    const allFiles = (await mainApp.findAllSongFiles?.(songsFolder)) || [];
     const totalFiles = allFiles.length;
 
     if (progressCallback) {

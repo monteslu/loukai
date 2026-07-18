@@ -9,8 +9,8 @@ export const IPC_CHANNELS = {
   APP_GET_STATE: 'app:getState',
 
   // File
-  FILE_OPEN_KAI: 'file:openKai',
-  FILE_LOAD_KAI_FROM_PATH: 'file:loadKaiFromPath',
+  FILE_OPEN_SONG: 'file:openSong',
+  FILE_LOAD_SONG_FROM_PATH: 'file:loadSongFromPath',
 
   // Audio
   AUDIO_GET_DEVICES: 'audio:getDevices',
@@ -27,8 +27,8 @@ export const IPC_CHANNELS = {
   PLAYER_SEEK: 'player:seek',
 
   // Editor
-  EDITOR_SAVE_KAI: 'editor:saveKai',
-  EDITOR_RELOAD_KAI: 'editor:reloadKai',
+  EDITOR_SAVE: 'editor:save',
+  EDITOR_RELOAD: 'editor:reload',
 
   // Settings
   SETTINGS_GET: 'settings:get',

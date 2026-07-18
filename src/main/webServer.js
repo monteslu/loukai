@@ -1122,30 +1122,7 @@ class WebServer {
         const editorService = await import('../shared/services/editorService.js');
         const result = await editorService.loadSong(validatedPath);
 
-        // For KAI files, add download URLs for audio playback
-        if (result.format === 'kai') {
-          const audioFiles = result.kaiData.audio.sources.map((source) => {
-            const filename = source.filename || source.name;
-            const fileId = Buffer.from(`${validatedPath}:${filename}`).toString('base64url');
-
-            return {
-              name: source.name,
-              filename: filename,
-              downloadUrl: `/admin/editor/kai-audio/${fileId}`,
-            };
-          });
-
-          res.json({
-            success: true,
-            data: {
-              format: 'kai',
-              metadata: result.kaiData.metadata || {},
-              lyrics: result.kaiData.lyrics || [],
-              audioFiles: audioFiles,
-              songJson: result.kaiData.originalSongJson || {},
-            },
-          });
-        } else if (isStemMp4Format(result.format)) {
+        if (isStemMp4Format(result.format)) {
           // For Stem MP4 files, add download URLs for extracted audio tracks
           const audioFiles = result.kaiData.audio.sources.map((source) => {
             const trackName = source.name;
