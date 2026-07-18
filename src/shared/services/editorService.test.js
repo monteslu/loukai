@@ -264,6 +264,62 @@ describe('editorService', () => {
       expect(Atoms.writeKaraAtomBuffer).not.toHaveBeenCalled();
     });
 
+    it('handles a file with no kara atom and no parseable metadata', async () => {
+      // Both readers fail → save still works from the update values + defaults.
+      Atoms.readKaraAtomBuffer.mockImplementation(() => {
+        throw new Error('no kara atom');
+      });
+      parseBuffer.mockRejectedValue(new Error('unparseable'));
+
+      const updates = {
+        format: 'stem-mp4',
+        metadata: { title: 'Fresh Title' },
+        lyrics: [{ start: 0, end: 1, text: 'First line' }],
+      };
+
+      const result = await editorService.saveSong('/music/test.m4a', updates);
+
+      expect(result.success).toBe(true);
+      expect(Atoms.writeKaraAtomBuffer).toHaveBeenCalledWith(
+        FILE_BYTES,
+        expect.objectContaining({
+          lines: [expect.objectContaining({ text: 'First line' })],
+        })
+      );
+      expect(Atoms.addStandardMetadataBuffer).toHaveBeenCalledWith(
+        KARA_OUT,
+        expect.objectContaining({ title: 'Fresh Title' })
+      );
+    });
+
+    it('preserves the existing iTunes musical key when the update has none', async () => {
+      parseBuffer.mockResolvedValue({
+        common: { title: 'T' },
+        native: {
+          iTunes: [{ id: '----:com.apple.iTunes:initialkey', value: Buffer.from('F#m') }],
+        },
+      });
+
+      const updates = { format: 'stem-mp4', metadata: { title: 'T2' }, lyrics: [] };
+      await editorService.saveSong('/music/test.m4a', updates);
+
+      // Key untouched in the update → no key atom rewrite (existing key stays in file).
+      expect(Atoms.addMusicalKeyBuffer).not.toHaveBeenCalled();
+      expect(writeFile).toHaveBeenCalledWith('/music/test.m4a', META_OUT);
+    });
+
+    it('falls back to the existing kara lines when no lyrics are passed', async () => {
+      const updates = { format: 'stem-mp4', metadata: { title: 'Only Meta' } };
+      await editorService.saveSong('/music/test.m4a', updates);
+
+      expect(Atoms.writeKaraAtomBuffer).toHaveBeenCalledWith(
+        FILE_BYTES,
+        expect.objectContaining({
+          lines: expect.arrayContaining([expect.objectContaining({ text: 'Line 1' })]),
+        })
+      );
+    });
+
     it('should propagate file read errors during save', async () => {
       readFile.mockRejectedValue(new Error('Failed to load'));
 
