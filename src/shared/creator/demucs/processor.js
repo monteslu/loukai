@@ -112,8 +112,10 @@ export class DemucsProcessor {
     // Cooperative cancel: checked between segments; throws to abort the run
     // without tearing down the warmed worker/sessions.
     this.shouldCancel = options.shouldCancel ?? (() => false);
-    const gpuAvailable = typeof navigator !== 'undefined' && Boolean(navigator.gpu);
-    this.dspMode = options.dsp ?? (gpuAvailable ? 'webgpu' : 'wasm');
+    // Product rule: demucs NEVER runs on the CPU/WASM DSP. No auto-degrade;
+    // the wasm/js modes stay constructible only via an explicit `dsp` option
+    // (unit tests exercise the segment math through them).
+    this.dspMode = options.dsp ?? 'webgpu';
   }
   get gentle() {
     return this._gentle;
@@ -178,13 +180,11 @@ export class DemucsProcessor {
         this.onLog('model', 'Model loaded successfully (full-GPU path)');
         return this.session;
       } catch (e) {
-        if (isChain) throw e;
-        this.onLog(
-          'gpu',
-          `full-GPU path unavailable (${String(e).slice(0, 300)}) \u2014 using WASM DSP path`
-        );
+        // No WASM fallback: a broken GPU path fails the job loudly instead of
+        // silently grinding the CPU for an hour.
+        this.onLog('gpu', `full-GPU path unavailable (${String(e).slice(0, 300)})`);
         this.gpu = null;
-        this.dspMode = 'wasm';
+        throw e;
       }
     }
     if (isChain) throw new Error('chained split model requires the WebGPU DSP path');
@@ -267,22 +267,12 @@ export class DemucsProcessor {
       try {
         return await this.gpu.separate(leftChannel, rightChannel);
       } catch (e) {
-        const wasChain = !this.modelBuffer;
         void this.gpu.session?.release?.().catch(() => {});
         this.gpu = null;
-        if (wasChain) {
-          // A chained split has no monolith buffer to fall back to; fail loudly
-          // (the caller retries with the fp32 monolith). The old message claimed
-          // 'falling back to WASM DSP' and then threw anyway.
-          this.onLog('gpu', `GPU separation failed (${String(e).slice(0, 300)})`);
-          throw e;
-        }
-        this.onLog(
-          'gpu',
-          `GPU separation failed (${String(e).slice(0, 300)}) \u2014 falling back to WASM DSP`
-        );
-        this.dspMode = 'wasm';
-        await this.loadCpuSession(this.modelBuffer);
+        // Fail loudly; no WASM fallback. For the chained split the caller
+        // retries with the fp32 monolith (still WebGPU).
+        this.onLog('gpu', `GPU separation failed (${String(e).slice(0, 300)})`);
+        throw e;
       }
     }
     const session = this.session;
