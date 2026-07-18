@@ -53,13 +53,20 @@ const __dirname = dirname(__filename);
 // the actual Dawn backend (without it WebGPU is "super slow" or absent).
 // On macOS → Metal, Windows → D3D12, Linux → Vulkan, all under the hood.
 app.commandLine.appendSwitch('enable-unsafe-webgpu');
-app.commandLine.appendSwitch('enable-features', 'Vulkan');
 // On Linux the Vulkan backend is incompatible with the Wayland ozone backend
-// (vkAcquireNextImageKHR hangs / GPU process crash), so WebGPU needs X11 ozone.
-// Gated behind LOUKAI_WEBGPU=1 because X11 mode has the dropdown popup bug noted
-// above; default Wayland users fall back to WASM until Electron fixes Wayland.
-if (process.platform === 'linux' && process.env.LOUKAI_WEBGPU === '1') {
-  app.commandLine.appendSwitch('ozone-platform', 'x11');
+// (vkAcquireNextImageKHR hangs / GPU process crash) — AND, worse, Vulkan under
+// Wayland breaks canvas captureStream(): every frame fails with 'Could not find
+// or create a backing for stream kSkia', so the WebRTC browser viewer renders a
+// solid green video. So on Linux, Vulkan is only enabled together with X11 ozone
+// (LOUKAI_WEBGPU=1); the default Wayland run gets NO Vulkan — WebGPU falls back
+// to WASM there anyway, and the viewer stream works.
+if (process.platform === 'linux') {
+  if (process.env.LOUKAI_WEBGPU === '1') {
+    app.commandLine.appendSwitch('enable-features', 'Vulkan');
+    app.commandLine.appendSwitch('ozone-platform', 'x11');
+  }
+} else {
+  app.commandLine.appendSwitch('enable-features', 'Vulkan');
 }
 
 class KaiPlayerApp {
