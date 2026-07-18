@@ -71,9 +71,20 @@ export function useAudioEngine() {
       kaiPlayer.setMasterMute(bus, muted);
     };
 
+    // Per-stem events carry the RESOLVED value; apply with report=false so the
+    // renderer does not echo the change back to main (no-echo discipline, §9.3).
+    const handleStemGain = (event, { bus, stem, gain }) => {
+      kaiPlayer.setStemGain(bus, stem, gain, false);
+    };
+    const handleStemMute = (event, { bus, stem, muted }) => {
+      kaiPlayer.setStemMute(bus, stem, muted, false);
+    };
+
     window.kaiAPI.mixer.onSetMasterGain(handleSetMasterGain);
     window.kaiAPI.mixer.onToggleMasterMute(handleToggleMasterMute);
     window.kaiAPI.mixer.onSetMasterMute(handleSetMasterMute);
+    if (window.kaiAPI.mixer.onStemGain) window.kaiAPI.mixer.onStemGain(handleStemGain);
+    if (window.kaiAPI.mixer.onStemMute) window.kaiAPI.mixer.onStemMute(handleStemMute);
 
     console.log('✅ Mixer IPC listeners registered');
 

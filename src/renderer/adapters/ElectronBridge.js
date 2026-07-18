@@ -95,6 +95,23 @@ export class ElectronBridge extends BridgeInterface {
     return { success: false, error: 'Audio engine not initialized' };
   }
 
+  setStemGain(bus, stem, gain) {
+    // Apply locally - kaiPlayer reports back to main via reportMixerState()
+    const kaiPlayer = window.app?.player?.kaiPlayer;
+    if (kaiPlayer) {
+      return kaiPlayer.setStemGain(bus, stem, gain);
+    }
+    return { success: false, error: 'Audio engine not initialized' };
+  }
+
+  setStemMute(bus, stem, muted) {
+    const kaiPlayer = window.app?.player?.kaiPlayer;
+    if (kaiPlayer) {
+      return kaiPlayer.setStemMute(bus, stem, muted);
+    }
+    return { success: false, error: 'Audio engine not initialized' };
+  }
+
   setMasterMute(bus, muted) {
     // Apply locally - kaiPlayer will report back to main process via reportMixerState()
     const kaiPlayer = window.app?.player?.kaiPlayer;

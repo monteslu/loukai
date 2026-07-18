@@ -718,23 +718,28 @@ export class KAIPlayer extends PlayerInterface {
     gainNode.gain.linearRampToValueAtTime(target, now + rampSec);
   }
 
-  /** Set a per-bus per-stem slider (0..1.5 linear, 1.0 = authored mix). */
-  setStemGain(bus, stemName, gain) {
+  /**
+   * Set a per-bus per-stem slider (0..1.5 linear, 1.0 = authored mix).
+   * report=false when applying a control-plane value from main (no-echo loops).
+   */
+  setStemGain(bus, stemName, gain, report = true) {
     if (bus !== 'PA' && bus !== 'IEM') return false;
     if (!this.mixerState.stemMix[bus]) this.mixerState.stemMix[bus] = {};
     const entry = resolveStemEntry(this.mixerState.stemMix, bus, stemName);
     this.mixerState.stemMix[bus][stemName] = { ...entry, gain: clampStemGain(gain) };
     this.applyStemNodeGain(bus, stemName);
+    if (report) this.reportMixerState();
     return true;
   }
 
   /** Mute/unmute one stem on one bus (independent of the slider value). */
-  setStemMute(bus, stemName, muted) {
+  setStemMute(bus, stemName, muted, report = true) {
     if (bus !== 'PA' && bus !== 'IEM') return false;
     if (!this.mixerState.stemMix[bus]) this.mixerState.stemMix[bus] = {};
     const entry = resolveStemEntry(this.mixerState.stemMix, bus, stemName);
     this.mixerState.stemMix[bus][stemName] = { ...entry, muted: Boolean(muted) };
     this.applyStemNodeGain(bus, stemName);
+    if (report) this.reportMixerState();
     return true;
   }
 
