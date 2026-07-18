@@ -65,8 +65,31 @@ app.commandLine.appendSwitch('enable-unsafe-webgpu');
 // PortalSelect. LOUKAI_WAYLAND=1 is the escape hatch: native Wayland ozone with NO
 // Vulkan — the viewer works, creation falls back to WASM (SwiftShader is rejected
 // by detectWebGpu).
+// X11 must actually be REACHABLE for the x11 ozone default, or the app comes up
+// windowless ('Authorization required, but no authorization protocol specified' /
+// xcb_connection_has_error). Two real-world gaps on Wayland desktops:
+//  - DISPLAY may be unset in the launching shell -> probe the XWayland socket.
+//  - GNOME/mutter does not export XAUTHORITY to app environments; its XWayland
+//    auth cookie lives at /run/user/<uid>/.mutter-Xwaylandauth.* -> discover it.
+// If X is not usable, fall back to Wayland ozone without Vulkan (viewer works,
+// creation uses WASM) instead of launching a broken window.
+function x11Usable() {
+  // VALIDATE only — do not mutate env here: Chromium's zygotes fork before app JS
+  // runs, so children would inherit the unfixed env anyway (dead window). The dev
+  // launcher (scripts/start-electron.mjs) repairs the env BEFORE Electron spawns;
+  // desktop/session launches carry a correct env already. If this env cannot do
+  // X11, take the Wayland fallback (working window + viewer, WASM creation).
+  try {
+    if (!process.env.DISPLAY) return false;
+    if (process.env.XAUTHORITY && !fs.existsSync(process.env.XAUTHORITY)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 if (process.platform === 'linux') {
-  if (process.env.LOUKAI_WAYLAND !== '1') {
+  if (process.env.LOUKAI_WAYLAND !== '1' && x11Usable()) {
     app.commandLine.appendSwitch('enable-features', 'Vulkan');
     app.commandLine.appendSwitch('ozone-platform', 'x11');
   }
