@@ -13,17 +13,24 @@ import { LLM_DEFAULTS } from '../../shared/defaults.js';
 /**
  * Get LLM provider instance based on settings
  */
+// Hard cap on any single LLM request. Without this the SDKs wait up to 10 MINUTES
+// (with retries on top), and a wedged endpoint — classically LM Studio running with no
+// model loaded, which accepts the request and never answers — stalled the whole
+// creation/save job with no visible error. On timeout the callers' try/catch keeps the
+// uncorrected lyrics and the job proceeds.
+const LLM_TIMEOUT_MS = 60_000;
+
 function getLLMProvider(settings) {
   const { provider, apiKey, baseUrl } = settings;
 
   switch (provider) {
     case 'anthropic':
       if (!apiKey) throw new Error('Anthropic API key required');
-      return new Anthropic({ apiKey });
+      return new Anthropic({ apiKey, timeout: LLM_TIMEOUT_MS, maxRetries: 1 });
 
     case 'openai':
       if (!apiKey) throw new Error('OpenAI API key required');
-      return new OpenAI({ apiKey });
+      return new OpenAI({ apiKey, timeout: LLM_TIMEOUT_MS, maxRetries: 1 });
 
     case 'gemini':
       if (!apiKey) throw new Error('Gemini API key required');
@@ -34,6 +41,8 @@ function getLLMProvider(settings) {
       return new OpenAI({
         apiKey: 'lm-studio', // dummy key
         baseURL: baseUrl || 'http://localhost:1234/v1',
+        timeout: LLM_TIMEOUT_MS,
+        maxRetries: 1,
       });
 
     default:
@@ -181,7 +190,11 @@ IMPORTANT ABOUT MISSING LINES:
 - DO NOT invent lyrics - only use what's in the reference
 - Return ONLY valid JSON, no markdown blocks, no additional text`;
 
-  // Call appropriate API
+  // Call appropriate API. Log BEFORE the request so a hang is visible in the job
+  // console as "calling … " with no reply (previously the job just went silent).
+  log(
+    `🤖 Calling ${providerType} (${model || 'default model'}), timeout ${LLM_TIMEOUT_MS / 1000}s …`
+  );
   if (providerType === 'anthropic') {
     const response = await provider.messages.create({
       model: model || 'claude-3-5-sonnet-20241022',
@@ -203,9 +216,10 @@ IMPORTANT ABOUT MISSING LINES:
     });
     return response.choices[0].message.content;
   } else if (providerType === 'gemini') {
-    const genModel = provider.getGenerativeModel({
-      model: model || 'gemini-2.0-flash-exp',
-    });
+    const genModel = provider.getGenerativeModel(
+      { model: model || 'gemini-2.0-flash-exp' },
+      { timeout: LLM_TIMEOUT_MS } // per-request cap (the Gemini client has no constructor timeout)
+    );
     const result = await genModel.generateContent({
       contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
       generationConfig: {

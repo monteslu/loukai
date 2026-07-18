@@ -58,18 +58,69 @@ export async function saveSong(path, updates) {
 
 /**
  * Save M4A song edits
+ *
+ * PERFORMANCE (issue #67): this used to call M4ALoader.load(), which reads the whole
+ * file AND extracts every audio track into memory (hundreds of MB of Buffer churn for
+ * a full-length .stem.mp4), then did THREE separate whole-file read-modify-write passes
+ * (kara atom, standard metadata, musical key). On big files that froze the entire app
+ * (main process event loop + GC pressure) for seconds to minutes AFTER the save toast.
+ * Now: ONE file read, all atom edits chained on the in-memory buffer, ONE file write.
+ * Everything the merge needs (lyrics/timing/singers/meta/tags) lives in the kara atom;
+ * standard metadata comes from music-metadata without touching the audio tracks.
+ *
  * @param {string} path - Path to M4A file
  * @param {Object} updates - Updates to apply
  * @returns {Promise<Object>} Save result
  */
 async function saveM4ASong(path, updates) {
   const { metadata, lyrics } = updates;
+  const fs = await import('fs/promises');
+  const pathMod = await import('path');
 
-  // Load existing M4A data
-  const m4aData = await M4ALoader.load(path);
+  // ONE full-file read; every atom operation below works on this buffer.
+  const fileBuffer = new Uint8Array(await fs.readFile(path));
 
-  // Merge metadata updates into the song data
-  const updatedMetadata = { ...m4aData.metadata };
+  // Existing karaoke data (lyrics, timing, singers, tags, corrections meta).
+  let existingKara = null;
+  try {
+    existingKara = Atoms.readKaraAtomBuffer(fileBuffer);
+  } catch {
+    /* no kara atom yet */
+  }
+  if (!existingKara) existingKara = { lines: [], singers: [] };
+
+  // Existing standard metadata (no audio decode - music-metadata parses atoms only).
+  const mm = await import('music-metadata');
+  let mmData = { common: {}, native: {} };
+  try {
+    mmData = await mm.parseBuffer(fileBuffer, { mimeType: 'audio/mp4' });
+  } catch {
+    /* fall back to update values below */
+  }
+  // Musical key lives in the iTunes initialkey freeform atom (same as M4ALoader).
+  let existingKey = 'C';
+  const keyAtom = mmData.native?.iTunes?.find(
+    (tag) => tag.id === '----:com.apple.iTunes:initialkey'
+  );
+  if (keyAtom && keyAtom.value) {
+    existingKey =
+      typeof keyAtom.value === 'string'
+        ? keyAtom.value.trim()
+        : Buffer.isBuffer(keyAtom.value)
+          ? keyAtom.value.toString('utf-8').trim()
+          : String(keyAtom.value).trim();
+  }
+
+  // Merge metadata updates over the existing values (same field semantics as before).
+  const updatedMetadata = {
+    title: mmData.common?.title || pathMod.basename(path, pathMod.extname(path)),
+    artist: mmData.common?.artist || '',
+    album: mmData.common?.album || '',
+    year: mmData.common?.year || null,
+    genre: mmData.common?.genre ? mmData.common.genre[0] : '',
+    key: existingKey,
+    tempo: existingKara.meter?.bpm || 120,
+  };
   if (metadata.title !== undefined) updatedMetadata.title = metadata.title;
   if (metadata.artist !== undefined) updatedMetadata.artist = metadata.artist;
   if (metadata.album !== undefined) updatedMetadata.album = metadata.album;
@@ -77,24 +128,26 @@ async function saveM4ASong(path, updates) {
   if (metadata.genre !== undefined) updatedMetadata.genre = metadata.genre;
   if (metadata.key !== undefined) updatedMetadata.key = metadata.key;
 
-  // NOTE: Standard metadata (title, artist, album, year, genre) is now written
-  // using proper MP4 atoms via addStandardMetadata() below, not FFmpeg
-
-  // Use updated lyrics array
-  let updatedLyrics = m4aData.lyrics;
+  // Use updated lyrics array; fall back to the file's existing lines.
+  let updatedLyrics = existingKara.lines || [];
   if (lyrics !== undefined && Array.isArray(lyrics)) {
     updatedLyrics = lyrics;
   }
 
-  // Prepare data to save
+  // Prepare data to save (shapes match what the kara build below consumes).
   const dataToSave = {
     metadata: updatedMetadata,
     lyrics: updatedLyrics,
-    audio: m4aData.audio, // Preserve audio configuration
-    features: m4aData.features, // Preserve features
-    singers: m4aData.singers, // Preserve singers
-    meta: m4aData.meta, // Preserve meta
-    tags: m4aData.tags || [], // Preserve existing tags
+    audio: {
+      timing: {
+        offsetSec: existingKara.timing?.offset_sec || 0,
+        encoderDelaySamples: existingKara.timing?.encoder_delay_samples || 0,
+      },
+    },
+    features: { tempo: existingKara.meter || null },
+    singers: existingKara.singers || [],
+    meta: existingKara.meta?.corrections ? { corrections: existingKara.meta.corrections } : {},
+    tags: existingKara.tags || [],
   };
 
   // Add 'edited' tag if not already present
@@ -175,16 +228,17 @@ async function saveM4ASong(path, updates) {
     }),
   };
 
-  // Save using stem-mp4
+  // Save using stem-mp4: chain every atom edit on the in-memory buffer, then write
+  // the file ONCE (the path-based Atoms.* each re-read + re-write the whole file).
   console.log('💾 Saving M4A kara atom:', path);
   console.log('📝 kara data prepared:', {
     lyricsCount: karaData.lines?.length || 0,
     tagsCount: karaData.tags?.length || 0,
   });
 
-  await Atoms.writeKaraAtom(path, karaData);
+  let outBuffer = Atoms.writeKaraAtomBuffer(fileBuffer, karaData);
 
-  // Write standard MP4 metadata atoms (title, artist, album, year, genre, BPM)
+  // Standard MP4 metadata atoms (title, artist, album, year, genre, BPM)
   const standardMetadata = {
     title: updatedMetadata.title,
     artist: updatedMetadata.artist,
@@ -193,20 +247,17 @@ async function saveM4ASong(path, updates) {
     genre: updatedMetadata.genre,
     tempo: updatedMetadata.tempo,
   };
-  await Atoms.addStandardMetadata(path, standardMetadata);
+  outBuffer = Atoms.addStandardMetadataBuffer(outBuffer, standardMetadata);
 
-  // Write musical key if changed (separate atom for DJ software)
+  // Musical key if changed (separate atom for DJ software)
   if (metadata.key !== undefined && updatedMetadata.key) {
     console.log(`🎹 Writing musical key: ${updatedMetadata.key}`);
-    await Atoms.addMusicalKey(path, updatedMetadata.key);
+    outBuffer = Atoms.addMusicalKeyBuffer(outBuffer, updatedMetadata.key);
   }
 
-  // Restore any preserved atoms that we didn't explicitly handle
-  if (m4aData._preservedAtoms && Object.keys(m4aData._preservedAtoms).length > 0) {
-    console.log(`📦 Restoring ${Object.keys(m4aData._preservedAtoms).length} preserved atoms`);
-    // Note: These atoms are already in the file and we didn't delete them,
-    // so they should still be there. This is just for logging.
-  }
+  // Atoms not explicitly rewritten above are inherently preserved: the buffer
+  // transforms rebuild only their target atoms and copy everything else through.
+  await fs.writeFile(path, outBuffer);
 
   console.log('✅ M4A file saved successfully');
 
