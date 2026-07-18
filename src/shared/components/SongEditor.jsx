@@ -20,6 +20,15 @@ import { LyricRejection } from './LyricRejection.jsx';
 import { LyricSuggestion } from './LyricSuggestion.jsx';
 import { splitLine, canSplitLine } from '../utils/lyricsUtils.js';
 
+// m:ss.t readout for the playback transport (tenths: precise enough to line up
+// lyric timing by eye, stable enough not to flicker at rAF update rate).
+function formatEditorTime(sec) {
+  const s = Math.max(0, Number(sec) || 0);
+  const m = Math.floor(s / 60);
+  const rest = (s - m * 60).toFixed(1).padStart(4, '0');
+  return `${m}:${rest}`;
+}
+
 export function SongEditor({ bridge }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -1217,6 +1226,18 @@ export function SongEditor({ bridge }) {
                       </span>
                       {isPlaying ? 'Pause' : 'Play'}
                     </button>
+                    {/* Elapsed time (issue #67 request): tenths so lyric timing can be
+                        checked against the start/end numbers while playing. */}
+                    <span
+                      className="font-mono text-xs text-gray-900 dark:text-white tabular-nums px-1.5 whitespace-nowrap"
+                      title={`${currentPosition.toFixed(2)}s`}
+                    >
+                      {formatEditorTime(currentPosition)}
+                      <span className="text-gray-500 dark:text-gray-400">
+                        {' / '}
+                        {formatEditorTime(songDuration)}
+                      </span>
+                    </span>
                     <div className="flex gap-1.5 flex-wrap flex-1 items-center">
                       {audioElements.map((el, index) => (
                         <div

@@ -1329,8 +1329,11 @@ class WebServer {
         }
         const validatedPath = validation.resolvedPath;
 
-        // For KAI files, save metadata and lyrics
-        if (format === 'kai') {
+        // Stem MP4 saves (the editor's only loadable format). This used to gate on
+        // format === 'kai' — a legacy value the editor can no longer produce — so
+        // every web-admin lyric save for a .stem.mp4 fell through to the CDG/ID3
+        // branch below and failed with "Invalid file format".
+        if (isStemMp4Format(format)) {
           const editorService = await import('../shared/services/editorService.js');
           await editorService.saveSong(validatedPath, { format, metadata, lyrics });
 
