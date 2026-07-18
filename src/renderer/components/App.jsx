@@ -17,6 +17,7 @@ import { StatusBar } from './StatusBar.jsx';
 import { TabNavigation } from './TabNavigation.jsx';
 import { ServerTab } from './ServerTab.jsx';
 import { VisualizationSettings } from '../../shared/components/VisualizationSettings.jsx';
+import { PAQuickMix } from '../../shared/components/PAQuickMix.jsx';
 import { toggleCanvasFullscreen } from '../hooks/useKeyboardShortcuts.js';
 import WebGpuCreatorPanel from '../../shared/components/WebGpuCreatorPanel.jsx';
 import { useHostCreateListener } from '../hooks/useHostCreateListener.js';
@@ -222,6 +223,8 @@ export function App({ bridge }) {
           id="app-sidebar"
           className="w-80 bg-white dark:bg-gray-800 p-4 overflow-y-auto border-r border-gray-200 dark:border-gray-700 transition-all duration-300"
         >
+          {/* Mid-song PA mix first — the more urgent control while playing (§10.1) */}
+          <PAQuickMix bridge={bridge} />
           <VisualizationSettings bridge={bridge} />
         </div>
 

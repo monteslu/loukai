@@ -22,43 +22,18 @@ export function registerMixerHandlers(mainApp) {
     return mixerService.toggleMasterMute(mainApp, bus);
   });
 
-  // Toggle stem mute
-  ipcMain.handle('mixer:toggleMute', (event, stemId, bus) => {
-    if (mainApp.audioEngine) {
-      return mainApp.audioEngine.toggleMute(stemId, bus);
-    }
-    return false;
+  // Per-bus per-stem mixer (stem×bus mixer, #49). Replaces the dormant ghost-mixer
+  // channels (toggleMute/toggleSolo/setGain/applyPreset/recallScene) that routed to
+  // the state-only main-process audioEngine stub and never reached audio.
+  ipcMain.handle(MIXER_CHANNELS.SET_STEM_GAIN, (event, bus, stem, gain) => {
+    return mixerService.setStemGain(mainApp, bus, stem, gain);
   });
 
-  // Toggle stem solo
-  ipcMain.handle('mixer:toggleSolo', (event, stemId) => {
-    if (mainApp.audioEngine) {
-      return mainApp.audioEngine.toggleSolo(stemId);
-    }
-    return false;
+  ipcMain.handle(MIXER_CHANNELS.SET_STEM_MUTE, (event, bus, stem, muted) => {
+    return mixerService.setStemMute(mainApp, bus, stem, muted);
   });
 
-  // Set stem gain
-  ipcMain.handle('mixer:setGain', (event, stemId, gainDb) => {
-    if (mainApp.audioEngine) {
-      return mainApp.audioEngine.setGain(stemId, gainDb);
-    }
-    return false;
-  });
-
-  // Apply mixer preset
-  ipcMain.handle('mixer:applyPreset', (event, presetId) => {
-    if (mainApp.audioEngine) {
-      return mainApp.audioEngine.applyPreset(presetId);
-    }
-    return false;
-  });
-
-  // Recall mixer scene
-  ipcMain.handle('mixer:recallScene', (event, sceneId) => {
-    if (mainApp.audioEngine) {
-      return mainApp.audioEngine.recallScene(sceneId);
-    }
-    return false;
+  ipcMain.handle(MIXER_CHANNELS.TOGGLE_STEM_MUTE, (event, bus, stem) => {
+    return mixerService.toggleStemMute(mainApp, bus, stem);
   });
 }

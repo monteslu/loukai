@@ -51,10 +51,16 @@ export const AUDIO_CHANNELS = {
 export const MIXER_CHANNELS = {
   SET_MASTER_GAIN: 'mixer:setMasterGain',
   TOGGLE_MASTER_MUTE: 'mixer:toggleMasterMute',
+  // Per-bus per-stem mixer (stem×bus mixer, #49)
+  SET_STEM_GAIN: 'mixer:setStemGain',
+  SET_STEM_MUTE: 'mixer:setStemMute',
+  TOGGLE_STEM_MUTE: 'mixer:toggleStemMute',
 
   // Events (main → renderer)
   STATE_CHANGE: 'mixer:state',
   SET_MASTER_MUTE: 'mixer:setMasterMute',
+  STEM_GAIN: 'mixer:stemGain',
+  STEM_MUTE: 'mixer:stemMute',
 };
 
 // ============================================================================

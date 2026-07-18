@@ -3,10 +3,19 @@
  * Single source of truth - import this everywhere instead of defining defaults inline
  */
 
+import { seedDefaultStemMix } from './utils/stemGain.js';
+
 export const MIXER_DEFAULTS = {
   PA: { gain: 0, muted: false, mono: false },
   IEM: { gain: 0, muted: true, mono: true },
   mic: { gain: 0, muted: true },
+  // Per-bus per-stem user mix (stem×bus mixer, issue #49): linear gain multiplier on
+  // the authored trim (1.0 = authored mix) + independent mute, per D1 defaults:
+  // PA plays the backing mix (vocals muted), IEM is the guide-vocal bus (vocals on,
+  // rest muted; the IEM MASTER above stays muted as the no-second-device guard).
+  stemMix: seedDefaultStemMix(),
+  // Legacy flat per-stem shape used by the dormant main-process mixer stub; superseded
+  // by stemMix (removed along with the stub in the control-plane step).
   stems: {
     vocals: { gain: 0, muted: false },
     instrumental: { gain: 0, muted: false },

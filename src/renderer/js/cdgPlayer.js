@@ -579,13 +579,15 @@ export class CDGPlayer extends PlayerInterface {
    * are inherited from PlayerInterface base class
    */
 
-  async setAudioContext(audioContext, gainNode, analyserNode) {
+  async setAudioContext(audioContext, gainNode, analyserNode, micOutputNode = null) {
     this.audioContext = audioContext;
     this.gainNode = gainNode;
     this.analyserNode = analyserNode;
 
-    // Initialize microphone engine with PA context
-    this.micEngine = new MicrophoneEngine(audioContext, gainNode, {
+    // Initialize microphone engine with PA context. The mic outputs to
+    // micOutputNode (PA.masterGain) — NOT the CDG music gain node — so the new
+    // "music" fader is music-only and can never duck the singer's mic (#49 §8).
+    this.micEngine = new MicrophoneEngine(audioContext, micOutputNode || gainNode, {
       getCurrentPosition: () => this.getCurrentPosition(),
     });
 

@@ -21,6 +21,8 @@ export default defineConfig({
         'src/shared/services/**/*.js',
         'src/shared/creator/**/*.js',
         'src/shared/formatUtils.js',
+        'src/shared/utils/stemGain.js',
+        'src/shared/utils/stemClassify.js',
         'src/main/creator/creatorJob.js',
         'src/main/creator/hostCreateRelay.js',
         // NOTE: audioInfo.js is intentionally NOT measured — its tests are gated on

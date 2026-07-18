@@ -27,7 +27,10 @@ const api = {
   mixer: {
     setMasterGain: (bus, gainDb) => ipcRenderer.invoke('mixer:setMasterGain', bus, gainDb),
     toggleMasterMute: (bus) => ipcRenderer.invoke('mixer:toggleMasterMute', bus),
-    toggleMute: (stemId, bus) => ipcRenderer.invoke('mixer:toggleMute', stemId, bus),
+    // Per-bus per-stem mixer (stem×bus mixer, #49)
+    setStemGain: (bus, stem, gain) => ipcRenderer.invoke('mixer:setStemGain', bus, stem, gain),
+    setStemMute: (bus, stem, muted) => ipcRenderer.invoke('mixer:setStemMute', bus, stem, muted),
+    toggleStemMute: (bus, stem) => ipcRenderer.invoke('mixer:toggleStemMute', bus, stem),
 
     onStateChange: (callback) => ipcRenderer.on('mixer:state', callback),
     removeStateListener: (callback) => ipcRenderer.removeListener('mixer:state', callback),
@@ -35,6 +38,8 @@ const api = {
     // Listen for commands from main process (for web admin)
     onSetMasterGain: (callback) => ipcRenderer.on('mixer:setMasterGain', callback),
     onToggleMasterMute: (callback) => ipcRenderer.on('mixer:toggleMasterMute', callback),
+    onStemGain: (callback) => ipcRenderer.on('mixer:stemGain', callback),
+    onStemMute: (callback) => ipcRenderer.on('mixer:stemMute', callback),
     onSetMasterMute: (callback) => ipcRenderer.on('mixer:setMasterMute', callback),
   },
 

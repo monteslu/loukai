@@ -123,6 +123,20 @@ export class WebBridge extends BridgeInterface {
     });
   }
 
+  async setStemGain(bus, stem, gain) {
+    return await this._fetch('/mixer/stem', {
+      method: 'POST',
+      body: JSON.stringify({ bus, stem, gain }),
+    });
+  }
+
+  async setStemMute(bus, stem, muted) {
+    return await this._fetch('/mixer/stem', {
+      method: 'POST',
+      body: JSON.stringify({ bus, stem, muted }),
+    });
+  }
+
   async setMasterMute(bus, muted) {
     return await this._fetch('/mixer/master-mute', {
       method: 'POST',

@@ -1529,6 +1529,25 @@ class WebServer {
     });
 
     // ===== NEW: Master Mixer Control Endpoints =====
+    // Per-bus per-stem mixer (stem×bus mixer, #49): {bus, stem, gain?} or
+    // {bus, stem, muted?} — gain and mute are independent controls.
+    this.app.post('/admin/mixer/stem', (req, res) => {
+      try {
+        const { bus, stem, gain, muted } = req.body;
+        let result;
+        if (typeof gain === 'number') {
+          result = mixerService.setStemGain(this.mainApp, bus, stem, gain);
+        } else if (muted !== undefined) {
+          result = mixerService.setStemMute(this.mainApp, bus, stem, Boolean(muted));
+        } else {
+          result = { success: false, error: 'gain (number) or muted (boolean) required' };
+        }
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
     this.app.post('/admin/mixer/master-gain', (req, res) => {
       try {
         const { bus, gainDb } = req.body;

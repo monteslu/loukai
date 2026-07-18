@@ -14,6 +14,7 @@ import React from 'react';
 import { PortalSelect } from './PortalSelect.jsx';
 
 export function AudioDeviceSettings({
+  bus, // 'PA' | 'IEM' | 'mic' renders just that bus's slice (three-row Audio tab, #49); unset = legacy full block
   devices = { pa: [], iem: [], input: [] },
   selected = { pa: '', iem: '', input: '' },
   settings = { iemMonoVocals: true, micToSpeakers: true, enableMic: true },
@@ -45,6 +46,88 @@ export function AudioDeviceSettings({
       label: dev.label || dev.deviceId,
     })),
   ];
+
+  // Per-bus slices for the three-row Audio tab (#49 §3): each bus row hosts its
+  // own device picker (+ the IEM mono checkbox / mic options in their rows).
+  if (bus === 'PA') {
+    return (
+      <div className="w-full sm:w-64">
+        <label className="block mb-1 text-gray-600 dark:text-gray-400 text-sm">PA Output:</label>
+        <PortalSelect
+          id="paDeviceSelect"
+          value={selected.pa || ''}
+          onChange={(e) => onDeviceChange && onDeviceChange('pa', e.target.value)}
+          options={paOptions}
+          placeholder="Default"
+        />
+      </div>
+    );
+  }
+  if (bus === 'IEM') {
+    return (
+      <div className="w-full sm:w-64 flex flex-col gap-2">
+        <div>
+          <label className="block mb-1 text-gray-600 dark:text-gray-400 text-sm">IEM Output:</label>
+          <PortalSelect
+            id="iemDeviceSelect"
+            value={selected.iem || ''}
+            onChange={(e) => onDeviceChange && onDeviceChange('iem', e.target.value)}
+            options={iemOptions}
+            placeholder="Default"
+          />
+        </div>
+        <label
+          className="flex items-center cursor-pointer select-none text-gray-900 dark:text-gray-100 text-sm"
+          title="IEM is for in-ear monitoring; separate devices drift over long songs"
+        >
+          <input
+            type="checkbox"
+            id="iemMonoVocals"
+            className="w-4 h-4 mr-2 cursor-pointer"
+            checked={settings.iemMonoVocals ?? true}
+            onChange={(e) => onSettingChange && onSettingChange('iemMonoVocals', e.target.checked)}
+          />
+          Vocals in Mono (single earpiece)
+        </label>
+      </div>
+    );
+  }
+  if (bus === 'mic') {
+    return (
+      <div className="w-full sm:w-64 flex flex-col gap-2">
+        <div>
+          <label className="block mb-1 text-gray-600 dark:text-gray-400 text-sm">Mic Input:</label>
+          <PortalSelect
+            id="inputDeviceSelect"
+            value={selected.input || ''}
+            onChange={(e) => onDeviceChange && onDeviceChange('input', e.target.value)}
+            options={inputOptions}
+            placeholder="Default"
+          />
+        </div>
+        <label className="flex items-center cursor-pointer text-gray-900 dark:text-gray-100 select-none text-sm">
+          <input
+            type="checkbox"
+            id="micToSpeakers"
+            className="w-4 h-4 mr-2 cursor-pointer"
+            checked={settings.micToSpeakers ?? true}
+            onChange={(e) => onSettingChange && onSettingChange('micToSpeakers', e.target.checked)}
+          />
+          <span>Mic to Speakers</span>
+        </label>
+        <label className="flex items-center cursor-pointer text-gray-900 dark:text-gray-100 select-none text-sm">
+          <input
+            type="checkbox"
+            id="enableMic"
+            className="w-4 h-4 mr-2 cursor-pointer"
+            checked={settings.enableMic ?? true}
+            onChange={(e) => onSettingChange && onSettingChange('enableMic', e.target.checked)}
+          />
+          <span>Enable Mic</span>
+        </label>
+      </div>
+    );
+  }
 
   return (
     <>

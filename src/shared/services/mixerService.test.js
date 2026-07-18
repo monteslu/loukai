@@ -397,3 +397,70 @@ describe('mixerService', () => {
     });
   });
 });
+
+describe('stem×bus mixer (#49)', () => {
+  let mainApp;
+
+  beforeEach(() => {
+    mainApp = new MockMainApp();
+    // The real updateMixerState writes state; these tests assert on the written
+    // shape and toggle off it, so make the mock actually write.
+    mainApp.appState.updateMixerState.mockImplementation((mixer) => {
+      mainApp.appState.state.mixer = mixer;
+    });
+  });
+
+  describe('setStemGain', () => {
+    it('validates bus, stem, and gain', () => {
+      expect(mixerService.setStemGain(mainApp, 'booth', 'drums', 1).success).toBe(false);
+      expect(mixerService.setStemGain(mainApp, 'PA', '', 1).success).toBe(false);
+      expect(mixerService.setStemGain(mainApp, 'PA', 'drums', 'loud').success).toBe(false);
+      expect(mainApp.sendToRenderer).not.toHaveBeenCalled();
+    });
+
+    it('clamps, writes state, and emits the resolved value', () => {
+      const result = mixerService.setStemGain(mainApp, 'PA', 'drums', 9);
+      expect(result).toMatchObject({ success: true, bus: 'PA', stem: 'drums', gain: 1.5 });
+      expect(mainApp.appState.state.mixer.stemMix.PA.drums.gain).toBe(1.5);
+      expect(mainApp.sendToRenderer).toHaveBeenCalledWith('mixer:stemGain', {
+        bus: 'PA',
+        stem: 'drums',
+        gain: 1.5,
+      });
+    });
+
+    it('preserves the mute flag when changing gain', () => {
+      mixerService.setStemMute(mainApp, 'PA', 'vocals', true);
+      mixerService.setStemGain(mainApp, 'PA', 'vocals', 0.7);
+      expect(mainApp.appState.state.mixer.stemMix.PA.vocals).toEqual({ gain: 0.7, muted: true });
+    });
+  });
+
+  describe('setStemMute / toggleStemMute', () => {
+    it('sets and emits the explicit value', () => {
+      const result = mixerService.setStemMute(mainApp, 'IEM', 'drums', false);
+      expect(result).toMatchObject({ success: true, muted: false });
+      expect(mainApp.sendToRenderer).toHaveBeenCalledWith('mixer:stemMute', {
+        bus: 'IEM',
+        stem: 'drums',
+        muted: false,
+      });
+    });
+
+    it('toggle resolves from state and emits the RESOLVED value (never a toggle)', () => {
+      // unknown stem on PA resolves from the runtime default (unmuted for non-vocals)
+      const first = mixerService.toggleStemMute(mainApp, 'PA', 'kazoo');
+      expect(first).toMatchObject({ success: true, muted: true });
+      const second = mixerService.toggleStemMute(mainApp, 'PA', 'kazoo');
+      expect(second).toMatchObject({ success: true, muted: false });
+      // vocal stems' runtime default is muted-on-PA → first toggle unmutes
+      const vox = mixerService.toggleStemMute(mainApp, 'PA', 'vocals');
+      expect(vox).toMatchObject({ success: true, muted: false });
+    });
+
+    it('validates bus and stem', () => {
+      expect(mixerService.setStemMute(mainApp, 'mic', 'drums', true).success).toBe(false);
+      expect(mixerService.toggleStemMute(mainApp, 'PA', '').success).toBe(false);
+    });
+  });
+});
