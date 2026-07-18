@@ -159,7 +159,25 @@ export async function createKaraoke(
       // Chain requires the full-GPU path; on wasm (or if the pieces aren't
       // reachable) fall back to the old fp32 monolith.
       let chain = null;
+      // The chained split is MIXED PRECISION (fp16): it requires the WebGPU device
+      // to support shader-f16, or ORT fails at the first Cast node ('Program Cast
+      // requires f16 but the device does not support it'). Real GPUs without f16
+      // (some iGPUs/older drivers) and software adapters must use the fp32 monolith.
+      let deviceHasF16 = false;
       if (device === 'webgpu') {
+        try {
+          const adapter = await navigator.gpu?.requestAdapter({
+            powerPreference: 'high-performance',
+          });
+          deviceHasF16 = Boolean(adapter?.features?.has('shader-f16'));
+        } catch {
+          deviceHasF16 = false;
+        }
+        if (!deviceHasF16) {
+          onLog('GPU has no shader-f16 — using the fp32 monolith instead of the fp16 chain');
+        }
+      }
+      if (device === 'webgpu' && deviceHasF16) {
         try {
           const manifest = await fetch('/webgpu-models/htdemucs_split_manifest.json').then((r) => {
             if (!r.ok) throw new Error(`manifest fetch ${r.status}`);
@@ -264,7 +282,33 @@ export async function createKaraoke(
       onLog(
         `separating — ${chain ? `htdemucs chain (${chain.pieces.length} pieces${gentle ? ', gentle' : ''})` : 'htdemucs (single)'} on EP: ${device} …`
       );
-      result = await proc.separate(audio.left, audio.right);
+      try {
+        result = await proc.separate(audio.left, audio.right);
+      } catch (e) {
+        if (!chain) throw e;
+        // Chain died at RUNTIME (driver/f16 quirks the probe missed). Recover with
+        // the fp32 monolith rather than failing the whole job.
+        onLog(
+          `chained model failed at runtime (${String(e.message).slice(0, 160)}) — retrying with the fp32 monolith`
+        );
+        const monoBuf = await fetch('/webgpu-models/htdemucs.onnx').then((res) => {
+          if (!res.ok) throw new Error(`model fetch ${res.status}`);
+          return res.arrayBuffer();
+        });
+        const proc2 = new DemucsProcessor({
+          ort,
+          sessionOptions: { executionProviders: device === 'webgpu' ? ['webgpu'] : ['wasm'] },
+          gentle,
+          shouldCancel: emit.shouldCancel,
+          onProgress: ({ progress }) =>
+            onStemProgress(STEMS.reduce((a, s) => ({ ...a, [s]: progress || 0 }), {})),
+          onLog: (phase, m) => onLog(`[${phase}] ${m}`),
+        });
+        emit.onSeparator?.(proc2);
+        await proc2.loadModel(monoBuf);
+        modeLabel = 'htdemucs (fp32 fallback)';
+        result = await proc2.separate(audio.left, audio.right);
+      }
     }
     const sec = (performance.now() - t0) / 1000;
     const realtime = audio.duration / sec;

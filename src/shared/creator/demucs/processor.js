@@ -267,14 +267,21 @@ export class DemucsProcessor {
       try {
         return await this.gpu.separate(leftChannel, rightChannel);
       } catch (e) {
+        const wasChain = !this.modelBuffer;
+        void this.gpu.session?.release?.().catch(() => {});
+        this.gpu = null;
+        if (wasChain) {
+          // A chained split has no monolith buffer to fall back to; fail loudly
+          // (the caller retries with the fp32 monolith). The old message claimed
+          // 'falling back to WASM DSP' and then threw anyway.
+          this.onLog('gpu', `GPU separation failed (${String(e).slice(0, 300)})`);
+          throw e;
+        }
         this.onLog(
           'gpu',
           `GPU separation failed (${String(e).slice(0, 300)}) \u2014 falling back to WASM DSP`
         );
-        void this.gpu.session?.release?.().catch(() => {});
-        this.gpu = null;
         this.dspMode = 'wasm';
-        if (!this.modelBuffer) throw e;
         await this.loadCpuSession(this.modelBuffer);
       }
     }
