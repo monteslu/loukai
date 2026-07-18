@@ -53,13 +53,25 @@ const __dirname = dirname(__filename);
 // the actual Dawn backend (without it WebGPU is "super slow" or absent).
 // On macOS → Metal, Windows → D3D12, Linux → Vulkan, all under the hood.
 app.commandLine.appendSwitch('enable-unsafe-webgpu');
-app.commandLine.appendSwitch('enable-features', 'Vulkan');
-// On Linux the Vulkan backend is incompatible with the Wayland ozone backend
-// (vkAcquireNextImageKHR hangs / GPU process crash), so WebGPU needs X11 ozone.
-// Gated behind LOUKAI_WEBGPU=1 because X11 mode has the dropdown popup bug noted
-// above; default Wayland users fall back to WASM until Electron fixes Wayland.
-if (process.platform === 'linux' && process.env.LOUKAI_WEBGPU === '1') {
-  app.commandLine.appendSwitch('ozone-platform', 'x11');
+// Linux GPU mode. X11 ozone + Vulkan is the ONLY combination where BOTH of these
+// work at the same time (verified live on Wayland-session hardware):
+//   1. Real-GPU WebGPU for the creator (Demucs/Whisper; needs the Vulkan feature —
+//      without it the adapter is SwiftShader CPU emulation, whose missing shader-f16
+//      also crashes the fp16 chained model), and
+//   2. The WebRTC browser viewer (canvas captureStream) — under Wayland ozone,
+//      Vulkan breaks capture per-frame ('Could not find or create a backing for
+//      stream kSkia') and viewers get a solid green video.
+// So X11+Vulkan is the DEFAULT. XWayland select-popup quirks are mitigated by
+// PortalSelect. LOUKAI_WAYLAND=1 is the escape hatch: native Wayland ozone with NO
+// Vulkan — the viewer works, creation falls back to WASM (SwiftShader is rejected
+// by detectWebGpu).
+if (process.platform === 'linux') {
+  if (process.env.LOUKAI_WAYLAND !== '1') {
+    app.commandLine.appendSwitch('enable-features', 'Vulkan');
+    app.commandLine.appendSwitch('ozone-platform', 'x11');
+  }
+} else {
+  app.commandLine.appendSwitch('enable-features', 'Vulkan');
 }
 
 class KaiPlayerApp {

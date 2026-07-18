@@ -126,12 +126,20 @@ export async function loadCreatorLibs(onLog = () => {}) {
   return cached;
 }
 
-/** Probe WebGPU availability (adapter present). Used to pick the EP. */
+/** Probe WebGPU availability (REAL adapter present). Used to pick the EP. */
 export async function detectWebGpu() {
   try {
     if (!navigator.gpu) return false;
     const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-    return Boolean(adapter);
+    if (!adapter) return false;
+    // Reject software adapters: on Wayland (no Vulkan) Chromium offers SwiftShader,
+    // a CPU emulation. Running Demucs/Whisper on it is slower than the WASM path
+    // while claiming to be 'webgpu' — treat it as no GPU so the WASM fallback wins.
+    if (adapter.isFallbackAdapter) return false;
+    const vendor = (adapter.info?.vendor || '').toLowerCase();
+    const arch = (adapter.info?.architecture || '').toLowerCase();
+    if (vendor.includes('swiftshader') || arch.includes('swiftshader')) return false;
+    return true;
   } catch {
     return false;
   }
