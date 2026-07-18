@@ -69,10 +69,13 @@ export function MixerPanel({
               {busExtras?.[bus.id] || null}
             </div>
 
-            <div className="flex flex-col items-center gap-2 w-full">
+            {/* Compact master cluster on one line (a full-width slider + giant MUTE
+                bar read as broken; the fader is a trim, not the star of the row). */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-sm text-gray-600 dark:text-gray-400 w-14 shrink-0">Master</span>
               <input
                 type="range"
-                className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                className="w-64 max-w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
                 min="-60"
                 max="12"
                 step="0.5"
@@ -80,29 +83,29 @@ export function MixerPanel({
                 onChange={(e) => handleGainChangeLocal(bus.id, e.target.value)}
                 onDoubleClick={(e) => handleDoubleClick(bus.id, e)}
                 data-bus={bus.id}
+                title="Master (double-click = 0 dB)"
               />
-              <div className="text-sm font-mono text-gray-700 dark:text-gray-300">
+              <span className="text-sm font-mono text-gray-700 dark:text-gray-300 w-16">
                 {gain.toFixed(1)} dB
-              </div>
+              </span>
+              <button
+                className={`px-3 py-1 rounded text-sm font-semibold transition ${
+                  muted
+                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                    : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100'
+                }`}
+                onClick={() => handleMuteToggleLocal(bus.id)}
+                data-bus={bus.id}
+              >
+                {muted ? 'MUTED' : 'MUTE'}
+              </button>
             </div>
-
-            <button
-              className={`px-4 py-2 rounded-lg font-semibold transition ${
-                muted
-                  ? 'bg-red-600 hover:bg-red-700 text-white'
-                  : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100'
-              }`}
-              onClick={() => handleMuteToggleLocal(bus.id)}
-              data-bus={bus.id}
-            >
-              MUTE
-            </button>
 
             {/* Per-stem strip (PA/IEM only). Stems come from the loaded song; with no
                 song the canonical 4 render disabled, showing the persisted values. */}
             {(bus.id === 'PA' || bus.id === 'IEM') && onSetStemGain && (
               <div className="w-full border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
-                <div className="flex gap-2 justify-center flex-wrap">
+                <div className="flex gap-3 justify-start flex-wrap">
                   {(() => {
                     // CDG (single mixdown, PA-only): one "music" strip on PA; IEM has
                     // no stems to offer (§8).
