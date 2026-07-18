@@ -48,6 +48,17 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.7.1" date="2026-07-17">
+      <description>
+        <p>Editor and creator reliability fixes</p>
+        <ul>
+          <li>Fixed the app freezing after saving lyrics in the editor</li>
+          <li>Fixed lyric saves from the web admin editor</li>
+          <li>Creation no longer stalls when the lyrics-correction LLM is unreachable</li>
+          <li>Elapsed time display in the lyrics editor while playing</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-07-17">
       <description>
         <p>WebGPU creator everywhere, AIFF support, and a fully pure-JS runtime</p>
