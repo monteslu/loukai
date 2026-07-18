@@ -298,14 +298,33 @@ export function LyricLine({
   const singer = line.singer || (line.backup === true ? 'backup' : '');
   const isBackup = singer?.startsWith('backup') || false;
 
+  // Draft state for the time inputs. Hard-controlling them with
+  // `value={startTime.toFixed(1)}` froze the keyboard (issue #69): typing a
+  // digit at the end of '45.0' parses to 45.04, which toFixed(1) renders right
+  // back as '45.0' - the field never visibly changes and every further digit
+  // looks dead (spinner arrows still worked because they step by 0.1). Worse,
+  // clearing the field to retype made parseFloat('')||0 snap the line to 0.
+  // While focused the field shows the raw draft; valid parses commit live;
+  // blur drops the draft and the formatted value returns.
+  const [startDraft, setStartDraft] = useState(null);
+  const [endDraft, setEndDraft] = useState(null);
+
   const handleStartTimeChange = (e) => {
-    const value = parseFloat(e.target.value) || 0;
-    onUpdate(index, { ...line, start: value, startTimeSec: value });
+    setStartDraft(e.target.value);
+    const value = parseFloat(e.target.value);
+    if (Number.isFinite(value)) {
+      const clamped = Math.max(0, value);
+      onUpdate(index, { ...line, start: clamped, startTimeSec: clamped });
+    }
   };
 
   const handleEndTimeChange = (e) => {
-    const value = parseFloat(e.target.value) || 0;
-    onUpdate(index, { ...line, end: value, endTimeSec: value });
+    setEndDraft(e.target.value);
+    const value = parseFloat(e.target.value);
+    if (Number.isFinite(value)) {
+      const clamped = Math.max(0, value);
+      onUpdate(index, { ...line, end: clamped, endTimeSec: clamped });
+    }
   };
 
   const handleTextChange = (e) => {
@@ -377,8 +396,9 @@ export function LyricLine({
               ? 'border-2 border-red-500 dark:border-red-400 focus:border-red-600 dark:focus:border-red-300'
               : 'border border-gray-300 dark:border-gray-600 focus:border-blue-500 dark:focus:border-blue-400'
           }`}
-          value={startTime.toFixed(1)}
+          value={startDraft ?? startTime.toFixed(1)}
           onChange={handleStartTimeChange}
+          onBlur={() => setStartDraft(null)}
           step="0.1"
           min="0"
           onClick={(e) => {
@@ -410,8 +430,9 @@ export function LyricLine({
         <input
           type="number"
           className="w-[58px] px-1 py-1.5 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs text-center font-mono focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          value={endTime.toFixed(1)}
+          value={endDraft ?? endTime.toFixed(1)}
           onChange={handleEndTimeChange}
+          onBlur={() => setEndDraft(null)}
           step="0.1"
           min="0"
           onClick={(e) => {
