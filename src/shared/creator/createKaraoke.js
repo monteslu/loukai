@@ -55,7 +55,7 @@ const FP16_CPU_NODES = [
  * @param {string} opts.asrModel  Whisper model id
  * @param {string} opts.demucsModel  'htdemucs' | 'htdemucs_ft'
  * @param {boolean} opts.ftAvailable  whether the ft ensemble is installed
- * @param {('webgpu'|'wasm')} opts.device  inference EP
+ * @param {('webgpu'|'wasm')} opts.device  inference EP (wasm only valid for lyrics-only/stem-reuse runs; separation requires webgpu)
  * @param {string} opts.whisperDtype
  * @param {('segment'|'word')} opts.timestampMode
  * @param {string} opts.language
@@ -112,6 +112,14 @@ export async function createKaraoke(
   // --- Demucs stem separation (in-browser) --- (skipped when reusing / lyrics-only)
   if (!lyricsOnly && !reuseStems) {
     onPhase('separating');
+    // Product rule: stem separation runs on WebGPU or not at all. The WASM DSP
+    // is orders of magnitude slower and produces support tickets, not stems.
+    if (device !== 'webgpu') {
+      throw new Error(
+        'WebGPU is required for stem separation (no real GPU adapter available). ' +
+          'Refusing the CPU/WASM demucs path.'
+      );
+    }
     let modelDef = [
       { id: 'htdemucs', kind: 'single' },
       { id: 'htdemucs_ft', kind: 'ft' },
@@ -262,12 +270,9 @@ export async function createKaraoke(
         // (same 16 node names as ft_cpu_nodes.json); without the pin the fp16
         // graph is all-NaN on WebGPU. Monolith keeps the plain EP list.
         sessionOptions: {
-          executionProviders:
-            device !== 'webgpu'
-              ? ['wasm']
-              : chain
-                ? [{ name: 'webgpu', forceCpuNodeNames: FP16_CPU_NODES }]
-                : ['webgpu'],
+          executionProviders: chain
+            ? [{ name: 'webgpu', forceCpuNodeNames: FP16_CPU_NODES }]
+            : ['webgpu'],
         },
         gentle,
         shouldCancel: emit.shouldCancel,
@@ -297,7 +302,7 @@ export async function createKaraoke(
         });
         const proc2 = new DemucsProcessor({
           ort,
-          sessionOptions: { executionProviders: device === 'webgpu' ? ['webgpu'] : ['wasm'] },
+          sessionOptions: { executionProviders: ['webgpu'] },
           gentle,
           shouldCancel: emit.shouldCancel,
           onProgress: ({ progress }) =>
