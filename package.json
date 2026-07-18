@@ -7,7 +7,7 @@
   "homepage": "./",
   "scripts": {
     "start": "node scripts/start-electron.mjs . --no-sandbox",
-    "dev": "npm run build:all && electron . --dev --no-sandbox",
+    "dev": "npm run build:all && node scripts/start-electron.mjs . --dev --no-sandbox",
     "build": "npm run build:all && electron-builder && node scripts/rename-artifacts.js",
     "build:all": "npm run vendor:webgpu && npm run build:renderer && npm run build:web",
     "vendor:webgpu": "node scripts/vendor-webgpu-assets.js",
