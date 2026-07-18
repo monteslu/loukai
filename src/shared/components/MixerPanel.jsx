@@ -5,6 +5,10 @@
  * Works with both ElectronBridge and WebBridge via callbacks
  */
 
+import { StemStrip } from './StemStrip.jsx';
+import { resolveStemEntry, orderStems, CANONICAL_STEMS } from '../utils/stemGain.js';
+import { isMixdownStem } from '../utils/stemClassify.js';
+
 export function MixerPanel({
   mixer, // Support both 'mixer' (web) and 'mixerState' (renderer)
   mixerState,
@@ -12,6 +16,8 @@ export function MixerPanel({
   onToggleMasterMute,
   onGainChange, // Alias for web compatibility
   onMuteToggle, // Alias for web compatibility
+  onSetStemGain, // (bus, stem, gain 0..1.5) — stem×bus mixer (#49)
+  onSetStemMute, // (bus, stem, muted)
   className = '',
 }) {
   // Support both prop names - prefer mixerState if provided, then mixer, then empty object
@@ -86,6 +92,37 @@ export function MixerPanel({
             >
               MUTE
             </button>
+
+            {/* Per-stem strip (PA/IEM only). Stems come from the loaded song; with no
+                song the canonical 4 render disabled, showing the persisted values. */}
+            {(bus.id === 'PA' || bus.id === 'IEM') && onSetStemGain && (
+              <div className="w-full border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
+                <div className="flex gap-2 justify-center flex-wrap">
+                  {(() => {
+                    const songStems = (state.stems || [])
+                      .map((st) => st.name)
+                      .filter((n) => n && !isMixdownStem(n));
+                    const names = songStems.length ? orderStems(songStems) : CANONICAL_STEMS;
+                    const disabled = songStems.length === 0;
+                    return names.map((name) => {
+                      const entry = resolveStemEntry(state.stemMix, bus.id, name);
+                      return (
+                        <StemStrip
+                          key={name}
+                          bus={bus.id}
+                          name={name}
+                          gain={entry.gain}
+                          muted={entry.muted}
+                          disabled={disabled}
+                          onGain={onSetStemGain}
+                          onMute={onSetStemMute}
+                        />
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            )}
           </div>
         );
       })}

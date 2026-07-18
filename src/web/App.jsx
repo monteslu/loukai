@@ -530,6 +530,8 @@ export function App() {
             mixer={mixer}
             onGainChange={handleGainChange}
             onMuteToggle={handleMuteToggle}
+            onSetStemGain={(bus, stem, gain) => bridge.setStemGain(bus, stem, gain)}
+            onSetStemMute={(bus, stem, muted) => bridge.setStemMute(bus, stem, muted)}
           />
         </div>
 

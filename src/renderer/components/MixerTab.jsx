@@ -29,28 +29,28 @@ export function MixerTab({ bridge }) {
     if (!bridge) return;
 
     const unsubscribe = bridge.onMixerChanged?.((mixer) => {
-      // Extract only bus-level mixer (PA, IEM, mic) - ignore stem mixer properties
-      const busLevelMixer = {
+      // Keep the FULL mixer state: masters + stemMix + the song's stem list all
+      // render from this one subscription (stem×bus mixer, #49).
+      setMixerState({
         PA: mixer.PA || { gain: 0, muted: false },
         IEM: mixer.IEM || { gain: 0, muted: false },
         mic: mixer.mic || { gain: 0, muted: false },
-      };
-
-      setMixerState(busLevelMixer);
+        stemMix: mixer.stemMix,
+        stems: mixer.stems || [],
+      });
     });
 
     // Fetch initial state
     bridge
       .getMixerState?.()
       .then((state) => {
-        // Extract only bus-level mixer (PA, IEM, mic)
-        const busLevelMixer = {
+        setMixerState({
           PA: state.PA || { gain: 0, muted: false },
           IEM: state.IEM || { gain: 0, muted: false },
           mic: state.mic || { gain: 0, muted: false },
-        };
-
-        setMixerState(busLevelMixer);
+          stemMix: state.stemMix,
+          stems: state.stems || [],
+        });
       })
       .catch(console.error);
 
@@ -217,6 +217,8 @@ export function MixerTab({ bridge }) {
           mixerState={mixerState}
           onSetMasterGain={handleSetMasterGain}
           onToggleMasterMute={handleToggleMasterMute}
+          onSetStemGain={(bus, stem, gain) => bridge.setStemGain?.(bus, stem, gain)}
+          onSetStemMute={(bus, stem, muted) => bridge.setStemMute?.(bus, stem, muted)}
         />
       </div>
 
