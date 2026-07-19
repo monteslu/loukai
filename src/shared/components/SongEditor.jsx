@@ -15,6 +15,7 @@ import { getFormatIcon, isStemMp4Format } from '../formatUtils.js';
 import { LyricsEditorCanvas } from './LyricsEditorCanvas.jsx';
 import { LineDetailCanvas } from './LineDetailCanvas.jsx';
 import { LyricLine } from './LyricLine.jsx';
+import { ChordEditor } from './ChordEditor.jsx';
 import { Toast } from './Toast.jsx';
 import { LyricRejection } from './LyricRejection.jsx';
 import { LyricSuggestion } from './LyricSuggestion.jsx';
@@ -50,6 +51,7 @@ export function SongEditor({ bridge }) {
 
   // Lyrics state (for KAI files) - now array format for full editing
   const [lyricsData, setLyricsData] = useState([]);
+  const [chordsData, setChordsData] = useState([]);
   const [originalLyricsData, setOriginalLyricsData] = useState([]);
   const [selectedLineIndex, setSelectedLineIndex] = useState(null);
   const [songDuration, setSongDuration] = useState(0);
@@ -385,6 +387,7 @@ export function SongEditor({ bridge }) {
             return aStart - bStart;
           });
           setLyricsData(JSON.parse(JSON.stringify(sortedLyrics)));
+          setChordsData(JSON.parse(JSON.stringify(result.data.chords || [])));
           setOriginalLyricsData(JSON.parse(JSON.stringify(sortedLyrics)));
           setSongDuration(
             result.data.metadata?.duration || result.data.songJson?.duration_sec || 0
@@ -813,6 +816,7 @@ export function SongEditor({ bridge }) {
         // Include lyrics for both KAI and Stem MP4 formats
         ...(isStemMp4Format(songData.format) && {
           lyrics: sortedLyrics,
+          chords: [...chordsData].sort((a, b) => (a.start || 0) - (b.start || 0)),
         }),
       };
 
@@ -1369,6 +1373,14 @@ export function SongEditor({ bridge }) {
                     ))}
                   </div>
                 )}
+
+                <ChordEditor
+                  chords={chordsData}
+                  onChange={(next) => {
+                    setChordsData(next);
+                    setHasChanges(true);
+                  }}
+                />
               </div>
             </>
           )}

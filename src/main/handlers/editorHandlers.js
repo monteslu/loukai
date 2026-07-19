@@ -53,6 +53,7 @@ export function registerEditorHandlers(mainApp) {
         format: format,
         metadata: songData.song || songData.metadata || {},
         lyrics: songData.lyrics,
+        chords: songData.chords,
       });
 
       log(`${format.toUpperCase()} file saved successfully`);

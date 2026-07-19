@@ -46,11 +46,11 @@ export async function saveSong(path, updates) {
     throw new Error('Path is required');
   }
 
-  const { format, metadata, lyrics } = updates;
+  const { format, metadata, lyrics, chords } = updates;
 
   if (isStemMp4Format(format)) {
     // Handle Stem MP4 format
-    return await saveM4ASong(path, { metadata, lyrics });
+    return await saveM4ASong(path, { metadata, lyrics, chords });
   } else {
     throw new Error(`Unsupported format: ${format}. Only stem-mp4 format is supported.`);
   }
@@ -73,7 +73,7 @@ export async function saveSong(path, updates) {
  * @returns {Promise<Object>} Save result
  */
 async function saveM4ASong(path, updates) {
-  const { metadata, lyrics } = updates;
+  const { metadata, lyrics, chords } = updates;
   const fs = await import('fs/promises');
   const pathMod = await import('path');
 
@@ -148,6 +148,9 @@ async function saveM4ASong(path, updates) {
     singers: existingKara.singers || [],
     meta: existingKara.meta?.corrections ? { corrections: existingKara.meta.corrections } : {},
     tags: existingKara.tags || [],
+    // Chord track (#93): an edited track from the caller wins; otherwise keep
+    // whatever the file already had.
+    chords: chords ?? existingKara.chords,
   };
 
   // Add 'edited' tag if not already present

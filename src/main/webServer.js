@@ -1144,6 +1144,7 @@ class WebServer {
               metadata: result.kaiData.metadata || {},
               lyrics: result.kaiData.lyrics || [],
               audioFiles: audioFiles,
+              chords: result.kaiData.chords || [],
               songJson: result.kaiData.originalSongJson || {},
             },
           });
@@ -1289,7 +1290,7 @@ class WebServer {
     // Save song edits
     this.app.post('/admin/editor/save', async (req, res) => {
       try {
-        const { path: songPath, format, metadata, lyrics } = req.body;
+        const { path: songPath, format, metadata, lyrics, chords } = req.body;
         if (!songPath) {
           return res.status(400).json({
             success: false,
@@ -1312,7 +1313,7 @@ class WebServer {
         // branch below and failed with "Invalid file format".
         if (isStemMp4Format(format)) {
           const { saveSongOffMain } = await import('./workers/saveSongOffMain.js');
-          await saveSongOffMain(validatedPath, { format, metadata, lyrics });
+          await saveSongOffMain(validatedPath, { format, metadata, lyrics, chords });
 
           // Update cached library entry if it exists
           if (this.mainApp.cachedLibrary) {

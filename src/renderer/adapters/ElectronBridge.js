@@ -368,6 +368,7 @@ export class ElectronBridge extends BridgeInterface {
         format: 'stem-mp4',
         metadata: songData.metadata || {},
         lyrics: songData.lyrics || [],
+        chords: songData.chords || [],
         audioFiles: audioFiles,
         songJson: songData.originalSongJson || {},
       },
@@ -375,7 +376,7 @@ export class ElectronBridge extends BridgeInterface {
   }
 
   async saveSongEdits(updates) {
-    const { path, metadata, lyrics, format } = updates;
+    const { path, metadata, lyrics, chords, format } = updates;
 
     if (format === 'stem-mp4') {
       // Build the song object for the editor save
@@ -389,6 +390,7 @@ export class ElectronBridge extends BridgeInterface {
           key: metadata.key,
         },
         lyrics: lyrics,
+        chords: chords,
       };
 
       // Include meta if rejections/suggestions were updated
