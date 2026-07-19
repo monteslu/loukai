@@ -118,7 +118,7 @@ export function VisualizationSettings({
     <div className="p-4 space-y-6">
       {/* Waveform Options */}
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Waveform Options</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Display Options</h3>
         <div className="space-y-3">
           <label className="flex items-center gap-3 cursor-pointer">
             <input

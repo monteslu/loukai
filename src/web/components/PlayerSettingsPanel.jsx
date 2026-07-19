@@ -95,7 +95,7 @@ export function PlayerSettingsPanel({ socket }) {
     <div className="p-5 h-full overflow-y-auto">
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-5 mb-5">
         <h3 className="m-0 mb-5 text-lg font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-3">
-          Waveform & Visual Options
+          Display Options
         </h3>
 
         <label className="flex items-center py-3 gap-3 cursor-pointer select-none">
