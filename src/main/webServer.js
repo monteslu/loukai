@@ -1311,8 +1311,8 @@ class WebServer {
         // every web-admin lyric save for a .stem.mp4 fell through to the CDG/ID3
         // branch below and failed with "Invalid file format".
         if (isStemMp4Format(format)) {
-          const editorService = await import('../shared/services/editorService.js');
-          await editorService.saveSong(validatedPath, { format, metadata, lyrics });
+          const { saveSongOffMain } = await import('./workers/saveSongOffMain.js');
+          await saveSongOffMain(validatedPath, { format, metadata, lyrics });
 
           // Update cached library entry if it exists
           if (this.mainApp.cachedLibrary) {
