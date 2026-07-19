@@ -29,6 +29,10 @@ export function registerMixerHandlers(mainApp) {
     return mixerService.setStemGain(mainApp, bus, stem, gain);
   });
 
+  ipcMain.handle('mixer:setKeyShift', (event, semitones) => {
+    return mixerService.setKeyShift(mainApp, semitones);
+  });
+
   ipcMain.handle(MIXER_CHANNELS.SET_STEM_MUTE, (event, bus, stem, muted) => {
     return mixerService.setStemMute(mainApp, bus, stem, muted);
   });

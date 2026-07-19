@@ -79,12 +79,16 @@ export function useAudioEngine() {
     const handleStemMute = (event, { bus, stem, muted }) => {
       kaiPlayer.setStemMute(bus, stem, muted, false);
     };
+    const handleKeyShift = (event, { semitones }) => {
+      kaiPlayer.setKeyShift(semitones, false);
+    };
 
     window.kaiAPI.mixer.onSetMasterGain(handleSetMasterGain);
     window.kaiAPI.mixer.onToggleMasterMute(handleToggleMasterMute);
     window.kaiAPI.mixer.onSetMasterMute(handleSetMasterMute);
     if (window.kaiAPI.mixer.onStemGain) window.kaiAPI.mixer.onStemGain(handleStemGain);
     if (window.kaiAPI.mixer.onStemMute) window.kaiAPI.mixer.onStemMute(handleStemMute);
+    if (window.kaiAPI.mixer.onKeyShift) window.kaiAPI.mixer.onKeyShift(handleKeyShift);
 
     console.log('✅ Mixer IPC listeners registered');
 

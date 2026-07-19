@@ -39,6 +39,7 @@ class StatePersistence {
       // Restore mixer state if available
       if (savedState.mixer) {
         this.appState.state.mixer = savedState.mixer;
+        delete this.appState.state.mixer.keyShift;
         log('📂 Loaded mixer state');
       }
 
@@ -75,6 +76,7 @@ class StatePersistence {
         // Restore from backup
         if (savedState.mixer) {
           this.appState.state.mixer = savedState.mixer;
+          delete this.appState.state.mixer.keyShift;
           log('📂 Loaded mixer state from backup');
         }
 
@@ -118,7 +120,8 @@ class StatePersistence {
 
       // Don't save playback state (position, isPlaying) or queue - those are ephemeral
       const stateToSave = {
-        mixer: snapshot.mixer,
+        // keyShift is per-loaded-song (issue #90): synced live, never saved
+        mixer: (({ keyShift: _keyShift, ...rest }) => rest)(snapshot.mixer || {}),
         effects: snapshot.effects,
         preferences: snapshot.preferences,
         savedAt: new Date().toISOString(),

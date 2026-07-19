@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { formatDuration } from '../formatUtils.js';
+import { shiftKeyName, KEY_SHIFT_MIN, KEY_SHIFT_MAX } from '../utils/musicKey.js';
 
 export function PlayerControls({
   playback,
@@ -22,6 +23,9 @@ export function PlayerControls({
   onNextEffect,
   onOpenCanvasWindow,
   onOpenViewer,
+  keyShift = 0,
+  songKey,
+  onKeyShift,
   className = '',
 }) {
   const { isPlaying, position = 0, duration = 0 } = playback || {};
@@ -157,6 +161,50 @@ export function PlayerControls({
           <span>/</span>
           <span>{formatDuration(duration)}</span>
         </div>
+
+        {/* Key shift (issue #90): per-loaded-song, resets on load, never saved */}
+        {onKeyShift && (
+          <>
+            <div
+              className="flex items-center flex-shrink-0"
+              title="Key shift (music and guide vocal, never the mic)"
+            >
+              <button
+                onClick={() => onKeyShift(keyShift - 1)}
+                disabled={loading || keyShift <= KEY_SHIFT_MIN}
+                className="p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition disabled:opacity-40 flex items-center justify-center"
+              >
+                <span className="material-icons text-gray-700 dark:text-gray-300 text-lg leading-none">
+                  remove
+                </span>
+              </button>
+              <span
+                className={`text-sm font-mono text-center px-0.5 ${
+                  keyShift !== 0
+                    ? 'text-blue-600 dark:text-blue-400 font-semibold'
+                    : 'text-gray-500 dark:text-gray-400'
+                }`}
+              >
+                {keyShift === 0
+                  ? songKey || 'Key'
+                  : `${keyShift > 0 ? '+' : ''}${keyShift}${
+                      songKey && shiftKeyName(songKey, keyShift)
+                        ? ` ${shiftKeyName(songKey, keyShift)}`
+                        : ''
+                    }`}
+              </span>
+              <button
+                onClick={() => onKeyShift(keyShift + 1)}
+                disabled={loading || keyShift >= KEY_SHIFT_MAX}
+                className="p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition disabled:opacity-40 flex items-center justify-center"
+              >
+                <span className="material-icons text-gray-700 dark:text-gray-300 text-lg leading-none">
+                  add
+                </span>
+              </button>
+            </div>
+          </>
+        )}
 
         {/* Divider */}
         <div className="w-px h-8 bg-gray-200 dark:bg-gray-700 mx-2" />

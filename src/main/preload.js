@@ -31,6 +31,9 @@ const api = {
     setStemGain: (bus, stem, gain) => ipcRenderer.invoke('mixer:setStemGain', bus, stem, gain),
     setStemMute: (bus, stem, muted) => ipcRenderer.invoke('mixer:setStemMute', bus, stem, muted),
     toggleStemMute: (bus, stem) => ipcRenderer.invoke('mixer:toggleStemMute', bus, stem),
+    // Key shift for the loaded song (issue #90) - ephemeral, never persisted
+    setKeyShift: (semitones) => ipcRenderer.invoke('mixer:setKeyShift', semitones),
+    onKeyShift: (callback) => ipcRenderer.on('mixer:keyShift', callback),
 
     onStateChange: (callback) => ipcRenderer.on('mixer:state', callback),
     removeStateListener: (callback) => ipcRenderer.removeListener('mixer:state', callback),

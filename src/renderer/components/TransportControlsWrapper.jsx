@@ -12,6 +12,26 @@ export function TransportControlsWrapper({ bridge: _bridge }) {
   const { currentSong, isPlaying, currentPosition, duration } = usePlayerState();
   const { play, pause, restart, next, seek } = usePlayer();
   const [currentEffect, setCurrentEffect] = useState('');
+  const [keyShift, setKeyShift] = useState(0);
+
+  // Track the loaded song's key shift: main relays every change (from the web
+  // admin or from here) via mixer:keyShift; song loads reset it through the
+  // engine's mixer report, which also flows back through main.
+  useEffect(() => {
+    const kaiPlayer = window.app?.player?.kaiPlayer;
+    if (kaiPlayer) setKeyShift(kaiPlayer.keyShift ?? 0);
+    if (!window.kaiAPI?.mixer?.onKeyShift) return;
+    const handle = (event, { semitones }) => setKeyShift(semitones ?? 0);
+    window.kaiAPI.mixer.onKeyShift(handle);
+    return () => {};
+  }, []);
+
+  const handleKeyShift = (n) => {
+    const kaiPlayer = window.app?.player?.kaiPlayer;
+    if (kaiPlayer) {
+      setKeyShift(kaiPlayer.setKeyShift(n));
+    }
+  };
 
   // Subscribe to effects state (TODO: move to EffectsContext in future)
   useEffect(() => {
@@ -64,6 +84,9 @@ export function TransportControlsWrapper({ bridge: _bridge }) {
       onPreviousEffect={handlePreviousEffect}
       onNextEffect={handleNextEffect}
       onOpenCanvasWindow={handleOpenCanvasWindow}
+      keyShift={keyShift}
+      songKey={currentSong?.key}
+      onKeyShift={handleKeyShift}
     />
   );
 }
