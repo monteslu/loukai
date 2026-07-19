@@ -190,6 +190,12 @@ npm run build:mac
 npm start
 ```
 
+Notes:
+
+- On Linux, `npm start` / `npm run dev` launch through `scripts/start-electron.mjs`, which repairs stale display env vars (`WAYLAND_DISPLAY`, `DISPLAY`, `XAUTHORITY`) before Electron spawns — so launching from long-lived tmux/screen shells just works.
+- Only one instance runs at a time; a second launch focuses the existing window and exits.
+- Song creation (stem separation) requires a working WebGPU adapter (a real GPU). There is no CPU fallback.
+
 ---
 
 ## Architecture

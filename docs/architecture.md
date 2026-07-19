@@ -162,7 +162,7 @@ Two distinct React SPAs served by the Express server:
 
 ### 4. Creator Pipeline
 
-Song creation runs **entirely in-browser** (renderer or web page) on WebGPU via onnxruntime-web, with WASM fallback — no Python, native modules, or system ffmpeg. Main-process code only proxies/caches assets, tracks job status, and muxes/saves output. A web-admin "host-create" path lets a phone upload audio to `POST /admin/creator/host-create`; the desktop player's renderer then runs the GPU creation (see `hostCreateRelay.js`).
+Song creation runs **entirely in-browser** (renderer or web page) on WebGPU via onnxruntime-web — no Python, native modules, or system ffmpeg. Stem separation REQUIRES a real WebGPU adapter (no WASM fallback: a broken GPU environment fails fast with a clear error instead of grinding the CPU for an hour). Whisper may still use the wasm EP for lyrics-only and stem-reuse runs. Main-process code only proxies/caches assets, tracks job status, and muxes/saves output. A web-admin "host-create" path lets a phone upload audio to `POST /admin/creator/host-create`; the desktop player's renderer then runs the GPU creation (see `hostCreateRelay.js`).
 
 ```mermaid
 graph LR
@@ -510,13 +510,23 @@ Channels organized by domain:
 - **Butterchurn 2** - Visualizations
 - **Canvas API** - Graphics rendering
 
-### AI/ML (Creator) — 100% in-browser, WebGPU with WASM fallback
-- **Demucs** - Stem separation (htdemucs ONNX via onnxruntime-web; optional htdemucs_ft ensemble)
-- **Whisper** - Speech-to-text (@huggingface/transformers, timestamped ONNX models)
+### AI/ML (Creator) — 100% in-browser on WebGPU
+- **Demucs** - Stem separation (htdemucs ONNX via onnxruntime-web; optional htdemucs_ft ensemble). WebGPU-only: no CPU/WASM fallback
+- **Whisper** - Speech-to-text (@huggingface/transformers, timestamped ONNX models; default `whisper-large-v3-turbo_timestamped`, multilingual with auto-detect)
 - **CREPE** - Pitch/key detection (crepe_tiny.onnx bundled in static/webgpu)
 - **AAC encode** - ffmpeg-wasm (@ffmpeg/core single-thread, in a web worker)
 - **aubiojs** - Realtime pitch tracking
 - **OpenAI/Anthropic/Google** - LLM lyrics correction
+
+### Linux graphics configuration
+
+Chromium flags on Linux (`src/main/main.js`) are the product of a measured matrix on Wayland/RDNA3 and each one is load-bearing:
+
+- **Native ozone platform** (Wayland on a Wayland desktop). Forcing `ozone-platform=x11` creates NO toplevel window at all while the renderer and web server keep running — the app looks dead but serves the admin.
+- **`enable-features=Vulkan`** gives Dawn the real hardware WebGPU adapter (`shader-f16` for the fp16 demucs chain). Without it the adapter is SwiftShader and separation refuses to run.
+- **`disable-gpu-compositing`** because Vulkan compositing breaks `canvas.captureStream()` per-frame (kSkia backing errors → green/empty WebRTC viewers). WebGPU compute and WebGL still run on the GPU; only final surface composition is CPU.
+
+`npm start` / `npm run dev` go through `scripts/start-electron.mjs`, which repairs `WAYLAND_DISPLAY` / `DISPLAY` / `XAUTHORITY` before Electron spawns (Chromium zygotes fork before app JS runs, so main.js cannot fix a stale tmux environment). The app holds a single-instance lock: a second launch focuses the running window and exits.
 
 ### Build & Distribution
 - **electron-builder 26** - Packaging
