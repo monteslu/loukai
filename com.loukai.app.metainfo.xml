@@ -48,6 +48,14 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.8.1" date="2026-07-18">
+      <description>
+        <p>Editor save no longer freezes the app</p>
+        <ul>
+          <li>Saving a song in the editor ran the whole file rebuild on the process that routes keyboard input, freezing typing app-wide for seconds on larger files - the save now runs in a worker thread and input stays live throughout</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.8.0" date="2026-07-18">
       <description>
         <p>Stem mixer on every output, and a rock-solid Linux launch</p>
