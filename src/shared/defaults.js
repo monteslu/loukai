@@ -32,7 +32,7 @@ export const EFFECTS_DEFAULTS = {
   randomEffectOnSong: false,
   overlayOpacity: 0.7,
   showUpcomingLyrics: true,
-  showChords: true,
+  showChords: false,
 };
 
 export const AUTOTUNE_DEFAULTS = {
