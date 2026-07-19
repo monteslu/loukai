@@ -162,6 +162,7 @@ export async function loadKAISong(app, songData, metadata) {
     const fullMetadata = {
       ...metadata,
       lyrics: app.currentSong.lyrics,
+      chords: songData.chords || app.currentSong.chords || null,
       duration: app.kaiPlayer
         ? app.kaiPlayer.getDuration()
         : app.currentSong.metadata?.duration || 0,
@@ -273,6 +274,7 @@ export async function loadM4ASong(app, songData, metadata) {
     const fullMetadata = {
       ...metadata,
       lyrics: app.currentSong.lyrics,
+      chords: songData.chords || app.currentSong.chords || null,
       duration: app.kaiPlayer
         ? app.kaiPlayer.getDuration()
         : app.currentSong.metadata?.duration || 0,

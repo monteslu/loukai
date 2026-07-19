@@ -66,6 +66,7 @@ export class PlayerController {
         artist: metadata.artist,
         requester: metadata.requester,
       });
+      this.karaokeRenderer.setChords(metadata.chords);
     }
 
     // Get duration from player for karaokeRenderer

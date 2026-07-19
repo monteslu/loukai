@@ -350,6 +350,10 @@ export class KaraokeRenderer {
     this.resizeHandler = resizeCanvas;
   }
 
+  setChords(chords) {
+    this.chordTrack = Array.isArray(chords) && chords.length > 0 ? chords : null;
+  }
+
   setSongMetadata(metadata) {
     // Store song metadata for display when not playing
     this.songMetadata = metadata || {};
@@ -1523,7 +1527,7 @@ export class KaraokeRenderer {
    * chords.
    */
   drawChordTrack() {
-    const chords = this.songData?.chords;
+    const chords = this.chordTrack;
     if (!chords?.length) return;
     const t = this.currentTime;
     let current = null;
