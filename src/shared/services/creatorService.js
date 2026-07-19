@@ -427,7 +427,16 @@ export async function updateStemLyrics({ inputPath, lyrics, key, pitch }) {
   if (!inputPath || !existsSync(inputPath)) throw new Error('stem file not found');
   // Edit in place — the file is already in the library.
   if (lyrics && lyrics.lines) {
-    await M4AAtoms.writeKaraAtom(inputPath, { lines: lyrics.lines });
+    // MERGE with the existing kara atom: writing { lines } alone silently
+    // destroyed timing, singers, tags, and the chord track for any file this
+    // path touched (import + lyrics-correction).
+    let existing = {};
+    try {
+      existing = (await M4AAtoms.readKaraAtom(inputPath)) || {};
+    } catch {
+      /* no kara atom yet */
+    }
+    await M4AAtoms.writeKaraAtom(inputPath, { ...existing, lines: lyrics.lines });
   }
   if (key) {
     try {

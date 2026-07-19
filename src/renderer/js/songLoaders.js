@@ -47,9 +47,14 @@ function backfillChords(app, songData) {
       worker.terminate();
       if (!e.data.ok || !e.data.chords?.length) return;
       const chords = e.data.chords;
-      // Live display for this session…
-      if (app.kaiPlayer?.songData) app.kaiPlayer.songData.chords = chords;
-      app.player?.karaokeRenderer?.setChords(chords);
+      // Live display only if THIS song is still the loaded one (skipping songs
+      // quickly must not paint the previous song's chords)…
+      const stillLoaded =
+        (app.currentSong?.path || app.kaiPlayer?.songData?.originalFilePath) === filePath;
+      if (stillLoaded) {
+        if (app.kaiPlayer?.songData) app.kaiPlayer.songData.chords = chords;
+        app.player?.karaokeRenderer?.setChords(chords);
+      }
       console.log(`🎸 chord backfill: ${chords.length} segments`);
       // …and one-time persistence into the file.
       try {

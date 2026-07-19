@@ -1992,6 +1992,12 @@ class WebServer {
           } catch {
             /* ignore malformed pitch */
           }
+          let chords;
+          try {
+            chords = req.body.chords ? JSON.parse(req.body.chords) : undefined;
+          } catch {
+            /* ignore malformed chords */
+          }
           let refLyrics;
           try {
             refLyrics = req.body.referenceLyrics ? req.body.referenceLyrics.toString() : undefined;
@@ -2002,6 +2008,7 @@ class WebServer {
             stems,
             metadata: { title, artist, album, year, genre, track, duration, key },
             lyrics,
+            chords,
             pitch,
             referenceLyrics: refLyrics,
             settingsManager: this.mainApp.settings, // backend runs LLM correction
