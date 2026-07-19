@@ -153,6 +153,10 @@ Contains lyrics, timing, word-level timing, and singer metadata in JSON format. 
     "duet": { "name": "Both", "color": "#22C55E" }
   },
   "tags": ["edited", "ai_corrected"],
+  "chords": [
+    { "start": 0.0, "end": 2.1, "chord": "C" },
+    { "start": 2.1, "end": 4.3, "chord": "Am" }
+  ],
   "lines": [
     {
       "start": 12.5,
@@ -183,6 +187,28 @@ Each line can optionally include a `words` object with relative timing for each 
 ```
 
 - **timings**: Array of `[start, end]` pairs, one per word (split on spaces)
+
+#### Chord Track
+
+The optional `chords` array is a timed chord track detected from the separated
+stems at creation time (chromagram over the other stem with bass-informed
+roots). Segments are ordered, non-overlapping, with times in seconds relative
+to the same clock as `lines`:
+
+```json
+"chords": [
+  { "start": 0.0, "end": 2.1, "chord": "C" },
+  { "start": 2.1, "end": 4.3, "chord": "Am" }
+]
+```
+
+- **chord**: root note (sharps preferred: `C`, `C#`, ... `B`) plus an optional
+  `m` suffix for minor triads. Future revisions may add richer qualities
+  (`7`, `sus4`); readers should display the string as-is
+- Silent or harmonically ambiguous stretches simply have no segment
+- Players display the chord whose window contains the current position and may
+  preview the next segment; when a player transposes playback (key shift), the
+  displayed names are transposed by the same interval
 - **Relative timing**: Offsets are relative to the line's `start` time
 - **Example**: `"Hello world"` at line start 12.5s with `[[0, 0.4], [0.5, 1.0]]` means:
   - "Hello" plays from 12.5s to 12.9s

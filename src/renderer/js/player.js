@@ -204,6 +204,9 @@ export class PlayerController {
       if (settings.enableEffects !== undefined) {
         this.karaokeRenderer.waveformPreferences.enableEffects = settings.enableEffects;
       }
+      if (settings.showChords !== undefined) {
+        this.karaokeRenderer.waveformPreferences.showChords = settings.showChords;
+      }
       if (settings.showUpcomingLyrics !== undefined) {
         this.karaokeRenderer.waveformPreferences.showUpcomingLyrics = settings.showUpcomingLyrics;
       }

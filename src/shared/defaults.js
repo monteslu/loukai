@@ -32,6 +32,7 @@ export const EFFECTS_DEFAULTS = {
   randomEffectOnSong: false,
   overlayOpacity: 0.7,
   showUpcomingLyrics: true,
+  showChords: true,
 };
 
 export const AUTOTUNE_DEFAULTS = {
@@ -91,6 +92,7 @@ export const WAVEFORM_DEFAULTS = {
   randomEffectOnSong: EFFECTS_DEFAULTS.randomEffectOnSong,
   overlayOpacity: EFFECTS_DEFAULTS.overlayOpacity,
   showUpcomingLyrics: EFFECTS_DEFAULTS.showUpcomingLyrics,
+  showChords: EFFECTS_DEFAULTS.showChords,
 };
 
 // UI defaults

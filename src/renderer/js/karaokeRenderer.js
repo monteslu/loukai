@@ -62,6 +62,7 @@ export class KaraokeRenderer {
       enableEffects: true,
       overlayOpacity: 0.7,
       showUpcomingLyrics: true,
+      showChords: true,
     };
 
     // FPS and performance tracking
@@ -1527,6 +1528,7 @@ export class KaraokeRenderer {
    * chords.
    */
   drawChordTrack() {
+    if (this.waveformPreferences.showChords === false) return;
     const chords = this.chordTrack;
     if (!chords?.length) return;
     const t = this.currentTime;
@@ -3076,6 +3078,10 @@ export class KaraokeRenderer {
 
   setShowUpcomingLyrics(enabled) {
     this.waveformPreferences.showUpcomingLyrics = enabled;
+  }
+
+  setShowChords(enabled) {
+    this.waveformPreferences.showChords = enabled;
   }
 
   drawUpcomingLyrics(canvasWidth, canvasHeight, startY) {

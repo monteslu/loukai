@@ -180,6 +180,7 @@ export async function loadKAISong(app, songData, metadata) {
       app.player.karaokeRenderer.setWaveformsEnabled(waveformPrefs.enableWaveforms);
       app.player.karaokeRenderer.setEffectsEnabled(waveformPrefs.enableEffects);
       app.player.karaokeRenderer.setShowUpcomingLyrics(waveformPrefs.showUpcomingLyrics);
+      app.player.karaokeRenderer.setShowChords(waveformPrefs.showChords !== false);
       app.player.karaokeRenderer.waveformPreferences.overlayOpacity = waveformPrefs.overlayOpacity;
 
       // Connect butterchurn to PA analyser for visualization (KAI format)
@@ -292,6 +293,7 @@ export async function loadM4ASong(app, songData, metadata) {
       app.player.karaokeRenderer.setWaveformsEnabled(waveformPrefs.enableWaveforms);
       app.player.karaokeRenderer.setEffectsEnabled(waveformPrefs.enableEffects);
       app.player.karaokeRenderer.setShowUpcomingLyrics(waveformPrefs.showUpcomingLyrics);
+      app.player.karaokeRenderer.setShowChords(waveformPrefs.showChords !== false);
       app.player.karaokeRenderer.waveformPreferences.overlayOpacity = waveformPrefs.overlayOpacity;
 
       // Connect butterchurn to PA analyser for visualization (M4A format)

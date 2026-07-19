@@ -456,6 +456,7 @@ export class ElectronBridge extends BridgeInterface {
       enableEffects: prefs.enableEffects,
       randomEffectOnSong: prefs.randomEffectOnSong,
       showUpcomingLyrics: prefs.showUpcomingLyrics,
+      showChords: prefs.showChords,
       overlayOpacity: prefs.overlayOpacity,
     };
 
