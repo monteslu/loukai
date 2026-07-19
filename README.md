@@ -34,7 +34,7 @@ npx loukai-app
   - Compatible with DJ software (Traktor, Mixxx) via standard NI Stems metadata
   - Smaller file sizes than legacy formats
   - Embedded lyrics with word-level timing in custom atoms
-- **Real-Time Stem Control**: Individual volume, mute, and solo controls for vocals, drums, bass, and other stems
+- **Real-Time Stem Control**: Per-stem volume and mute on each output bus (PA and IEM monitors) — run a vocals-on monitor mix for the singer while the room hears the karaoke mix
 - **Legacy Format Support**: CDG/MP3 pairs
 - **Dual Output Routing**: Independent PA and IEM (in-ear monitor) outputs with per-stem routing
 - **High-Quality Audio**: Web Audio API with real-time processing and pitch correction
@@ -189,6 +189,12 @@ npm run build:mac
 # Start the app (after building)
 npm start
 ```
+
+Notes:
+
+- On Linux, `npm start` / `npm run dev` launch through `scripts/start-electron.mjs`, which repairs stale display env vars (`WAYLAND_DISPLAY`, `DISPLAY`, `XAUTHORITY`) before Electron spawns — so launching from long-lived tmux/screen shells just works.
+- Only one instance runs at a time; a second launch focuses the existing window and exits.
+- Song creation (stem separation) requires a working WebGPU adapter (a real GPU). There is no CPU fallback.
 
 ---
 

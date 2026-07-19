@@ -77,9 +77,9 @@ describe('runtime defaults for unknown stems (§5.1)', () => {
     expect(defaultStemEntry('IEM', 'guitar')).toEqual({ gain: 1, muted: true });
   });
 
-  it('vocal detection flips the pair', () => {
+  it('vocals muted on PA; everything muted on IEM (single-sound-card default)', () => {
     expect(defaultStemEntry('PA', 'Lead Vox')).toEqual({ gain: 1, muted: true });
-    expect(defaultStemEntry('IEM', 'Lead Vox')).toEqual({ gain: 1, muted: false });
+    expect(defaultStemEntry('IEM', 'Lead Vox')).toEqual({ gain: 1, muted: true });
   });
 
   it('resolveStemEntry falls back to the runtime default and clamps stored values', () => {
@@ -100,11 +100,13 @@ describe('D1 seed + merge (§5.3)', () => {
       other: { muted: false },
       vocals: { muted: true },
     });
+    // IEM defaults fully muted: we can't assume a second sound card exists,
+    // and an unmuted IEM vocal on a shared output leaks guide vocals.
     expect(seed.IEM).toMatchObject({
       drums: { muted: true },
       bass: { muted: true },
       other: { muted: true },
-      vocals: { muted: false },
+      vocals: { muted: true },
     });
     // all sliders default to 100% = authored mix (D3)
     for (const bus of ['PA', 'IEM'])

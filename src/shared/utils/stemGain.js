@@ -42,9 +42,12 @@ export function clampStemGain(gain) {
  * IEM), preserving the D1 defaults' spirit for unusual stem names.
  */
 export function defaultStemEntry(bus, stemName) {
-  const vocal = isVocalStem(stemName);
-  const mutedOnIem = bus === 'IEM';
-  return { gain: 1, muted: vocal ? !mutedOnIem : mutedOnIem };
+  // PA: karaoke defaults - vocals muted, music on. IEM: EVERYTHING muted -
+  // most hosts have a single sound card, so monitors are an explicit opt-in
+  // (an unmuted IEM vocal on a shared output would leak guide vocals to the
+  // room by default).
+  if (bus === 'IEM') return { gain: 1, muted: true };
+  return { gain: 1, muted: isVocalStem(stemName) };
 }
 
 /** The persisted entry for (bus, stem), or the runtime default. Never mutates. */

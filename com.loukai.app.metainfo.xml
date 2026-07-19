@@ -48,6 +48,21 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.8.0" date="2026-07-18">
+      <description>
+        <p>Stem mixer on every output, and a rock-solid Linux launch</p>
+        <ul>
+          <li>NEW: per-stem volume and mute on each output bus - give the singer a vocals-on monitor mix while the room hears the karaoke mix, live from the web admin</li>
+          <li>Monitors (IEM) start fully muted so nothing leaks on single-sound-card setups; enable exactly the stems you want</li>
+          <li>Linux: native Wayland with GPU song creation AND casting to phones/browser viewers working at the same time; terminal launches always bring up the window</li>
+          <li>A second launch focuses the running app instead of failing</li>
+          <li>Better default lyrics model (Whisper large-v3-turbo, multilingual with language auto-detect)</li>
+          <li>Stem separation runs on the GPU or fails fast with a clear message - no more silent hour-long CPU runs</li>
+          <li>Newly created songs appear in the app library instantly - no manual sync</li>
+          <li>Queue Load works for .stem.mp4 files; editor timestamp fields no longer eat keystrokes; legacy .kai code paths removed</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-07-17">
       <description>
         <p>WebGPU creator everywhere, AIFF support, and a fully pure-JS runtime</p>
