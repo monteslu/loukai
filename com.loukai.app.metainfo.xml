@@ -48,6 +48,17 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.9.0" date="2026-07-18">
+      <description>
+        <p>Key shift</p>
+        <ul>
+          <li>NEW: transpose the loaded song up or down 6 semitones live from the player or the web admin - the band and guide vocal shift together, the singer's mic never does</li>
+          <li>Shows the transposed key while shifted (Am to Bm at +2) when the song's key is known</li>
+          <li>Per-song by design: resets to 0 on every load and is never saved to settings</li>
+          <li>Zero cost when unshifted - the pitch processor is fully bypassed at 0</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.8.1" date="2026-07-18">
       <description>
         <p>Editor save no longer freezes the app</p>
