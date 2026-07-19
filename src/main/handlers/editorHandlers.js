@@ -48,8 +48,8 @@ export function registerEditorHandlers(mainApp) {
       }
       const format = STEM_MP4_FORMAT;
 
-      const editorService = await import('../../shared/services/editorService.js');
-      const _result = await editorService.saveSong(originalPath, {
+      const { saveSongOffMain } = await import('../workers/saveSongOffMain.js');
+      const _result = await saveSongOffMain(originalPath, {
         format: format,
         metadata: songData.song || songData.metadata || {},
         lyrics: songData.lyrics,
