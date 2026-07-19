@@ -129,7 +129,7 @@ describe('mixerService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('bus (PA/IEM/mic) and gainDb required');
-      expect(appState.updateMixerState).not.toHaveBeenCalled();
+      expect(mainApp.appState.updateMixerState).not.toHaveBeenCalled();
       expect(mainApp.sendToRenderer).not.toHaveBeenCalled();
     });
 
@@ -253,7 +253,7 @@ describe('mixerService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('bus (PA/IEM/mic) required');
-      expect(appState.updateMixerState).not.toHaveBeenCalled();
+      expect(mainApp.appState.updateMixerState).not.toHaveBeenCalled();
       expect(mainApp.sendToRenderer).not.toHaveBeenCalled();
     });
 
@@ -359,7 +359,7 @@ describe('mixerService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('bus (PA/IEM/mic) and muted status required');
-      expect(appState.updateMixerState).not.toHaveBeenCalled();
+      expect(mainApp.appState.updateMixerState).not.toHaveBeenCalled();
       expect(mainApp.sendToRenderer).not.toHaveBeenCalled();
     });
 
@@ -407,6 +407,29 @@ describe('stem×bus mixer (#49)', () => {
     // shape and toggle off it, so make the mock actually write.
     mainApp.appState.updateMixerState.mockImplementation((mixer) => {
       mainApp.appState.state.mixer = mixer;
+    });
+  });
+
+  describe('setKeyShift', () => {
+    it('clamps, updates mixer state, and relays to the renderer', () => {
+      const result = mixerService.setKeyShift(mainApp, 9);
+      expect(result).toEqual({ success: true, semitones: 6 });
+      expect(mainApp.appState.updateMixerState).toHaveBeenCalledWith(
+        expect.objectContaining({ keyShift: 6 })
+      );
+      expect(mainApp.sendToRenderer).toHaveBeenCalledWith('mixer:keyShift', { semitones: 6 });
+    });
+
+    it('rounds fractional semitones', () => {
+      const result = mixerService.setKeyShift(mainApp, -2.6);
+      expect(result).toEqual({ success: true, semitones: -3 });
+    });
+
+    it('rejects non-numeric input without touching state', () => {
+      const result = mixerService.setKeyShift(mainApp, 'up a bit');
+      expect(result.success).toBe(false);
+      expect(mainApp.appState.updateMixerState).not.toHaveBeenCalled();
+      expect(mainApp.sendToRenderer).not.toHaveBeenCalled();
     });
   });
 

@@ -489,6 +489,9 @@ export function App() {
                 onPreviousEffect={handleEffectPrevious}
                 onNextEffect={handleEffectNext}
                 onOpenViewer={() => window.open('/viewer', '_blank', 'noopener')}
+                keyShift={mixer?.keyShift ?? 0}
+                songKey={currentSong?.key}
+                onKeyShift={(n) => bridge.setKeyShift(n)}
               />
             </div>
             <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">

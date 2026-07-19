@@ -130,6 +130,13 @@ export class WebBridge extends BridgeInterface {
     });
   }
 
+  async setKeyShift(semitones) {
+    return await this._fetch('/mixer/keyshift', {
+      method: 'POST',
+      body: JSON.stringify({ semitones }),
+    });
+  }
+
   async setStemMute(bus, stem, muted) {
     return await this._fetch('/mixer/stem', {
       method: 'POST',

@@ -376,6 +376,11 @@ mic ─► micGain ─► [auto-tune chain] ──────┤        └─(
   the Audio tab, the PA quick-mix drawer, and `POST /admin/mixer/stem`.
 - CDG songs collapse to a single "music" node per bus (`songType` rides the
   mixer broadcast so remote UIs render the simplified variant).
+- **Key shift (#90)**: every recorded source sums into a per-bus `songBus`;
+  at 0 semitones it feeds `masterGain` directly (hard bypass, zero cost), else
+  through a SoundTouch AudioWorklet (`pitchSemitones`). The mic joins after and
+  is never shifted. Per-loaded-song: resets to 0 on load, syncs across surfaces
+  via the mixer broadcast, and statePersistence strips it so it never persists.
 
 ### Clocks and scheduling
 

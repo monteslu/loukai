@@ -6,6 +6,7 @@
  */
 
 import { clampStemGain, resolveStemEntry } from '../utils/stemGain.js';
+import { clampKeyShift } from '../utils/musicKey.js';
 
 /**
  * Get current mixer state
@@ -180,6 +181,29 @@ export function setMasterMute(mainApp, bus, muted) {
  * @param {string} stem - stem name (canonical or file-specific)
  * @param {number} gain - linear multiplier 0..1.5 (1.0 = authored mix); clamped
  */
+/**
+ * Set the key shift for the loaded song (issue #90). Ephemeral by design:
+ * lives in the mixer broadcast so every surface syncs, but statePersistence
+ * strips it before writing to disk and the engine resets it on song load.
+ */
+export function setKeyShift(mainApp, semitones) {
+  try {
+    const n = Number(semitones);
+    if (!Number.isFinite(n)) {
+      return { success: false, error: 'numeric semitones required' };
+    }
+    const clamped = clampKeyShift(n);
+    const currentMixer = mainApp.appState.state.mixer;
+    mainApp.appState.updateMixerState({ ...currentMixer, keyShift: clamped });
+    // Renderer applies the audio change (no-echo: it must not re-report this).
+    mainApp.sendToRenderer('mixer:keyShift', { semitones: clamped });
+    return { success: true, semitones: clamped };
+  } catch (error) {
+    console.error('Error setting key shift:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 export function setStemGain(mainApp, bus, stem, gain) {
   try {
     if ((bus !== 'PA' && bus !== 'IEM') || !stem || typeof gain !== 'number') {

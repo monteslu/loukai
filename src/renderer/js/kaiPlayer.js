@@ -1,4 +1,5 @@
 import { PlayerInterface } from './PlayerInterface.js';
+import { clampKeyShift } from '../../shared/utils/musicKey.js';
 import { MicrophoneEngine } from './microphoneEngine.js';
 import {
   effectiveStemGain,
@@ -106,6 +107,7 @@ export class KAIPlayer extends PlayerInterface {
       // Apply saved PA gain (considering mute state)
       const paGain = this.mixerState.PA.muted ? 0 : this.dbToLinear(this.mixerState.PA.gain);
       this.outputNodes.PA.masterGain.gain.value = paGain;
+      this.setupSongBus('PA');
 
       // Create analyser for butterchurn visualization (before gain affects signal)
       this.outputNodes.PA.analyser = this.audioContexts.PA.createAnalyser();
@@ -134,6 +136,7 @@ export class KAIPlayer extends PlayerInterface {
       // Apply saved IEM gain (considering mute state)
       const iemGain = this.mixerState.IEM.muted ? 0 : this.dbToLinear(this.mixerState.IEM.gain);
       this.outputNodes.IEM.masterGain.gain.value = iemGain;
+      this.setupSongBus('IEM');
 
       // Initialize microphone engine
       this.micEngine = new MicrophoneEngine(this.audioContexts.PA, this.outputNodes.PA.masterGain, {
@@ -340,6 +343,7 @@ export class KAIPlayer extends PlayerInterface {
         ? 0
         : this.dbToLinear(this.mixerState[busType].gain);
       this.outputNodes[busType].masterGain.gain.value = savedGain;
+      this.setupSongBus(busType);
 
       // Create analyser for PA (for butterchurn visualization)
       if (busType === 'PA') {
@@ -399,6 +403,7 @@ export class KAIPlayer extends PlayerInterface {
   async loadSong(songData) {
     this.cdgMusicNode = null; // stems song replaces any CDG music-node registration
     this.mixerState.songType = 'kai';
+    this.setKeyShift(0, false); // per-song: a new load always starts unshifted
 
     this.songData = songData;
 
@@ -670,7 +675,7 @@ export class KAIPlayer extends PlayerInterface {
     this.mixerState.stems.forEach((stem) => {
       // Create gain node for PA output
       const paGainNode = this.audioContexts.PA.createGain();
-      paGainNode.connect(this.outputNodes.PA.masterGain);
+      paGainNode.connect(this.outputNodes.PA.songBus);
       this.outputNodes.PA.gainNodes.set(stem.name, paGainNode);
 
       // Create gain node for IEM output
@@ -681,9 +686,9 @@ export class KAIPlayer extends PlayerInterface {
         // Create channel merger to convert stereo to mono
         const channelMerger = this.audioContexts.IEM.createChannelMerger(1);
         iemGainNode.connect(channelMerger);
-        channelMerger.connect(this.outputNodes.IEM.masterGain);
+        channelMerger.connect(this.outputNodes.IEM.songBus);
       } else {
-        iemGainNode.connect(this.outputNodes.IEM.masterGain);
+        iemGainNode.connect(this.outputNodes.IEM.songBus);
       }
 
       this.outputNodes.IEM.gainNodes.set(stem.name, iemGainNode);
@@ -753,12 +758,105 @@ export class KAIPlayer extends PlayerInterface {
   }
 
   /**
+   * Key shift (issue #90): every recorded source (all stems, or the CDG music
+   * node) sums into a per-bus songBus; that sum either feeds masterGain
+   * directly (0 semitones: hard bypass, zero cost) or runs through a
+   * SoundTouch AudioWorklet pitched by pitchSemitones. The live mic connects
+   * to masterGain directly and is never shifted. Per-loaded-song by design:
+   * reset to 0 on every load, synced across surfaces via the mixer broadcast,
+   * never persisted (statePersistence strips it).
+   */
+  setupSongBus(bus) {
+    const ctx = this.audioContexts[bus];
+    const out = this.outputNodes[bus];
+    if (!ctx || !out?.masterGain) return;
+    out.songBus = ctx.createGain();
+    // A fresh context has no worklet module or node yet.
+    out.keyShiftNode = null;
+    out.soundtouchModuleLoaded = false;
+    this.applyKeyShiftRouting(bus);
+  }
+
+  async ensureKeyShiftNode(bus) {
+    const ctx = this.audioContexts[bus];
+    const out = this.outputNodes[bus];
+    if (!ctx || !out) return null;
+    if (out.keyShiftNode) return out.keyShiftNode;
+    try {
+      if (!out.soundtouchModuleLoaded) {
+        await ctx.audioWorklet.addModule('js/soundtouch-worklet.js');
+        out.soundtouchModuleLoaded = true;
+      }
+      const node = new AudioWorkletNode(ctx, 'soundtouch-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+      });
+      node.connect(out.masterGain);
+      out.keyShiftNode = node;
+      return node;
+    } catch (e) {
+      console.error(`key shift worklet unavailable on ${bus}:`, e);
+      return null;
+    }
+  }
+
+  async applyKeyShiftRouting(bus) {
+    const out = this.outputNodes[bus];
+    if (!out?.songBus || !out.masterGain) return;
+    const target = this.keyShift ?? 0;
+    let node = null;
+    if (target !== 0) {
+      // Keep the current path audible while the worklet loads (first engage
+      // costs one module fetch; after that the node is reused).
+      node = await this.ensureKeyShiftNode(bus);
+      if ((this.keyShift ?? 0) !== target) return; // superseded while loading
+    }
+    try {
+      out.songBus.disconnect();
+    } catch {
+      /* fresh node, nothing connected */
+    }
+    if (target !== 0 && node) {
+      node.parameters.get('pitchSemitones').value = target;
+      out.songBus.connect(node);
+    } else {
+      out.songBus.connect(out.masterGain);
+    }
+  }
+
+  /**
+   * Set the loaded song's key shift in semitones (clamped to -6..6).
+   * report=false is the no-echo path for commands that came FROM main.
+   */
+  setKeyShift(semitones, report = true) {
+    const n = clampKeyShift(semitones);
+    if (n === (this.keyShift ?? 0)) return n;
+    this.keyShift = n;
+    this.mixerState.keyShift = n;
+    this.applyKeyShiftRouting('PA');
+    this.applyKeyShiftRouting('IEM');
+    if (report) this.reportMixerState();
+    return n;
+  }
+
+  /**
    * CDG mode (§8): the loaded CDG song's single music gain node, driven by the PA
    * "music" strip through the same stemMix state (persists like any stem key).
    * Registered by the CDG loader; cleared when a stems song loads.
    */
   attachCdgMusicNode(gainNode) {
     this.cdgMusicNode = gainNode;
+    // Route the CDG music through the PA song bus so key shift (#90) covers it.
+    if (this.outputNodes.PA?.songBus) {
+      try {
+        gainNode.disconnect();
+      } catch {
+        /* not connected yet */
+      }
+      gainNode.connect(this.outputNodes.PA.songBus);
+    }
+    this.setKeyShift(0, false); // per-song: a new load always starts unshifted
     // The mixer UIs render the single-music-fader variant off this flag (it rides
     // the same mixer broadcast every surface already subscribes to).
     this.mixerState.songType = 'cdg';
@@ -1002,6 +1100,7 @@ export class KAIPlayer extends PlayerInterface {
       IEM: this.mixerState.IEM,
       mic: this.mixerState.mic,
       stems: this.mixerState.stems, // For reference only
+      keyShift: this.keyShift,
       isPlaying: this.isPlaying,
       position: this.getCurrentPosition(),
       duration: this.getDuration(),
