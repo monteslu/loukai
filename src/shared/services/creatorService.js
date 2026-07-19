@@ -242,6 +242,7 @@ export async function saveWebGpuStems({
   stems,
   metadata,
   lyrics,
+  chords,
   pitch,
   referenceLyrics,
   settingsManager,
@@ -367,6 +368,17 @@ export async function saveWebGpuStems({
 
     // CREPE-derived musical key + pitch track (parity with the native creator). Both
     // best-effort — a failure here must not lose the otherwise-good file.
+    // Chord track (#93): the muxer only writes known kara fields, so merge the
+    // chords into the kara atom after the fact (best-effort, like key/pitch).
+    if (chords && chords.length > 0) {
+      try {
+        const kara = await M4AAtoms.readKaraAtom(outputPath);
+        await M4AAtoms.writeKaraAtom(outputPath, { ...kara, chords });
+      } catch (e) {
+        console.warn('chord track write failed:', e.message);
+      }
+    }
+
     if (key) {
       try {
         await M4AAtoms.addMusicalKey(outputPath, key);

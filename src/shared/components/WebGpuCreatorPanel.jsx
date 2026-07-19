@@ -554,6 +554,7 @@ export default function WebGpuCreatorPanel() {
       const correctedWords = created.lyrics.words;
       const detectedKey = created.key;
       const pitchData = created.pitch;
+      const chordData = created.chords;
       setLlmStats(null);
       const refLyrics = referenceLyrics.trim(); // sent to backend; it looks up if empty
 
@@ -680,6 +681,7 @@ export default function WebGpuCreatorPanel() {
             composer: songTags.composer,
           },
           lyrics: lyricsPayload,
+          chords: chordData,
           pitch: pitchData,
           referenceLyrics: refLyrics, // backend corrects server-side (looks up if empty)
         });
@@ -698,6 +700,7 @@ export default function WebGpuCreatorPanel() {
         fd.append('lyrics', JSON.stringify(lyricsPayload));
         if (detectedKey) fd.append('key', detectedKey);
         if (pitchData) fd.append('pitch', JSON.stringify(pitchData));
+        if (chordData?.length) fd.append('chords', JSON.stringify(chordData));
         if (refLyrics) fd.append('referenceLyrics', refLyrics);
         for (const [k, bytes] of Object.entries(aacBytes)) {
           fd.append(k, new Blob([bytes], { type: 'audio/mp4' }), `${k}.m4a`);

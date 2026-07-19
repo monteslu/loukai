@@ -31,7 +31,7 @@ import { Atoms as M4AAtoms } from 'stem-mp4';
  * @param {Object} data - Karaoke data to embed
  */
 async function injectKaraokeAtoms(filePath, data) {
-  const { lyrics, llmCorrections, tags } = data;
+  const { lyrics, llmCorrections, tags, chords } = data;
 
   // Convert lyrics segments to lines format expected by kara atom
   // Include word-level timing if available from Whisper
@@ -66,6 +66,7 @@ async function injectKaraokeAtoms(filePath, data) {
   // Build kara data structure for stem-mp4
   // Note: Audio sources are read from the NI Stems 'stem' atom, not stored in kara
   const karaData = {
+    ...(chords && chords.length > 0 && { chords }),
     // Timing information
     timing: {
       offset_sec: 0,
@@ -139,7 +140,7 @@ async function injectKaraokeAtoms(filePath, data) {
  * @returns {Promise<void>}
  */
 export async function injectLyricsIntoStemFile(options) {
-  const { filePath, lyrics, llmCorrections, tags } = options;
+  const { filePath, lyrics, llmCorrections, tags, chords } = options;
 
   log(`🎤 Injecting lyrics into existing stem file: ${filePath}`);
 
@@ -181,6 +182,7 @@ export async function injectLyricsIntoStemFile(options) {
 
   // Note: Audio sources are read from the NI Stems 'stem' atom, not stored in kara
   const karaData = {
+    ...(chords && chords.length > 0 && { chords }),
     timing: {
       offset_sec: existingKara?.timing?.offset_sec || 0,
       encoder_delay_samples: existingKara?.timing?.encoder_delay_samples || 0,

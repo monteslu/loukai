@@ -207,6 +207,7 @@ class M4ALoader {
         },
 
         lyrics,
+        chords: karaData?.chords || null,
 
         features: {
           notesRef: null,

@@ -201,6 +201,11 @@ async function saveM4ASong(path, updates) {
     // Tags for filtering (e.g., 'edited', 'ai_corrected')
     tags: dataToSave.tags || [],
 
+    // Chord track (#93): pass through so an editor save never strips it
+    ...(((dataToSave.chords ?? existingKara?.chords)?.length ?? 0) > 0 && {
+      chords: dataToSave.chords ?? existingKara.chords,
+    }),
+
     // Lyrics (lines) - preserves word-level timing if present
     lines: (dataToSave.lyrics || []).map((line) => ({
       start: line.start || line.startTimeSec || 0,

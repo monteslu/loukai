@@ -2133,6 +2133,7 @@ class WebServer {
               stems: stemPaths,
               metadata: { title, artist, album, key: created.key, duration: created.duration },
               lyrics: created.lyrics,
+              chords: created.chords,
               pitch: created.pitch,
               referenceLyrics,
               settingsManager: this.mainApp.settings,
