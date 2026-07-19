@@ -165,10 +165,10 @@ export default function CreatorImportPanel({ bridge }) {
       {/* Create on this host — only when a player is running. */}
       {hostAvailable && (
         <div className={card}>
-          <h3 className="text-lg font-semibold mb-1">Create on this host ⚡</h3>
+          <h3 className="text-lg font-semibold mb-1">Create on the Loukai app ⚡</h3>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-            Pick a song and the Loukai desktop machine will create the karaoke file on its GPU and
-            add it to the library. You&apos;ll see progress here.
+            Pick a song and the Loukai app will create the karaoke file on its GPU and add it to the
+            library. You&apos;ll see progress here.
           </p>
 
           <input
@@ -228,7 +228,7 @@ export default function CreatorImportPanel({ bridge }) {
                 ? 'Another creation is running…'
                 : submitting
                   ? 'Starting…'
-                  : 'Create on host ⚡'}
+                  : 'Create on the Loukai app ⚡'}
           </button>
 
           {hostError && (
