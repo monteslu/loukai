@@ -13,6 +13,23 @@ import * as libraryService from '../../shared/services/libraryService.js';
  * @param {Object} mainApp - Main application instance
  */
 export function registerLibraryHandlers(mainApp) {
+  // Chord backfill (issue #93): the renderer analyzed a legacy song's stems and
+  // hands back the chord track; merge it into the file off the main thread.
+  ipcMain.handle('library:writeChords', (event, { path: filePath, chords }) => {
+    return new Promise((resolve) => {
+      import('node:worker_threads').then(({ Worker }) => {
+        try {
+          const worker = new Worker(new URL('../workers/writeChordsWorker.js', import.meta.url), {
+            workerData: { filePath, chords },
+          });
+          worker.once('message', (m) => resolve(m));
+          worker.once('error', (e) => resolve({ ok: false, error: e.message }));
+        } catch (e) {
+          resolve({ ok: false, error: e.message });
+        }
+      });
+    });
+  });
   // Get songs folder
   ipcMain.handle(LIBRARY_CHANNELS.GET_SONGS_FOLDER, () => {
     return libraryService.getSongsFolder(mainApp);

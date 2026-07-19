@@ -6,6 +6,66 @@
 /**
  * Load CDG format song
  */
+
+/**
+ * Chord backfill (issue #93): a legacy song has stems but no chord track. The
+ * player already holds every stem DECODED, so analysis is nearly free: run
+ * detection in a Web Worker (UI never feels it), show the chords as soon as
+ * they exist, and persist them into the file once (a worker thread on the
+ * main side) so this never runs again for the song.
+ */
+function backfillChords(app, songData) {
+  try {
+    if (songData?.chords?.length) return; // already has a chord track
+    const filePath = songData?.originalFilePath || app.currentSong?.path;
+    const buffers = app.kaiPlayer?.audioBuffers;
+    if (!filePath || !buffers?.size) return;
+    const pick = (name) => {
+      for (const [k, buf] of buffers) {
+        if (k.toLowerCase().includes(name)) return buf;
+      }
+      return null;
+    };
+    const otherBuf = pick('other') || pick('music');
+    if (!otherBuf) return;
+    const bassBuf = pick('bass');
+    const toStem = (buf) =>
+      buf && {
+        left: buf.getChannelData(0).slice(),
+        right: buf.numberOfChannels > 1 ? buf.getChannelData(1).slice() : undefined,
+      };
+    const other = toStem(otherBuf);
+    const bass = toStem(bassBuf);
+    const worker = new Worker(new URL('../workers/chordWorker.js', import.meta.url), {
+      type: 'module',
+    });
+    const transfers = [other.left.buffer];
+    if (other.right) transfers.push(other.right.buffer);
+    if (bass?.left) transfers.push(bass.left.buffer);
+    if (bass?.right) transfers.push(bass.right.buffer);
+    worker.onmessage = async (e) => {
+      worker.terminate();
+      if (!e.data.ok || !e.data.chords?.length) return;
+      const chords = e.data.chords;
+      // Live display for this session…
+      if (app.kaiPlayer?.songData) app.kaiPlayer.songData.chords = chords;
+      app.player?.karaokeRenderer?.setChords(chords);
+      console.log(`🎸 chord backfill: ${chords.length} segments`);
+      // …and one-time persistence into the file.
+      try {
+        const r = await window.kaiAPI.library.writeChords(filePath, chords);
+        if (!r?.ok) console.warn('chord backfill write failed:', r?.error);
+      } catch (err) {
+        console.warn('chord backfill write failed:', err.message);
+      }
+    };
+    worker.onerror = () => worker.terminate();
+    worker.postMessage({ other, bass, sampleRate: otherBuf.sampleRate }, transfers);
+  } catch (e) {
+    console.warn('chord backfill skipped:', e.message);
+  }
+}
+
 export async function loadCDGSong(app, songData, metadata) {
   app.player.currentFormat = 'cdg';
   app.player.currentPlayer = app.player.cdgPlayer;
@@ -170,6 +230,7 @@ export async function loadKAISong(app, songData, metadata) {
       requester: metadata.requester || songData.requester || app.currentSong.requester,
     };
     app.player.onSongLoaded(fullMetadata);
+    backfillChords(app, songData);
 
     // Load and apply waveform preferences from settings for KAI
     // Defaults are now provided by settingsManager from shared/defaults.js
@@ -283,6 +344,7 @@ export async function loadM4ASong(app, songData, metadata) {
       requester: metadata.requester || songData.requester || app.currentSong.requester,
     };
     app.player.onSongLoaded(fullMetadata);
+    backfillChords(app, songData);
 
     // Load and apply waveform preferences from settings
     // Defaults are now provided by settingsManager from shared/defaults.js
