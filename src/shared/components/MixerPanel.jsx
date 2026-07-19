@@ -28,7 +28,11 @@ export function MixerPanel({
   const handleMuteToggle = onToggleMasterMute || onMuteToggle;
   const buses = [
     { id: 'PA', label: 'PA (Main)', description: 'Music + Mic to audience' },
-    { id: 'IEM', label: 'IEM (Monitors)', description: 'Vocals only (mono)' },
+    {
+      id: 'IEM',
+      label: 'IEM (Monitors)',
+      description: 'Monitor mix (mono) - stems muted until enabled',
+    },
     { id: 'mic', label: 'Mic Input', description: 'Microphone gain' },
   ];
 

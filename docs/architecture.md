@@ -343,36 +343,39 @@ worklets).
 ```
 PA context (sinkId: PA device)                 IEM context (sinkId: IEM device)
 ──────────────────────────────                 ────────────────────────────────
-non-vocal stem sources ─► per-stem gain ─┐     vocal stem sources ─► per-stem gain
-vocal "backup" source ─► vocalsPAGain(0) ─┤        └─(iemMonoVocals?)─► ChannelMerger(1)
-mic ─► micGain ─► [auto-tune chain] ──────┤                              │
-                                          ▼                              ▼
-                                    PA.masterGain                  IEM.masterGain
-                                     ├─► destination (PA device)    └─► destination (IEM device)
-                                     └─► streamDestination (MediaStream → WebRTC viewers)
+EVERY stem ─► per-stem gain (PA) ─────────┐    EVERY stem ─► per-stem gain (IEM)
+mic ─► micGain ─► [auto-tune chain] ──────┤        └─(iemMonoVocals?)─► ChannelMerger(1)
+                                          ▼                              │
+                                    PA.masterGain                        ▼
+                                     ├─► destination (PA device)   IEM.masterGain
+                                     └─► streamDestination           └─► destination (IEM device)
+                                          (MediaStream → WebRTC viewers)
        (per-source pre-gain tap ─► AnalyserNode ─► Butterchurn)
 ```
 
-### Routing rules
+### Routing rules (stem×bus mixer, #49)
 
-- Stems are classified **by name keywords** at source-start time
-  (`isVocalStem`: vocals/vocal/voice/lead/singing/vox). Vocals get sources in the
-  IEM context; everything else gets sources in the PA context. `AudioBuffer`s are
-  decoded once (PA context) and shared — buffers are context-agnostic.
-- **IEM carries the recorded guide-vocal stem, never the live mic.** It defaults
-  to muted (user opts in) and mono-sums vocals through a `ChannelMerger(1)` by
-  default ("single earpiece" mode).
-- **The live mic goes to PA only** and lives in the PA context. Mic → IEM would
-  require bridging contexts (nodes cannot span `AudioContext`s).
-- **`backup:PA` punchthrough**: the vocal stem is *always also playing* into the
-  PA context through `vocalsPAGain` at gain 0; lyric lines tagged
-  `singer: "backup:PA"` ramp it up/down over 50 ms (`linearRampToValueAtTime`).
-  This always-running-muted-source + gain-ramp pattern is the template for any
-  glitch-free rerouting; other topology changes (e.g. IEM mono toggle) do a full
-  stop-and-rebuild of sources.
-- Mixer model: three master faders (PA / IEM / mic) mapped to `masterGain` nodes
-  and `microphoneGain`. Per-stem gains are static dB trims from song metadata;
-  there is no runtime per-stem fader/mute/solo in the audio path.
+- **Every stem plays into BOTH contexts, always** (dual always-running sources).
+  Audibility is decided per `(bus, stem)` by a gain formula, not by topology:
+  `effective = trim(dB from song metadata) × userGain(0..1.5) × mute`. Mixer
+  changes are glitch-free gain ramps; no source rebuilds.
+- **Defaults**: PA plays music with vocals muted (karaoke); **IEM starts fully
+  muted** — a second sound card can't be assumed, so monitors are an explicit
+  opt-in per stem. Stems are classified by name keywords (`isVocalStem`:
+  vocals/vocal/voice/lead/singing/vox) for the defaults and for punchthrough.
+- **`backup:PA` punchthrough**: lyric lines tagged `singer: "backup:PA"` ramp
+  the PA vocal stem over 50 ms to `max(userGain, authored)` — an authored
+  punchthrough can't be silenced by a user mute, and a user boost survives it.
+- **The live mic goes to PA only** and lives in the PA context (nodes cannot
+  span `AudioContext`s). IEM mono ("single earpiece" mode) sums through a
+  `ChannelMerger(1)`; toggling it rebuilds sources.
+- `AudioBuffer`s are decoded once (PA context) and shared — buffers are
+  context-agnostic.
+- Mixer model: three master faders (PA / IEM / mic) plus per-stem gain/mute on
+  each bus, persisted wholesale as `appState.mixer.stemMix` and controlled from
+  the Audio tab, the PA quick-mix drawer, and `POST /admin/mixer/stem`.
+- CDG songs collapse to a single "music" node per bus (`songType` rides the
+  mixer broadcast so remote UIs render the simplified variant).
 
 ### Clocks and scheduling
 
