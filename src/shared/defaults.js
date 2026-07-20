@@ -73,7 +73,7 @@ export const LLM_DEFAULTS = {
 };
 
 export const CREATOR_DEFAULTS = {
-  outputToSongsFolder: false,
+  outputToSongsFolder: true,
   whisperModel: 'large-v3-turbo',
   enableCrepe: true,
   // PyTorch backend for stem separation / transcription.
