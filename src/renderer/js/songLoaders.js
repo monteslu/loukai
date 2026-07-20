@@ -198,6 +198,10 @@ export async function loadCDGSong(app, songData, metadata) {
     requester: metadata.requester || songData.requester || app.currentSong?.requester,
   };
   app.player.onSongLoaded(fullMetadata);
+  // The chord overlay reads the renderer's pref flag; the CDG path must apply
+  // it like the stems path does or the overlay stays off regardless of the
+  // setting (the karaokeRenderer default is off).
+  app.player.karaokeRenderer?.setShowChords(waveformPrefs.showChords === true);
   if (waveformPrefs.showChords === true) backfillChordsCdg(app);
 
   // Broadcast that CDG is ready (clear loading state)
