@@ -78,6 +78,7 @@ function TimeField({ value, onCommit }) {
 }
 
 export function ChordEditor({ chords, onChange }) {
+  const [selectedIndex, setSelectedIndex] = useState(null);
   const [open, setOpen] = useState(false);
   const list = chords || [];
 
@@ -128,12 +129,21 @@ export function ChordEditor({ chords, onChange }) {
             </div>
           )}
           {list.map((c, i) => (
-            <div key={`chord-${i}`} className="flex items-center gap-2 py-0.5">
+            <div
+              key={`chord-${i}`}
+              onClick={() => setSelectedIndex(i)}
+              className={`flex items-center gap-2.5 mb-2.5 p-2 border-2 rounded transition-all cursor-pointer ${
+                selectedIndex === i
+                  ? 'border-blue-500 bg-blue-100 dark:border-blue-400 dark:bg-blue-900/40'
+                  : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-750 hover:border-gray-400 dark:hover:border-gray-500'
+              }`}
+            >
               <span
                 title={`Play chord ${i + 1} as a tone`}
                 className="flex items-center justify-center min-w-[36px] h-9 bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm font-semibold text-gray-700 dark:text-gray-200 cursor-pointer transition-all flex-shrink-0 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-500"
                 onClick={(e) => {
                   e.stopPropagation();
+                  setSelectedIndex(i);
                   playChordTone(c.chord, c.end - c.start);
                 }}
               >
