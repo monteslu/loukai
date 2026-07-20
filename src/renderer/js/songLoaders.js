@@ -14,7 +14,7 @@
  * they exist, and persist them into the file once (a worker thread on the
  * main side) so this never runs again for the song.
  */
-function backfillChords(app, songData) {
+export function backfillChords(app, songData) {
   try {
     if (songData?.chords?.length) return; // already has a chord track
     const filePath = songData?.originalFilePath || app.currentSong?.path;
@@ -235,7 +235,10 @@ export async function loadKAISong(app, songData, metadata) {
       requester: metadata.requester || songData.requester || app.currentSong.requester,
     };
     app.player.onSongLoaded(fullMetadata);
-    backfillChords(app, songData);
+    // Backfill only when the chord display is actually on: with it off (the
+    // default) we neither burn the analysis nor rewrite files nobody asked for.
+    // Turning the toggle on backfills the loaded song at that moment instead.
+    if (waveformPrefs.showChords === true) backfillChords(app, songData);
 
     // Load and apply waveform preferences from settings for KAI
     // Defaults are now provided by settingsManager from shared/defaults.js
@@ -349,7 +352,10 @@ export async function loadM4ASong(app, songData, metadata) {
       requester: metadata.requester || songData.requester || app.currentSong.requester,
     };
     app.player.onSongLoaded(fullMetadata);
-    backfillChords(app, songData);
+    // Backfill only when the chord display is actually on: with it off (the
+    // default) we neither burn the analysis nor rewrite files nobody asked for.
+    // Turning the toggle on backfills the loaded song at that moment instead.
+    if (waveformPrefs.showChords === true) backfillChords(app, songData);
 
     // Load and apply waveform preferences from settings
     // Defaults are now provided by settingsManager from shared/defaults.js

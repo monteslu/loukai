@@ -206,6 +206,12 @@ export class PlayerController {
       }
       if (settings.showChords !== undefined) {
         this.karaokeRenderer.waveformPreferences.showChords = settings.showChords;
+        // Toggled ON with a chordless song loaded: analyze it now (the load-time
+        // backfill is skipped while the display is off).
+        const kp = window.app?.kaiPlayer || window.app?.player?.kaiPlayer;
+        if (settings.showChords && kp?.songData && !kp.songData.chords?.length) {
+          import('./songLoaders.js').then((m) => m.backfillChords(window.app, kp.songData));
+        }
       }
       if (settings.showUpcomingLyrics !== undefined) {
         this.karaokeRenderer.waveformPreferences.showUpcomingLyrics = settings.showUpcomingLyrics;
