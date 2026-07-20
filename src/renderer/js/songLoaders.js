@@ -14,6 +14,41 @@
  * they exist, and persist them into the file once (a worker thread on the
  * main side) so this never runs again for the song.
  */
+/**
+ * CDG variant (issue #93): analyze the decoded full mix for display only.
+ * There is no kara atom in an MP3 to persist into, so this runs per load
+ * (gated on the Show Chords pref) and quality is full-mix rather than
+ * stem-separated - good enough to follow along.
+ */
+export function backfillChordsCdg(app) {
+  try {
+    const buf = app.player?.cdgPlayer?.audioBuffer;
+    if (!buf) return;
+    const toStem = (b) => ({
+      left: b.getChannelData(0).slice(),
+      right: b.numberOfChannels > 1 ? b.getChannelData(1).slice() : undefined,
+    });
+    const other = toStem(buf);
+    const loadedPath = app.currentSong?.path;
+    const worker = new Worker(new URL('../workers/chordWorker.js', import.meta.url), {
+      type: 'module',
+    });
+    const transfers = [other.left.buffer];
+    if (other.right) transfers.push(other.right.buffer);
+    worker.onmessage = (e) => {
+      worker.terminate();
+      if (!e.data.ok || !e.data.chords?.length) return;
+      if (app.currentSong?.path !== loadedPath) return; // song changed meanwhile
+      app.player?.karaokeRenderer?.setChords(e.data.chords);
+      console.log(`🎸 chord analysis (cdg, display only): ${e.data.chords.length} segments`);
+    };
+    worker.onerror = () => worker.terminate();
+    worker.postMessage({ other, bass: null, sampleRate: buf.sampleRate }, transfers);
+  } catch (e) {
+    console.warn('cdg chord analysis skipped:', e.message);
+  }
+}
+
 export function backfillChords(app, songData) {
   try {
     if (songData?.chords?.length) return; // already has a chord track
@@ -163,6 +198,7 @@ export async function loadCDGSong(app, songData, metadata) {
     requester: metadata.requester || songData.requester || app.currentSong?.requester,
   };
   app.player.onSongLoaded(fullMetadata);
+  if (waveformPrefs.showChords === true) backfillChordsCdg(app);
 
   // Broadcast that CDG is ready (clear loading state)
   if (window.kaiAPI?.renderer) {

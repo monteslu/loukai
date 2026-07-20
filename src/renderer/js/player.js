@@ -211,6 +211,12 @@ export class PlayerController {
         const kp = window.app?.kaiPlayer || window.app?.player?.kaiPlayer;
         if (settings.showChords && kp?.songData && !kp.songData.chords?.length) {
           import('./songLoaders.js').then((m) => m.backfillChords(window.app, kp.songData));
+        } else if (
+          settings.showChords &&
+          !kp?.songData &&
+          window.app?.player?.cdgPlayer?.audioBuffer
+        ) {
+          import('./songLoaders.js').then((m) => m.backfillChordsCdg(window.app));
         }
       }
       if (settings.showUpcomingLyrics !== undefined) {
