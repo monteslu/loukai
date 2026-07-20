@@ -98,6 +98,7 @@ export function ChordEditor({ chords, onChange }) {
   return (
     <div className="mt-4 border border-gray-200 dark:border-gray-700 rounded-lg">
       <button
+        type="button"
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between px-3 py-2 text-left"
       >
@@ -118,6 +119,7 @@ export function ChordEditor({ chords, onChange }) {
               No chord track. Chords are detected automatically when a song is created or first
               played.
               <button
+                type="button"
                 onClick={() => addAfter(-1)}
                 className="ml-2 text-blue-600 dark:text-blue-400 hover:underline"
               >
@@ -127,6 +129,16 @@ export function ChordEditor({ chords, onChange }) {
           )}
           {list.map((c, i) => (
             <div key={`chord-${i}`} className="flex items-center gap-2 py-0.5">
+              <span
+                title={`Play chord ${i + 1} as a tone`}
+                className="flex items-center justify-center min-w-[36px] h-9 bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm font-semibold text-gray-700 dark:text-gray-200 cursor-pointer transition-all flex-shrink-0 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-500"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  playChordTone(c.chord, c.end - c.start);
+                }}
+              >
+                {i + 1}
+              </span>
               <TimeField value={c.start} onCommit={(v) => update(i, { start: v })} />
               <span className="text-gray-400 text-xs">to</span>
               <TimeField value={c.end} onCommit={(v) => update(i, { end: v })} />
@@ -138,15 +150,7 @@ export function ChordEditor({ chords, onChange }) {
                 onChange={(e) => update(i, { chord: e.target.value })}
               />
               <button
-                onClick={() => playChordTone(c.chord, c.end - c.start)}
-                title="Play this chord as a tone for its duration"
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-              >
-                <span className="material-icons text-gray-500 text-base leading-none">
-                  volume_up
-                </span>
-              </button>
-              <button
+                type="button"
                 onClick={() => addAfter(i)}
                 title="Add chord after"
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
@@ -154,6 +158,7 @@ export function ChordEditor({ chords, onChange }) {
                 <span className="material-icons text-gray-500 text-base leading-none">add</span>
               </button>
               <button
+                type="button"
                 onClick={() => remove(i)}
                 title="Delete chord"
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
