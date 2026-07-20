@@ -95,7 +95,7 @@ export function PlayerSettingsPanel({ socket }) {
     <div className="p-5 h-full overflow-y-auto">
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-5 mb-5">
         <h3 className="m-0 mb-5 text-lg font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-3">
-          Waveform & Visual Options
+          Display Options
         </h3>
 
         <label className="flex items-center py-3 gap-3 cursor-pointer select-none">
@@ -142,6 +142,15 @@ export function PlayerSettingsPanel({ socket }) {
           <span className="flex-1 text-[15px] text-gray-900 dark:text-white">
             Show Upcoming Lyrics
           </span>
+        </label>
+        <label className="flex items-center py-3 gap-3 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={waveformSettings.showChords}
+            onChange={(e) => handleWaveformChange('showChords', e.target.checked)}
+            className="w-[18px] h-[18px] cursor-pointer"
+          />
+          <span className="flex-1 text-[15px] text-gray-900 dark:text-white">Show Chords</span>
         </label>
 
         <div className="flex flex-col items-stretch py-3 cursor-default">

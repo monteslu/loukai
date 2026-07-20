@@ -66,6 +66,7 @@ export class PlayerController {
         artist: metadata.artist,
         requester: metadata.requester,
       });
+      this.karaokeRenderer.setChords(metadata.chords);
     }
 
     // Get duration from player for karaokeRenderer
@@ -202,6 +203,21 @@ export class PlayerController {
       }
       if (settings.enableEffects !== undefined) {
         this.karaokeRenderer.waveformPreferences.enableEffects = settings.enableEffects;
+      }
+      if (settings.showChords !== undefined) {
+        this.karaokeRenderer.waveformPreferences.showChords = settings.showChords;
+        // Toggled ON with a chordless song loaded: analyze it now (the load-time
+        // backfill is skipped while the display is off).
+        const kp = window.app?.kaiPlayer || window.app?.player?.kaiPlayer;
+        if (settings.showChords && kp?.songData && !kp.songData.chords?.length) {
+          import('./songLoaders.js').then((m) => m.backfillChords(window.app, kp.songData));
+        } else if (
+          settings.showChords &&
+          !kp?.songData &&
+          window.app?.player?.cdgPlayer?.audioBuffer
+        ) {
+          import('./songLoaders.js').then((m) => m.backfillChordsCdg(window.app));
+        }
       }
       if (settings.showUpcomingLyrics !== undefined) {
         this.karaokeRenderer.waveformPreferences.showUpcomingLyrics = settings.showUpcomingLyrics;

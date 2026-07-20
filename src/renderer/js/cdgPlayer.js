@@ -296,6 +296,12 @@ export class CDGPlayer extends PlayerInterface {
       if (!this.isPlaying) return;
 
       this.renderFrame();
+      // Chord corner display (issue #93) rides on top of the CDG frame.
+      window.app?.player?.karaokeRenderer?.drawChordTrackAt?.(
+        this.ctx,
+        this.canvas,
+        this.getCurrentTime()
+      );
       this.animationFrame = requestAnimationFrame(render);
     };
 

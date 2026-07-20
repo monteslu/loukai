@@ -1,4 +1,5 @@
 // TODO: State should be passed to renderer instead of accessing globals
+import { shiftKeyName } from '../../shared/utils/musicKey.js';
 
 export class KaraokeRenderer {
   constructor(canvasId) {
@@ -61,6 +62,7 @@ export class KaraokeRenderer {
       enableEffects: true,
       overlayOpacity: 0.7,
       showUpcomingLyrics: true,
+      showChords: false,
     };
 
     // FPS and performance tracking
@@ -347,6 +349,10 @@ export class KaraokeRenderer {
 
     // Store reference to remove listener on destroy
     this.resizeHandler = resizeCanvas;
+  }
+
+  setChords(chords) {
+    this.chordTrack = Array.isArray(chords) && chords.length > 0 ? chords : null;
   }
 
   setSongMetadata(metadata) {
@@ -1497,6 +1503,7 @@ export class KaraokeRenderer {
       const frameStart = performance.now();
 
       this.draw();
+      this.drawChordTrack();
 
       // Track time spent in updates vs rendering
       this.frameUpdateTime = performance.now() - frameStart;
@@ -1511,6 +1518,63 @@ export class KaraokeRenderer {
       cancelAnimationFrame(this.animationFrame);
       this.animationFrame = null;
     }
+  }
+
+  /**
+   * Chord track (#93): current chord big, next chord smaller and dimmer, top
+   * right corner. Data comes from the kara atom (songData.chords); names are
+   * transposed live when the key shift is active. Pure canvas text on the
+   * already-running draw loop: no extra timers, no cost when a song has no
+   * chords.
+   */
+  drawChordTrack() {
+    this.drawChordTrackAt(this.ctx, this.canvas, this.currentTime);
+  }
+
+  /**
+   * Draw the chord corner display onto ANY canvas at a given position - the
+   * CDG player calls this from its own render loop with its own clock, so
+   * chords work on CDG songs too (display only; an MP3 has no kara atom).
+   */
+  drawChordTrackAt(ctx, canvas, t) {
+    if (!this.waveformPreferences.showChords) return;
+    const chords = this.chordTrack;
+    if (!chords?.length) return;
+    let current = null;
+    let next = null;
+    for (let i = 0; i < chords.length; i++) {
+      if (chords[i].start <= t && t < chords[i].end) {
+        current = chords[i];
+        next = chords[i + 1] || null;
+        break;
+      }
+      if (chords[i].start > t) {
+        next = chords[i];
+        break;
+      }
+    }
+    if (!current && !next) return;
+    const shift = window.app?.player?.kaiPlayer?.keyShift ?? 0;
+    const name = (c) => (shift ? shiftKeyName(c.chord, shift) || c.chord : c.chord);
+    const w = canvas.width;
+    ctx.save();
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    if (current) {
+      ctx.font = `bold ${Math.round(canvas.height * 0.06)}px sans-serif`;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+      ctx.shadowBlur = 6;
+      ctx.fillText(name(current), w - 24, 18);
+    }
+    if (next) {
+      ctx.font = `${Math.round(canvas.height * 0.035)}px sans-serif`;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+      ctx.shadowBlur = 4;
+      ctx.fillText(name(next), w - 24, 18 + Math.round(canvas.height * 0.07));
+    }
+    ctx.restore();
   }
 
   draw() {
@@ -3021,6 +3085,10 @@ export class KaraokeRenderer {
 
   setShowUpcomingLyrics(enabled) {
     this.waveformPreferences.showUpcomingLyrics = enabled;
+  }
+
+  setShowChords(enabled) {
+    this.waveformPreferences.showChords = enabled;
   }
 
   drawUpcomingLyrics(canvasWidth, canvasHeight, startY) {

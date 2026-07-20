@@ -16,6 +16,7 @@
  */
 
 import { snapToVocalEnergy } from './vocalSegmentation.js';
+import { detectChords } from './chordDetect.js';
 import { groupWordsIntoLines } from './creatorAudio.js';
 import { transcribeVocals } from './transcribeVocals.js';
 
@@ -524,12 +525,29 @@ export async function createKaraoke(
     onLog(`pitch/key detection skipped (${e.message})`);
   }
 
+  // --- Chord track (#93): chroma + triad matching over the harmony stems. ---
+  // Cheap (<1s for a full song) and runs here in the worker, so the UI never
+  // feels it. Skipped in lyrics-only mode (no stems in hand).
+  let chords = [];
+  if (result?.other?.left?.length) {
+    const t0c = performance.now();
+    try {
+      chords = detectChords(result.other, result.bass, audio.sampleRate);
+      onLog(
+        `chords: ${chords.length} segments in ${((performance.now() - t0c) / 1000).toFixed(1)}s`
+      );
+    } catch (e) {
+      onLog(`chord detection failed (${String(e.message).slice(0, 120)}) - continuing without`);
+    }
+  }
+
   const totalSec = (performance.now() - runT0) / 1000;
 
   return {
     stems: result, // {master?,drums,bass,other,vocals:{left,right}} (master from caller's audio)
     sampleRate: audio.sampleRate,
     duration: audio.duration,
+    chords,
     lyrics: { lines, words: wordObjs },
     key: detectedKey,
     pitch: pitchData,

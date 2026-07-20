@@ -113,7 +113,7 @@ export function registerCreatorHandlers(mainApp) {
   // (the renderer encodes WAV -> AAC via ffmpeg-wasm before sending).
   ipcMain.handle(
     'creator:saveWebGpuStems',
-    async (_event, { stems, metadata, lyrics, pitch, referenceLyrics }) => {
+    async (_event, { stems, metadata, lyrics, chords, pitch, referenceLyrics }) => {
       const tmpDir = join(getCacheDir(), 'webgpu-creator', crypto.randomBytes(8).toString('hex'));
       mkdirSync(tmpDir, { recursive: true });
       const paths = {};
@@ -128,6 +128,7 @@ export function registerCreatorHandlers(mainApp) {
           stems: paths,
           metadata,
           lyrics,
+          chords,
           pitch,
           referenceLyrics,
           settingsManager: mainApp.settings, // backend runs LLM correction (like native)

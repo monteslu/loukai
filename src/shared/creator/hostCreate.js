@@ -100,6 +100,7 @@ export async function hostCreate({ audioBytes, opts = {} }, onProgress = () => {
   return {
     stems: stemsAac, // master/drums/bass/other/vocals as AAC-in-MP4 Uint8Array
     lyrics: created.lyrics,
+    chords: created.chords,
     key: created.key,
     pitch: created.pitch,
     duration: audio.duration,

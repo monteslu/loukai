@@ -6,6 +6,106 @@
 /**
  * Load CDG format song
  */
+
+/**
+ * Chord backfill (issue #93): a legacy song has stems but no chord track. The
+ * player already holds every stem DECODED, so analysis is nearly free: run
+ * detection in a Web Worker (UI never feels it), show the chords as soon as
+ * they exist, and persist them into the file once (a worker thread on the
+ * main side) so this never runs again for the song.
+ */
+/**
+ * CDG variant (issue #93): analyze the decoded full mix for display only.
+ * There is no kara atom in an MP3 to persist into, so this runs per load
+ * (gated on the Show Chords pref) and quality is full-mix rather than
+ * stem-separated - good enough to follow along.
+ */
+export function backfillChordsCdg(app) {
+  try {
+    const buf = app.player?.cdgPlayer?.audioBuffer;
+    if (!buf) return;
+    const toStem = (b) => ({
+      left: b.getChannelData(0).slice(),
+      right: b.numberOfChannels > 1 ? b.getChannelData(1).slice() : undefined,
+    });
+    const other = toStem(buf);
+    const loadedPath = app.currentSong?.path;
+    const worker = new Worker(new URL('../workers/chordWorker.js', import.meta.url), {
+      type: 'module',
+    });
+    const transfers = [other.left.buffer];
+    if (other.right) transfers.push(other.right.buffer);
+    worker.onmessage = (e) => {
+      worker.terminate();
+      if (!e.data.ok || !e.data.chords?.length) return;
+      if (app.currentSong?.path !== loadedPath) return; // song changed meanwhile
+      app.player?.karaokeRenderer?.setChords(e.data.chords);
+      console.log(`🎸 chord analysis (cdg, display only): ${e.data.chords.length} segments`);
+    };
+    worker.onerror = () => worker.terminate();
+    worker.postMessage({ other, bass: null, sampleRate: buf.sampleRate }, transfers);
+  } catch (e) {
+    console.warn('cdg chord analysis skipped:', e.message);
+  }
+}
+
+export function backfillChords(app, songData) {
+  try {
+    if (songData?.chords?.length) return; // already has a chord track
+    const filePath = songData?.originalFilePath || app.currentSong?.path;
+    const buffers = app.kaiPlayer?.audioBuffers;
+    if (!filePath || !buffers?.size) return;
+    const pick = (name) => {
+      for (const [k, buf] of buffers) {
+        if (k.toLowerCase().includes(name)) return buf;
+      }
+      return null;
+    };
+    const otherBuf = pick('other') || pick('music');
+    if (!otherBuf) return;
+    const bassBuf = pick('bass');
+    const toStem = (buf) =>
+      buf && {
+        left: buf.getChannelData(0).slice(),
+        right: buf.numberOfChannels > 1 ? buf.getChannelData(1).slice() : undefined,
+      };
+    const other = toStem(otherBuf);
+    const bass = toStem(bassBuf);
+    const worker = new Worker(new URL('../workers/chordWorker.js', import.meta.url), {
+      type: 'module',
+    });
+    const transfers = [other.left.buffer];
+    if (other.right) transfers.push(other.right.buffer);
+    if (bass?.left) transfers.push(bass.left.buffer);
+    if (bass?.right) transfers.push(bass.right.buffer);
+    worker.onmessage = async (e) => {
+      worker.terminate();
+      if (!e.data.ok || !e.data.chords?.length) return;
+      const chords = e.data.chords;
+      // Live display only if THIS song is still the loaded one (skipping songs
+      // quickly must not paint the previous song's chords)…
+      const stillLoaded =
+        (app.currentSong?.path || app.kaiPlayer?.songData?.originalFilePath) === filePath;
+      if (stillLoaded) {
+        if (app.kaiPlayer?.songData) app.kaiPlayer.songData.chords = chords;
+        app.player?.karaokeRenderer?.setChords(chords);
+      }
+      console.log(`🎸 chord backfill: ${chords.length} segments`);
+      // …and one-time persistence into the file.
+      try {
+        const r = await window.kaiAPI.library.writeChords(filePath, chords);
+        if (!r?.ok) console.warn('chord backfill write failed:', r?.error);
+      } catch (err) {
+        console.warn('chord backfill write failed:', err.message);
+      }
+    };
+    worker.onerror = () => worker.terminate();
+    worker.postMessage({ other, bass, sampleRate: otherBuf.sampleRate }, transfers);
+  } catch (e) {
+    console.warn('chord backfill skipped:', e.message);
+  }
+}
+
 export async function loadCDGSong(app, songData, metadata) {
   app.player.currentFormat = 'cdg';
   app.player.currentPlayer = app.player.cdgPlayer;
@@ -98,6 +198,11 @@ export async function loadCDGSong(app, songData, metadata) {
     requester: metadata.requester || songData.requester || app.currentSong?.requester,
   };
   app.player.onSongLoaded(fullMetadata);
+  // The chord overlay reads the renderer's pref flag; the CDG path must apply
+  // it like the stems path does or the overlay stays off regardless of the
+  // setting (the karaokeRenderer default is off).
+  app.player.karaokeRenderer?.setShowChords(waveformPrefs.showChords === true);
+  if (waveformPrefs.showChords === true) backfillChordsCdg(app);
 
   // Broadcast that CDG is ready (clear loading state)
   if (window.kaiAPI?.renderer) {
@@ -162,6 +267,7 @@ export async function loadKAISong(app, songData, metadata) {
     const fullMetadata = {
       ...metadata,
       lyrics: app.currentSong.lyrics,
+      chords: songData.chords || app.currentSong.chords || null,
       duration: app.kaiPlayer
         ? app.kaiPlayer.getDuration()
         : app.currentSong.metadata?.duration || 0,
@@ -179,6 +285,11 @@ export async function loadKAISong(app, songData, metadata) {
       app.player.karaokeRenderer.setWaveformsEnabled(waveformPrefs.enableWaveforms);
       app.player.karaokeRenderer.setEffectsEnabled(waveformPrefs.enableEffects);
       app.player.karaokeRenderer.setShowUpcomingLyrics(waveformPrefs.showUpcomingLyrics);
+      app.player.karaokeRenderer.setShowChords(waveformPrefs.showChords === true);
+      // Backfill only when the chord display is actually on: with it off (the
+      // default) we neither burn the analysis nor rewrite files nobody asked
+      // for. Turning the toggle on backfills the loaded song at that moment.
+      if (waveformPrefs.showChords === true) backfillChords(app, songData);
       app.player.karaokeRenderer.waveformPreferences.overlayOpacity = waveformPrefs.overlayOpacity;
 
       // Connect butterchurn to PA analyser for visualization (KAI format)
@@ -273,6 +384,7 @@ export async function loadM4ASong(app, songData, metadata) {
     const fullMetadata = {
       ...metadata,
       lyrics: app.currentSong.lyrics,
+      chords: songData.chords || app.currentSong.chords || null,
       duration: app.kaiPlayer
         ? app.kaiPlayer.getDuration()
         : app.currentSong.metadata?.duration || 0,
@@ -290,6 +402,11 @@ export async function loadM4ASong(app, songData, metadata) {
       app.player.karaokeRenderer.setWaveformsEnabled(waveformPrefs.enableWaveforms);
       app.player.karaokeRenderer.setEffectsEnabled(waveformPrefs.enableEffects);
       app.player.karaokeRenderer.setShowUpcomingLyrics(waveformPrefs.showUpcomingLyrics);
+      app.player.karaokeRenderer.setShowChords(waveformPrefs.showChords === true);
+      // Backfill only when the chord display is actually on: with it off (the
+      // default) we neither burn the analysis nor rewrite files nobody asked
+      // for. Turning the toggle on backfills the loaded song at that moment.
+      if (waveformPrefs.showChords === true) backfillChords(app, songData);
       app.player.karaokeRenderer.waveformPreferences.overlayOpacity = waveformPrefs.overlayOpacity;
 
       // Connect butterchurn to PA analyser for visualization (M4A format)

@@ -242,6 +242,7 @@ export async function saveWebGpuStems({
   stems,
   metadata,
   lyrics,
+  chords,
   pitch,
   referenceLyrics,
   settingsManager,
@@ -367,6 +368,17 @@ export async function saveWebGpuStems({
 
     // CREPE-derived musical key + pitch track (parity with the native creator). Both
     // best-effort — a failure here must not lose the otherwise-good file.
+    // Chord track (#93): the muxer only writes known kara fields, so merge the
+    // chords into the kara atom after the fact (best-effort, like key/pitch).
+    if (chords && chords.length > 0) {
+      try {
+        const kara = await M4AAtoms.readKaraAtom(outputPath);
+        await M4AAtoms.writeKaraAtom(outputPath, { ...kara, chords });
+      } catch (e) {
+        console.warn('chord track write failed:', e.message);
+      }
+    }
+
     if (key) {
       try {
         await M4AAtoms.addMusicalKey(outputPath, key);
@@ -415,7 +427,16 @@ export async function updateStemLyrics({ inputPath, lyrics, key, pitch }) {
   if (!inputPath || !existsSync(inputPath)) throw new Error('stem file not found');
   // Edit in place — the file is already in the library.
   if (lyrics && lyrics.lines) {
-    await M4AAtoms.writeKaraAtom(inputPath, { lines: lyrics.lines });
+    // MERGE with the existing kara atom: writing { lines } alone silently
+    // destroyed timing, singers, tags, and the chord track for any file this
+    // path touched (import + lyrics-correction).
+    let existing = {};
+    try {
+      existing = (await M4AAtoms.readKaraAtom(inputPath)) || {};
+    } catch {
+      /* no kara atom yet */
+    }
+    await M4AAtoms.writeKaraAtom(inputPath, { ...existing, lines: lyrics.lines });
   }
   if (key) {
     try {

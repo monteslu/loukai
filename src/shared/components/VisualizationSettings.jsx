@@ -118,7 +118,7 @@ export function VisualizationSettings({
     <div className="p-4 space-y-6">
       {/* Waveform Options */}
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Waveform Options</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Display Options</h3>
         <div className="space-y-3">
           <label className="flex items-center gap-3 cursor-pointer">
             <input
@@ -158,6 +158,15 @@ export function VisualizationSettings({
               className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
             />
             <span className="text-gray-900 dark:text-gray-100">Show Upcoming Lyrics</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={waveformSettings.showChords}
+              onChange={(e) => handleWaveformChange('showChords', e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-gray-900 dark:text-gray-100">Show Chords</span>
           </label>
 
           <div className="space-y-2">

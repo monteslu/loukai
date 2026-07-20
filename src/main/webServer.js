@@ -1144,6 +1144,7 @@ class WebServer {
               metadata: result.kaiData.metadata || {},
               lyrics: result.kaiData.lyrics || [],
               audioFiles: audioFiles,
+              chords: result.kaiData.chords || [],
               songJson: result.kaiData.originalSongJson || {},
             },
           });
@@ -1289,7 +1290,7 @@ class WebServer {
     // Save song edits
     this.app.post('/admin/editor/save', async (req, res) => {
       try {
-        const { path: songPath, format, metadata, lyrics } = req.body;
+        const { path: songPath, format, metadata, lyrics, chords } = req.body;
         if (!songPath) {
           return res.status(400).json({
             success: false,
@@ -1312,7 +1313,7 @@ class WebServer {
         // branch below and failed with "Invalid file format".
         if (isStemMp4Format(format)) {
           const { saveSongOffMain } = await import('./workers/saveSongOffMain.js');
-          await saveSongOffMain(validatedPath, { format, metadata, lyrics });
+          await saveSongOffMain(validatedPath, { format, metadata, lyrics, chords });
 
           // Update cached library entry if it exists
           if (this.mainApp.cachedLibrary) {
@@ -1992,6 +1993,12 @@ class WebServer {
           } catch {
             /* ignore malformed pitch */
           }
+          let chords;
+          try {
+            chords = req.body.chords ? JSON.parse(req.body.chords) : undefined;
+          } catch {
+            /* ignore malformed chords */
+          }
           let refLyrics;
           try {
             refLyrics = req.body.referenceLyrics ? req.body.referenceLyrics.toString() : undefined;
@@ -2002,6 +2009,7 @@ class WebServer {
             stems,
             metadata: { title, artist, album, year, genre, track, duration, key },
             lyrics,
+            chords,
             pitch,
             referenceLyrics: refLyrics,
             settingsManager: this.mainApp.settings, // backend runs LLM correction
@@ -2133,6 +2141,7 @@ class WebServer {
               stems: stemPaths,
               metadata: { title, artist, album, key: created.key, duration: created.duration },
               lyrics: created.lyrics,
+              chords: created.chords,
               pitch: created.pitch,
               referenceLyrics,
               settingsManager: this.mainApp.settings,
