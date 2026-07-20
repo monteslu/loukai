@@ -6,6 +6,12 @@
 
 import { useState } from 'react';
 
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+// The detector's vocabulary as pick-list suggestions; typing stays free-form
+// because the format allows richer qualities (G7, Csus4) the detector does not
+// emit yet.
+const COMMON_CHORDS = NOTE_NAMES.flatMap((n) => [n, n + 'm']);
+
 function TimeField({ value, onCommit }) {
   const [draft, setDraft] = useState(null);
   return (
@@ -56,6 +62,11 @@ export function ChordEditor({ chords, onChange }) {
       </button>
       {open && (
         <div className="px-3 pb-3 max-h-[300px] overflow-y-auto">
+          <datalist id="chord-name-options">
+            {COMMON_CHORDS.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
           {list.length === 0 && (
             <div className="text-sm text-gray-500 dark:text-gray-400 py-2">
               No chord track. Chords are detected automatically when a song is created or first
@@ -75,6 +86,7 @@ export function ChordEditor({ chords, onChange }) {
               <TimeField value={c.end} onCommit={(v) => update(i, { end: v })} />
               <input
                 type="text"
+                list="chord-name-options"
                 className="w-[72px] px-2 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-sm font-mono focus:outline-none focus:border-blue-500"
                 value={c.chord}
                 onChange={(e) => update(i, { chord: e.target.value })}
