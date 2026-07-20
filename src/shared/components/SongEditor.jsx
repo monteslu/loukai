@@ -386,9 +386,13 @@ export function SongEditor({ bridge }) {
             const bStart = b.start || b.startTimeSec || 0;
             return aStart - bStart;
           });
-          setLyricsData(JSON.parse(JSON.stringify(sortedLyrics)));
+          // Stable per-line identity for React keys: rows hold internal state
+          // (time-field drafts), so index keys re-marry that state to the WRONG
+          // line after a delete/insert (#96's stuck-display class of bug).
+          const withIds = sortedLyrics.map((l) => ({ ...l, _id: crypto.randomUUID() }));
+          setLyricsData(JSON.parse(JSON.stringify(withIds)));
           setChordsData(JSON.parse(JSON.stringify(result.data.chords || [])));
-          setOriginalLyricsData(JSON.parse(JSON.stringify(sortedLyrics)));
+          setOriginalLyricsData(JSON.parse(JSON.stringify(withIds)));
           setSongDuration(
             result.data.metadata?.duration || result.data.songJson?.duration_sec || 0
           );
@@ -684,6 +688,7 @@ export function SongEditor({ bridge }) {
     const margin = gap * 0.1;
 
     const newLine = {
+      _id: crypto.randomUUID(),
       start: currentEndTime + margin,
       startTimeSec: currentEndTime + margin,
       end: currentEndTime + margin + usableGap,
@@ -728,6 +733,7 @@ export function SongEditor({ bridge }) {
     if (!firstLine) {
       // No lines exist, create a default one
       const newLine = {
+        _id: crypto.randomUUID(),
         start: 0,
         startTimeSec: 0,
         end: 3,
@@ -746,6 +752,7 @@ export function SongEditor({ bridge }) {
     const usableGap = gap * 0.8;
 
     const newLine = {
+      _id: crypto.randomUUID(),
       start: 0,
       startTimeSec: 0,
       end: usableGap,
@@ -974,6 +981,7 @@ export function SongEditor({ bridge }) {
 
     // Create new lyric line from suggestion
     const newLine = {
+      _id: crypto.randomUUID(),
       start: suggestion.start_time,
       startTimeSec: suggestion.start_time,
       end: suggestion.end_time,
@@ -1303,7 +1311,7 @@ export function SongEditor({ bridge }) {
                   {lyricsData && lyricsData.length > 0 ? (
                     lyricsData.map((line, index) => (
                       <LyricLine
-                        key={`lyric-${index}`}
+                        key={line._id || `lyric-${index}`}
                         line={line}
                         index={index}
                         isSelected={selectedLineIndex === index}
