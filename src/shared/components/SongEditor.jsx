@@ -1380,6 +1380,7 @@ export function SongEditor({ bridge }) {
                     setChordsData(next);
                     setHasChanges(true);
                   }}
+                  onPlaySection={handlePlayLineSection}
                 />
               </div>
             </>
