@@ -235,10 +235,6 @@ export async function loadKAISong(app, songData, metadata) {
       requester: metadata.requester || songData.requester || app.currentSong.requester,
     };
     app.player.onSongLoaded(fullMetadata);
-    // Backfill only when the chord display is actually on: with it off (the
-    // default) we neither burn the analysis nor rewrite files nobody asked for.
-    // Turning the toggle on backfills the loaded song at that moment instead.
-    if (waveformPrefs.showChords === true) backfillChords(app, songData);
 
     // Load and apply waveform preferences from settings for KAI
     // Defaults are now provided by settingsManager from shared/defaults.js
@@ -250,6 +246,10 @@ export async function loadKAISong(app, songData, metadata) {
       app.player.karaokeRenderer.setEffectsEnabled(waveformPrefs.enableEffects);
       app.player.karaokeRenderer.setShowUpcomingLyrics(waveformPrefs.showUpcomingLyrics);
       app.player.karaokeRenderer.setShowChords(waveformPrefs.showChords === true);
+      // Backfill only when the chord display is actually on: with it off (the
+      // default) we neither burn the analysis nor rewrite files nobody asked
+      // for. Turning the toggle on backfills the loaded song at that moment.
+      if (waveformPrefs.showChords === true) backfillChords(app, songData);
       app.player.karaokeRenderer.waveformPreferences.overlayOpacity = waveformPrefs.overlayOpacity;
 
       // Connect butterchurn to PA analyser for visualization (KAI format)
@@ -352,10 +352,6 @@ export async function loadM4ASong(app, songData, metadata) {
       requester: metadata.requester || songData.requester || app.currentSong.requester,
     };
     app.player.onSongLoaded(fullMetadata);
-    // Backfill only when the chord display is actually on: with it off (the
-    // default) we neither burn the analysis nor rewrite files nobody asked for.
-    // Turning the toggle on backfills the loaded song at that moment instead.
-    if (waveformPrefs.showChords === true) backfillChords(app, songData);
 
     // Load and apply waveform preferences from settings
     // Defaults are now provided by settingsManager from shared/defaults.js
@@ -367,6 +363,10 @@ export async function loadM4ASong(app, songData, metadata) {
       app.player.karaokeRenderer.setEffectsEnabled(waveformPrefs.enableEffects);
       app.player.karaokeRenderer.setShowUpcomingLyrics(waveformPrefs.showUpcomingLyrics);
       app.player.karaokeRenderer.setShowChords(waveformPrefs.showChords === true);
+      // Backfill only when the chord display is actually on: with it off (the
+      // default) we neither burn the analysis nor rewrite files nobody asked
+      // for. Turning the toggle on backfills the loaded song at that moment.
+      if (waveformPrefs.showChords === true) backfillChords(app, songData);
       app.player.karaokeRenderer.waveformPreferences.overlayOpacity = waveformPrefs.overlayOpacity;
 
       // Connect butterchurn to PA analyser for visualization (M4A format)
