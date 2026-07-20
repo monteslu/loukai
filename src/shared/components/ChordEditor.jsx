@@ -12,6 +12,39 @@ const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 
 // emit yet.
 const COMMON_CHORDS = NOTE_NAMES.flatMap((n) => [n, n + 'm']);
 
+// Audition a chord: synthesize its triad with plain oscillators for a moment.
+// No samples, no assets; enough to check a correction by ear.
+let auditionCtx = null;
+function playChordTone(name) {
+  const m = String(name || '')
+    .trim()
+    .match(/^([A-Ga-g])([#b]?)(m?)(?![a-z])/);
+  if (!m) return;
+  const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
+  let root = m[1].toUpperCase() + (m[2] || '');
+  root = FLAT_TO_SHARP[root] || root;
+  const pc = NOTE_NAMES.indexOf(root);
+  if (pc < 0) return;
+  const minor = m[3] === 'm';
+  auditionCtx = auditionCtx || new (window.AudioContext || window.webkitAudioContext)();
+  const ctx = auditionCtx;
+  const now = ctx.currentTime;
+  const master = ctx.createGain();
+  master.gain.setValueAtTime(0.0001, now);
+  master.gain.linearRampToValueAtTime(0.25, now + 0.03);
+  master.gain.exponentialRampToValueAtTime(0.0001, now + 1.1);
+  master.connect(ctx.destination);
+  for (const interval of [0, minor ? 3 : 4, 7]) {
+    const midi = 60 + pc + interval; // around C4 so triads sit mid-range
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
+    osc.connect(master);
+    osc.start(now);
+    osc.stop(now + 1.15);
+  }
+}
+
 function TimeField({ value, onCommit }) {
   const [draft, setDraft] = useState(null);
   return (
@@ -91,6 +124,15 @@ export function ChordEditor({ chords, onChange }) {
                 value={c.chord}
                 onChange={(e) => update(i, { chord: e.target.value })}
               />
+              <button
+                onClick={() => playChordTone(c.chord)}
+                title="Play this chord"
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+              >
+                <span className="material-icons text-gray-500 text-base leading-none">
+                  volume_up
+                </span>
+              </button>
               <button
                 onClick={() => addAfter(i)}
                 title="Add chord after"
