@@ -207,8 +207,10 @@ export class WebBridge extends BridgeInterface {
     return await this._fetch('/library/refresh', { method: 'POST' });
   }
 
-  async searchSongs(query) {
-    return await this._fetch(`/library/search?q=${encodeURIComponent(query)}`);
+  async searchSongs(query, { stemOnly = false } = {}) {
+    return await this._fetch(
+      `/library/search?q=${encodeURIComponent(query)}${stemOnly ? '&stem=1' : ''}`
+    );
   }
 
   async loadSongForEditing(path) {

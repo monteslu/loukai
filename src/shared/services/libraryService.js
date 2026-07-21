@@ -6,7 +6,7 @@
  */
 
 import Fuse from 'fuse.js';
-import { STEM_MP4_FORMAT } from '../formatUtils.js';
+import { STEM_MP4_FORMAT, isStemMp4Format } from '../formatUtils.js';
 
 /**
  * THE single song-search configuration for the whole app (desktop IPC + web + phone).
@@ -430,12 +430,16 @@ export function searchSongList(songs, query, limit = 500) {
  * @param {string} query - Search query
  * @returns {Object} Result with success status and matching songs
  */
-export function searchSongs(mainApp, query) {
+export function searchSongs(mainApp, query, { stemOnly = false } = {}) {
   try {
     if (!query || !query.trim()) {
       return { success: true, songs: [] };
     }
-    const cachedSongs = mainApp.cachedLibrary || [];
+    let cachedSongs = mainApp.cachedLibrary || [];
+    // The editor can only open stem files, so its search must filter BEFORE
+    // ranking/limiting: filtering the global top-N afterwards let CDG entries
+    // consume every slot and hid stem matches entirely.
+    if (stemOnly) cachedSongs = cachedSongs.filter((s) => isStemMp4Format(s.format));
     return { success: true, songs: searchSongList(cachedSongs, query, 500) };
   } catch (error) {
     return {
