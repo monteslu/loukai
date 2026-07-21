@@ -348,7 +348,9 @@ export function SongEditor({ bridge }) {
     try {
       setIsSearching(true);
       const result = await bridge.searchSongs(term);
-      setSearchResults(result.songs || []);
+      // The editor can only open Stem MP4 files - showing CDG results here just
+      // leads to a load error.
+      setSearchResults((result.songs || []).filter((song) => isStemMp4Format(song.format)));
     } catch (error) {
       console.error('Search failed:', error);
     } finally {
