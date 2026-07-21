@@ -6,6 +6,7 @@
  */
 
 import { useState, useRef, useCallback } from 'react';
+import { useConfirm } from '../hooks/useConfirm.jsx';
 import { createPortal } from 'react-dom';
 
 /**
@@ -98,6 +99,7 @@ export function QueueList({
   const handlePlay = onPlayFromQueue || onLoad;
   const handleRemove = onRemoveFromQueue || onRemove;
   const handleClear = onClearQueue || onClear;
+  const [confirmDialog, confirmModal] = useConfirm();
 
   // Drag and drop handlers
   const handleDragStart = (e, index) => {
@@ -172,7 +174,11 @@ export function QueueList({
               <TooltipButton
                 icon="delete"
                 tooltip="Clear Queue"
-                onClick={handleClear}
+                onClick={async () => {
+                  if (await confirmDialog('Clear the whole queue?', { confirmLabel: 'Clear' })) {
+                    handleClear();
+                  }
+                }}
                 iconSize="text-lg"
                 className="p-1.5 px-2 bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded cursor-pointer flex items-center justify-center transition-all text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
               />
@@ -360,6 +366,7 @@ export function QueueList({
           );
         })}
       </div>
+      {confirmModal}
     </div>
   );
 }

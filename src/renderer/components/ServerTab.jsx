@@ -3,6 +3,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useConfirm } from '../../shared/hooks/useConfirm.jsx';
 import { generateQRCode } from '../utils/qrCodeGenerator.js';
 
 export function ServerTab({ bridge }) {
@@ -154,10 +155,14 @@ export function ServerTab({ bridge }) {
     }
   };
 
+  const [confirmDialog, confirmModal] = useConfirm();
   const handleClearRequests = async () => {
-    if (!confirm('Are you sure you want to clear all song requests? This cannot be undone.')) {
+    if (
+      !(await confirmDialog('Clear all song requests? This cannot be undone.', {
+        confirmLabel: 'Clear all',
+      }))
+    )
       return;
-    }
 
     try {
       if (bridge.clearAllRequests) {
@@ -467,6 +472,7 @@ export function ServerTab({ bridge }) {
           </div>
         )}
       </div>
+      {confirmModal}
     </div>
   );
 }
