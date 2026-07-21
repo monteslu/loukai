@@ -3,7 +3,7 @@
  * library song that predates the chord track. Runs off the UI thread; the
  * player posts transferable Float32Arrays, we post back the segment list.
  */
-import { detectChords } from '../../shared/creator/chordDetect.js';
+import { detectChords } from '../creator/chordDetect.js';
 
 self.onmessage = (e) => {
   const { other, bass, sampleRate } = e.data;

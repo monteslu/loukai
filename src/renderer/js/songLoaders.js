@@ -30,7 +30,7 @@ export function backfillChordsCdg(app) {
     });
     const other = toStem(buf);
     const loadedPath = app.currentSong?.path;
-    const worker = new Worker(new URL('../workers/chordWorker.js', import.meta.url), {
+    const worker = new Worker(new URL('../../shared/workers/chordWorker.js', import.meta.url), {
       type: 'module',
     });
     const transfers = [other.left.buffer];
@@ -71,7 +71,7 @@ export function backfillChords(app, songData) {
       };
     const other = toStem(otherBuf);
     const bass = toStem(bassBuf);
-    const worker = new Worker(new URL('../workers/chordWorker.js', import.meta.url), {
+    const worker = new Worker(new URL('../../shared/workers/chordWorker.js', import.meta.url), {
       type: 'module',
     });
     const transfers = [other.left.buffer];
