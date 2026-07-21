@@ -48,6 +48,21 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.10.0" date="2026-07-21">
+      <description>
+        <p>Chords on screen - play along with any song</p>
+        <ul>
+          <li>NEW: real-time chord display for players following along on guitar, bass, or keys - current chord big, next chord previewed, top right of the karaoke screen and on every phone/browser viewer</li>
+          <li>Chords are detected automatically when a song is created, and existing library songs analyze themselves the first time they play with the display on</li>
+          <li>Works on CDG/MP3 songs too (display only)</li>
+          <li>Chord names transpose live with the key shift (Am becomes Bm at +2)</li>
+          <li>Edit chords in the song editor like lyrics: timeline rows, pick-list names, and a tone preview per chord</li>
+          <li>Off by default - enable Show Chords under Display Options</li>
+          <li>Editor fix: deleting a lyric line no longer risks timing fields showing the wrong line's values</li>
+          <li>Clearer wording on the web Create tab</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.9.0" date="2026-07-18">
       <description>
         <p>Key shift</p>
