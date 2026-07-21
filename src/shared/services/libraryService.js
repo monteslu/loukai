@@ -23,7 +23,7 @@ const FUSE_OPTIONS = {
     { name: 'artist', weight: 0.25 },
     { name: 'album', weight: 0.05 },
   ],
-  threshold: 0.4, // a bit looser than the old 0.3 so near-misses/typos still match
+  threshold: 0.3, // 0.4 matched ~all of a 9.5k library on 3-char queries (pure noise)
   ignoreLocation: true, // match anywhere in the field, not just the start
   includeScore: true,
   minMatchCharLength: 2,
@@ -315,7 +315,7 @@ export async function syncLibrary(mainApp, progressCallback) {
  * @param {number} [limit=50] - max results
  * @returns {Array} matching songs (already ranked + limited)
  */
-export function searchSongList(songs, query, limit = 50) {
+export function searchSongList(songs, query, limit = 500) {
   const trimmed = (query || '').trim();
   if (!trimmed || !Array.isArray(songs) || songs.length === 0) return [];
 
@@ -338,11 +338,24 @@ export function searchSongList(songs, query, limit = 50) {
   // Title-first tiebreak: a row whose TITLE contains the query ranks above one that only
   // matched on artist/album, even if Fuse scored the latter (e.g. an exact artist hit)
   // lower. Matches what users expect when they type a song name.
+  // Tiered ranking: an EXACT substring hit beats any fuzzy-only hit, title
+  // beats artist/album. This is what makes a band prefix work: 'bea' is an
+  // exact substring of 'Beatles', so the whole Beatles block outranks the
+  // hundreds of fuzzy-only matches a short query drags in from a big library.
+  const tierOf = (item) => {
+    if (item.title?.toLowerCase().includes(ql)) return 0;
+    if (item.artist?.toLowerCase().includes(ql) || item.album?.toLowerCase().includes(ql)) return 1;
+    return 2;
+  };
   const titleFirst = (a, b) => {
-    const at = a.item.title?.toLowerCase().includes(ql) ? 0 : 1;
-    const bt = b.item.title?.toLowerCase().includes(ql) ? 0 : 1;
-    if (at !== bt) return at - bt;
-    return (a.score ?? 1) - (b.score ?? 1);
+    const dt = tierOf(a.item) - tierOf(b.item);
+    if (dt) return dt;
+    const ds = (a.score ?? 1) - (b.score ?? 1);
+    if (ds) return ds;
+    // Deterministic order inside equal-score groups (e.g. 114 songs all
+    // matching an artist query identically): alphabetical by title, so which
+    // songs appear - and where - stops being insertion-order luck.
+    return (a.item.title || '').localeCompare(b.item.title || '');
   };
 
   let ranked;
@@ -369,7 +382,10 @@ export function searchSongList(songs, query, limit = 50) {
     for (const [item, e] of tally) {
       if (e.n >= need) combined.push({ item, n: e.n, score: e.total / e.n });
     }
-    combined.sort((a, b) => b.n - a.n || a.score - b.score);
+    combined.sort(
+      (a, b) =>
+        b.n - a.n || a.score - b.score || (a.item.title || '').localeCompare(b.item.title || '')
+    );
     ranked = combined;
     // Still nothing (e.g. heavy typos in several terms): fuzzy-match the whole
     // query string as a last resort.
@@ -393,7 +409,7 @@ export function searchSongs(mainApp, query) {
       return { success: true, songs: [] };
     }
     const cachedSongs = mainApp.cachedLibrary || [];
-    return { success: true, songs: searchSongList(cachedSongs, query, 50) };
+    return { success: true, songs: searchSongList(cachedSongs, query, 500) };
   } catch (error) {
     return {
       success: false,
