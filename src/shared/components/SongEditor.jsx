@@ -347,7 +347,10 @@ export function SongEditor({ bridge }) {
 
     try {
       setIsSearching(true);
-      const result = await bridge.searchSongs(term);
+      // stemOnly filters BEFORE ranking/limits server-side: the editor can only
+      // open Stem MP4 files, and post-filtering the global top-N let CDG songs
+      // consume every slot and hide the real matches.
+      const result = await bridge.searchSongs(term, { stemOnly: true });
       setSearchResults(result.songs || []);
     } catch (error) {
       console.error('Search failed:', error);

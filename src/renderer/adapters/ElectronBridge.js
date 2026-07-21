@@ -307,8 +307,8 @@ export class ElectronBridge extends BridgeInterface {
     return await this.api.library.scanFolder();
   }
 
-  async searchSongs(query) {
-    return await this.api.library.search(query);
+  async searchSongs(query, opts) {
+    return await this.api.library.search(query, opts);
   }
 
   async getSongsFolder() {

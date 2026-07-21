@@ -1093,7 +1093,9 @@ class WebServer {
     this.app.get('/admin/library/search', (req, res) => {
       try {
         const query = req.query.q || '';
-        const result = libraryService.searchSongs(this.mainApp, query);
+        const result = libraryService.searchSongs(this.mainApp, query, {
+          stemOnly: req.query.stem === '1',
+        });
         res.json(result);
       } catch (error) {
         console.error('Library search failed:', error);

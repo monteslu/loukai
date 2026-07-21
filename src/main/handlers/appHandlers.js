@@ -39,7 +39,7 @@ export function registerAppHandlers(mainApp) {
   });
 
   // Search library for songs
-  ipcMain.handle('library:search', (event, query) => {
-    return libraryService.searchSongs(mainApp, query);
+  ipcMain.handle('library:search', (event, query, opts) => {
+    return libraryService.searchSongs(mainApp, query, opts);
   });
 }

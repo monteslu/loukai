@@ -261,6 +261,41 @@ describe('libraryService', () => {
     });
   });
 
+  describe('searchSongList soft-AND (fuzzy regressions)', () => {
+    const songs = [
+      { title: 'I Shot The Sheriff', artist: 'Bob Marley & The Wailers', album: 'Burnin' },
+      { title: 'Sweet Emotion', artist: '', album: '' },
+      { title: 'Dancing Queen', artist: 'ABBA', album: 'Arrival' },
+    ];
+
+    it('full title with sub-2-char words matches (the "i shot the sheriff" bug)', () => {
+      expect(libraryService.searchSongList(songs, 'i shot the sherrif', 10)[0].title).toBe(
+        'I Shot The Sheriff'
+      );
+    });
+
+    it('one stray word degrades ranking instead of returning nothing', () => {
+      expect(libraryService.searchSongList(songs, 'shot sheriff bob extra', 10)[0].title).toBe(
+        'I Shot The Sheriff'
+      );
+      expect(libraryService.searchSongList(songs, 'sheriff 2024', 10)[0].title).toBe(
+        'I Shot The Sheriff'
+      );
+    });
+
+    it('a term aimed at a missing artist tag does not kill the title match', () => {
+      expect(libraryService.searchSongList(songs, 'sweet emotion aerosmith', 10)[0].title).toBe(
+        'Sweet Emotion'
+      );
+    });
+
+    it('a dud FIRST term cannot nuke the result set', () => {
+      expect(libraryService.searchSongList(songs, 'xyz sheriff', 10)[0].title).toBe(
+        'I Shot The Sheriff'
+      );
+    });
+  });
+
   describe('searchSongs', () => {
     beforeEach(() => {
       mainApp.cachedLibrary = [
@@ -311,9 +346,10 @@ describe('libraryService', () => {
       expect(result.songs).toEqual([]);
     });
 
-    it('should limit results to 50 songs', () => {
-      // Create 60 songs
-      mainApp.cachedLibrary = Array.from({ length: 60 }, (_, i) => ({
+    it('should limit results to 500 songs', () => {
+      // 50 was too small for real libraries: 'bea' has 477 exact substring
+      // matches in a 9.5k library, so whole artist blocks were unreachable.
+      mainApp.cachedLibrary = Array.from({ length: 520 }, (_, i) => ({
         title: `Test Song ${i}`,
         artist: 'Test Artist',
       }));
@@ -321,7 +357,7 @@ describe('libraryService', () => {
       const result = libraryService.searchSongs(mainApp, 'test');
 
       expect(result.success).toBe(true);
-      expect(result.songs).toHaveLength(50);
+      expect(result.songs).toHaveLength(500);
     });
 
     it('should prioritize title matches over artist/album matches', () => {

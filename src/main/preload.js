@@ -136,7 +136,7 @@ const api = {
     syncLibrary: () => ipcRenderer.invoke('library:syncLibrary'),
     getCachedSongs: () => ipcRenderer.invoke('library:getCachedSongs'),
     getSongInfo: (filePath) => ipcRenderer.invoke('library:getSongInfo', filePath),
-    search: (query) => ipcRenderer.invoke('library:search', query),
+    search: (query, opts) => ipcRenderer.invoke('library:search', query, opts),
     writeChords: (path, chords) => ipcRenderer.invoke('library:writeChords', { path, chords }),
 
     onFolderSet: (callback) => ipcRenderer.on('library:folderSet', callback),

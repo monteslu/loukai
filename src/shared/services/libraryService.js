@@ -6,7 +6,7 @@
  */
 
 import Fuse from 'fuse.js';
-import { STEM_MP4_FORMAT } from '../formatUtils.js';
+import { STEM_MP4_FORMAT, isStemMp4Format } from '../formatUtils.js';
 
 /**
  * THE single song-search configuration for the whole app (desktop IPC + web + phone).
@@ -23,7 +23,7 @@ const FUSE_OPTIONS = {
     { name: 'artist', weight: 0.25 },
     { name: 'album', weight: 0.05 },
   ],
-  threshold: 0.4, // a bit looser than the old 0.3 so near-misses/typos still match
+  threshold: 0.3, // 0.4 matched ~all of a 9.5k library on 3-char queries (pure noise)
   ignoreLocation: true, // match anywhere in the field, not just the start
   includeScore: true,
   minMatchCharLength: 2,
@@ -315,7 +315,7 @@ export async function syncLibrary(mainApp, progressCallback) {
  * @param {number} [limit=50] - max results
  * @returns {Array} matching songs (already ranked + limited)
  */
-export function searchSongList(songs, query, limit = 50) {
+export function searchSongList(songs, query, limit = 500) {
   const trimmed = (query || '').trim();
   if (!trimmed || !Array.isArray(songs) || songs.length === 0) return [];
 
@@ -325,42 +325,100 @@ export function searchSongList(songs, query, limit = 50) {
   // SOME field (AND across terms). This is what lets "diamond caroline" or "artist title"
   // find a song even though the words aren't contiguous — the #1 reason the old substring
   // filter failed users. A single term just runs Fuse directly.
-  const terms = trimmed.split(/\s+/).filter(Boolean);
+  //
+  // Terms below Fuse's minMatchCharLength can NEVER match, so requiring them
+  // guaranteed zero results — typing the full title "i shot the sheriff"
+  // found NOTHING because of the "i". Ignore them.
+  const terms = trimmed
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((t) => t.length >= 2);
 
   const ql = trimmed.toLowerCase();
   // Title-first tiebreak: a row whose TITLE contains the query ranks above one that only
   // matched on artist/album, even if Fuse scored the latter (e.g. an exact artist hit)
   // lower. Matches what users expect when they type a song name.
+  // Tiered ranking: an EXACT substring hit beats any fuzzy-only hit, title
+  // beats artist/album. This is what makes a band prefix work: 'bea' is an
+  // exact substring of 'Beatles', so the whole Beatles block outranks the
+  // hundreds of fuzzy-only matches a short query drags in from a big library.
+  const tierOf = (item) => {
+    if (item.title?.toLowerCase().includes(ql)) return 0;
+    if (item.artist?.toLowerCase().includes(ql) || item.album?.toLowerCase().includes(ql)) return 1;
+    return 2;
+  };
   const titleFirst = (a, b) => {
-    const at = a.item.title?.toLowerCase().includes(ql) ? 0 : 1;
-    const bt = b.item.title?.toLowerCase().includes(ql) ? 0 : 1;
-    if (at !== bt) return at - bt;
-    return (a.score ?? 1) - (b.score ?? 1);
+    const ta = tierOf(a.item);
+    const tb = tierOf(b.item);
+    if (ta !== tb) return ta - tb;
+    // Inside the artist/album tier, group by ARTIST (then title) so a band
+    // reads as a block instead of 114 songs scattered by score noise.
+    if (ta === 1) {
+      const da = (a.item.artist || '').localeCompare(b.item.artist || '');
+      if (da) return da;
+      return (a.item.title || '').localeCompare(b.item.title || '');
+    }
+    const ds = (a.score ?? 1) - (b.score ?? 1);
+    if (ds) return ds;
+    // Deterministic order inside equal-score groups: alphabetical by title, so
+    // which songs appear - and where - stops being insertion-order luck.
+    return (a.item.title || '').localeCompare(b.item.title || '');
   };
 
   let ranked;
   if (terms.length <= 1) {
-    ranked = fuse.search(trimmed).sort(titleFirst);
-  } else {
-    // Intersect per-term result sets; combine scores (lower = better in Fuse).
-    const perTerm = terms.map((t) => new Map(fuse.search(t).map((r) => [r.item, r.score ?? 1])));
-    const first = perTerm[0];
-    const combined = [];
-    for (const [item, score0] of first) {
-      let total = score0;
-      let inAll = true;
-      for (let i = 1; i < perTerm.length; i++) {
-        const s = perTerm[i].get(item);
-        if (s === undefined) {
-          inAll = false;
-          break;
-        }
-        total += s;
-      }
-      if (inAll) combined.push({ item, score: total });
+    const all = fuse.search(trimmed).sort(titleFirst);
+    // Tier QUOTA: on short queries the title tier alone can exceed the limit
+    // ('be' hits 1,471 titles in a 9.5k library), which would starve the
+    // artist tier entirely - typing a band prefix must still surface the
+    // band's block. Title matches get at most half the limit when lower
+    // tiers have matches; leftovers backfill.
+    const byTier = [[], [], []];
+    for (const r of all) byTier[tierOf(r.item)].push(r);
+    const [t0, t1, t2] = byTier;
+    const lower = t1.length + t2.length;
+    const t0Take = Math.min(
+      t0.length,
+      lower > 0 ? Math.max(limit - lower, Math.ceil(limit / 2)) : limit
+    );
+    const t1Take = Math.min(t1.length, limit - t0Take);
+    const t2Take = Math.min(t2.length, limit - t0Take - t1Take);
+    let picked = [...t0.slice(0, t0Take), ...t1.slice(0, t1Take), ...t2.slice(0, t2Take)];
+    if (picked.length < limit && t0.length > t0Take) {
+      picked = picked.concat(t0.slice(t0Take, t0Take + (limit - picked.length)));
     }
-    combined.sort((a, b) => a.score - b.score);
+    ranked = picked;
+  } else {
+    // SOFT-AND across terms: count how many terms each song matches (union of
+    // per-term result sets, so a dud FIRST term can't nuke everything), require
+    // all-but-one, and rank by matched count then combined score. A stray word,
+    // a number, or a term aimed at a missing artist tag now degrades ranking
+    // instead of guaranteeing zero results.
+    const perTerm = terms.map((t) => new Map(fuse.search(t).map((r) => [r.item, r.score ?? 1])));
+    const tally = new Map(); // item -> { n: matched terms, total: summed score }
+    for (const m of perTerm) {
+      for (const [item, score] of m) {
+        const e = tally.get(item) || { n: 0, total: 0 };
+        e.n += 1;
+        e.total += score;
+        tally.set(item, e);
+      }
+    }
+    const need = Math.max(1, terms.length - 1);
+    const combined = [];
+    for (const [item, e] of tally) {
+      if (e.n >= need) combined.push({ item, n: e.n, score: e.total / e.n });
+    }
+    combined.sort(
+      (a, b) =>
+        b.n - a.n || a.score - b.score || (a.item.title || '').localeCompare(b.item.title || '')
+    );
     ranked = combined;
+    // Still nothing (e.g. heavy typos in several terms): fuzzy-match the whole
+    // query string as a last resort.
+    if (ranked.length === 0) {
+      ranked = fuse.search(trimmed).sort(titleFirst);
+    }
   }
 
   return ranked.slice(0, limit).map((r) => r.item);
@@ -372,13 +430,17 @@ export function searchSongList(songs, query, limit = 50) {
  * @param {string} query - Search query
  * @returns {Object} Result with success status and matching songs
  */
-export function searchSongs(mainApp, query) {
+export function searchSongs(mainApp, query, { stemOnly = false } = {}) {
   try {
     if (!query || !query.trim()) {
       return { success: true, songs: [] };
     }
-    const cachedSongs = mainApp.cachedLibrary || [];
-    return { success: true, songs: searchSongList(cachedSongs, query, 50) };
+    let cachedSongs = mainApp.cachedLibrary || [];
+    // The editor can only open stem files, so its search must filter BEFORE
+    // ranking/limiting: filtering the global top-N afterwards let CDG entries
+    // consume every slot and hid stem matches entirely.
+    if (stemOnly) cachedSongs = cachedSongs.filter((s) => isStemMp4Format(s.format));
+    return { success: true, songs: searchSongList(cachedSongs, query, 500) };
   } catch (error) {
     return {
       success: false,
