@@ -348,19 +348,46 @@ export function searchSongList(songs, query, limit = 500) {
     return 2;
   };
   const titleFirst = (a, b) => {
-    const dt = tierOf(a.item) - tierOf(b.item);
-    if (dt) return dt;
+    const ta = tierOf(a.item);
+    const tb = tierOf(b.item);
+    if (ta !== tb) return ta - tb;
+    // Inside the artist/album tier, group by ARTIST (then title) so a band
+    // reads as a block instead of 114 songs scattered by score noise.
+    if (ta === 1) {
+      const da = (a.item.artist || '').localeCompare(b.item.artist || '');
+      if (da) return da;
+      return (a.item.title || '').localeCompare(b.item.title || '');
+    }
     const ds = (a.score ?? 1) - (b.score ?? 1);
     if (ds) return ds;
-    // Deterministic order inside equal-score groups (e.g. 114 songs all
-    // matching an artist query identically): alphabetical by title, so which
-    // songs appear - and where - stops being insertion-order luck.
+    // Deterministic order inside equal-score groups: alphabetical by title, so
+    // which songs appear - and where - stops being insertion-order luck.
     return (a.item.title || '').localeCompare(b.item.title || '');
   };
 
   let ranked;
   if (terms.length <= 1) {
-    ranked = fuse.search(trimmed).sort(titleFirst);
+    const all = fuse.search(trimmed).sort(titleFirst);
+    // Tier QUOTA: on short queries the title tier alone can exceed the limit
+    // ('be' hits 1,471 titles in a 9.5k library), which would starve the
+    // artist tier entirely - typing a band prefix must still surface the
+    // band's block. Title matches get at most half the limit when lower
+    // tiers have matches; leftovers backfill.
+    const byTier = [[], [], []];
+    for (const r of all) byTier[tierOf(r.item)].push(r);
+    const [t0, t1, t2] = byTier;
+    const lower = t1.length + t2.length;
+    const t0Take = Math.min(
+      t0.length,
+      lower > 0 ? Math.max(limit - lower, Math.ceil(limit / 2)) : limit
+    );
+    const t1Take = Math.min(t1.length, limit - t0Take);
+    const t2Take = Math.min(t2.length, limit - t0Take - t1Take);
+    let picked = [...t0.slice(0, t0Take), ...t1.slice(0, t1Take), ...t2.slice(0, t2Take)];
+    if (picked.length < limit && t0.length > t0Take) {
+      picked = picked.concat(t0.slice(t0Take, t0Take + (limit - picked.length)));
+    }
+    ranked = picked;
   } else {
     // SOFT-AND across terms: count how many terms each song matches (union of
     // per-term result sets, so a dud FIRST term can't nuke everything), require
