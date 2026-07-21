@@ -327,8 +327,38 @@ export function LyricLine({
     }
   };
 
+  // Composition-safe draft for the text field (issue #96): a controlled input
+  // whose value prop changes on every keystroke re-renders MID-COMPOSITION on
+  // dead-key layouts (Spanish accents etc.), which can corrupt the IME session
+  // and leave the keyboard eating input. While focused, the field shows the
+  // local draft (effectively uncontrolled - stable caret, untouched
+  // composition); the parent still receives every committed change.
+  const [textDraft, setTextDraft] = useState(null);
+  const composingRef = useRef(false);
+
   const handleTextChange = (e) => {
+    setTextDraft(e.target.value);
+    if (!composingRef.current) {
+      onUpdate(index, { ...line, text: e.target.value });
+    }
+  };
+
+  const handleTextCompositionStart = () => {
+    composingRef.current = true;
+  };
+
+  const handleTextCompositionEnd = (e) => {
+    composingRef.current = false;
+    setTextDraft(e.target.value);
     onUpdate(index, { ...line, text: e.target.value });
+  };
+
+  const handleTextBlur = () => {
+    composingRef.current = false;
+    if (textDraft !== null && textDraft !== text) {
+      onUpdate(index, { ...line, text: textDraft });
+    }
+    setTextDraft(null);
   };
 
   const handleSingerChange = (e) => {
@@ -452,8 +482,11 @@ export function LyricLine({
       <input
         type="text"
         className="flex-1 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-400 dark:focus:border-blue-400"
-        value={text}
+        value={textDraft ?? text}
         onChange={handleTextChange}
+        onCompositionStart={handleTextCompositionStart}
+        onCompositionEnd={handleTextCompositionEnd}
+        onBlur={handleTextBlur}
         placeholder="Enter lyrics..."
         onClick={(e) => {
           e.stopPropagation();
