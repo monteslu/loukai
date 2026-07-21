@@ -346,9 +346,10 @@ describe('libraryService', () => {
       expect(result.songs).toEqual([]);
     });
 
-    it('should limit results to 50 songs', () => {
-      // Create 60 songs
-      mainApp.cachedLibrary = Array.from({ length: 60 }, (_, i) => ({
+    it('should limit results to 500 songs', () => {
+      // 50 was too small for real libraries: 'bea' has 477 exact substring
+      // matches in a 9.5k library, so whole artist blocks were unreachable.
+      mainApp.cachedLibrary = Array.from({ length: 520 }, (_, i) => ({
         title: `Test Song ${i}`,
         artist: 'Test Artist',
       }));
@@ -356,7 +357,7 @@ describe('libraryService', () => {
       const result = libraryService.searchSongs(mainApp, 'test');
 
       expect(result.success).toBe(true);
-      expect(result.songs).toHaveLength(50);
+      expect(result.songs).toHaveLength(500);
     });
 
     it('should prioritize title matches over artist/album matches', () => {
