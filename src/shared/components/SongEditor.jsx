@@ -680,6 +680,75 @@ export function SongEditor({ bridge }) {
     setHasChanges(true);
   };
 
+  // Evaluate/Reevaluate chords (issue #93): fetch the bass + harmony stems the
+  // editor already has URLs for, decode, run the shared detection worker, and
+  // stage the result - the normal Save persists it to the file.
+  const [isAnalyzingChords, setIsAnalyzingChords] = useState(false);
+  const handleAnalyzeChords = async () => {
+    const files = songData?.audioFiles || [];
+    const find = (name) => files.find((f) => f.name?.toLowerCase().includes(name));
+    const otherFile = find('other') || find('music');
+    if (!otherFile) {
+      showToast('No harmony stem available to analyze', 'error');
+      return;
+    }
+    try {
+      setIsAnalyzingChords(true);
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const decode = async (f) => {
+        if (!f) return null;
+        // Electron hands the raw bytes straight over (fetch() on its blob URLs
+        // is CSP-blocked); the web admin fetches its same-origin HTTP URLs.
+        let buf;
+        if (f.audioData?.byteLength) {
+          buf = f.audioData.buffer.slice(
+            f.audioData.byteOffset,
+            f.audioData.byteOffset + f.audioData.byteLength
+          );
+        } else if (f.downloadUrl) {
+          buf = await (await fetch(f.downloadUrl)).arrayBuffer();
+        } else {
+          return null;
+        }
+        const audio = await ctx.decodeAudioData(buf);
+        return {
+          left: audio.getChannelData(0).slice(),
+          right: audio.numberOfChannels > 1 ? audio.getChannelData(1).slice() : undefined,
+          sampleRate: audio.sampleRate,
+        };
+      };
+      const other = await decode(otherFile);
+      const bass = await decode(find('bass'));
+      ctx.close();
+      const worker = new Worker(new URL('../workers/chordWorker.js', import.meta.url), {
+        type: 'module',
+      });
+      const chords = await new Promise((resolve, reject) => {
+        worker.onmessage = (e) => {
+          worker.terminate();
+          if (e.data.ok) resolve(e.data.chords);
+          else reject(new Error(e.data.error));
+        };
+        worker.onerror = (e) => {
+          worker.terminate();
+          reject(new Error(e.message || 'analysis worker failed'));
+        };
+        const transfers = [other.left.buffer];
+        if (other.right) transfers.push(other.right.buffer);
+        if (bass?.left) transfers.push(bass.left.buffer);
+        if (bass?.right) transfers.push(bass.right.buffer);
+        worker.postMessage({ other, bass, sampleRate: other.sampleRate }, transfers);
+      });
+      setChordsData(chords);
+      setHasChanges(true);
+      showToast(`Chords analyzed: ${chords.length} segments - Save to keep them`, 'success');
+    } catch (e) {
+      showToast(`Chord analysis failed: ${e.message}`, 'error');
+    } finally {
+      setIsAnalyzingChords(false);
+    }
+  };
+
   const handleAddLineAfter = (index) => {
     const currentLine = lyricsData[index];
     const nextLine = lyricsData[index + 1];
@@ -1395,6 +1464,8 @@ export function SongEditor({ bridge }) {
                     setChordsData(next);
                     setHasChanges(true);
                   }}
+                  onAnalyze={handleAnalyzeChords}
+                  analyzing={isAnalyzingChords}
                 />
               </div>
             </>

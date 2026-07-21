@@ -77,7 +77,7 @@ function TimeField({ value, onCommit }) {
   );
 }
 
-export function ChordEditor({ chords, onChange }) {
+export function ChordEditor({ chords, onChange, onAnalyze, analyzing = false }) {
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [open, setOpen] = useState(false);
   const list = chords || [];
@@ -98,16 +98,33 @@ export function ChordEditor({ chords, onChange }) {
 
   return (
     <div className="mt-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-3 py-2 text-left"
-      >
-        <span className="font-semibold text-gray-900 dark:text-gray-100">
-          Chords ({list.length})
-        </span>
-        <span className="material-icons text-gray-500">{open ? 'expand_less' : 'expand_more'}</span>
-      </button>
+      <div className="w-full flex items-center gap-2 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="flex-1 flex items-center justify-between text-left"
+        >
+          <span className="font-semibold text-gray-900 dark:text-gray-100">
+            Chords ({list.length})
+          </span>
+          <span className="material-icons text-gray-500">
+            {open ? 'expand_less' : 'expand_more'}
+          </span>
+        </button>
+        {onAnalyze && (
+          <button
+            type="button"
+            onClick={onAnalyze}
+            disabled={analyzing}
+            className="flex items-center gap-1 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50"
+          >
+            <span className={`material-icons text-base ${analyzing ? 'animate-spin' : ''}`}>
+              {analyzing ? 'autorenew' : 'graphic_eq'}
+            </span>
+            {analyzing ? 'Analyzing…' : list.length > 0 ? 'Reevaluate Chords' : 'Evaluate Chords'}
+          </button>
+        )}
+      </div>
       {open && (
         <div className="px-3 pb-3 max-h-[300px] overflow-y-auto">
           <datalist id="chord-name-options">
