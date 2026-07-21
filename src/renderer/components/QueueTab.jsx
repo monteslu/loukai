@@ -83,9 +83,7 @@ export function QueueTab({ bridge }) {
   };
 
   const handleClearQueue = async () => {
-    if (queue.length > 0 && confirm('Are you sure you want to clear the queue?')) {
-      await bridge.clearQueue();
-    }
+    if (queue.length > 0) await bridge.clearQueue();
   };
 
   const handleShuffleQueue = () => {

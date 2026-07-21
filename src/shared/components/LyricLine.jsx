@@ -18,6 +18,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { PortalSelect } from './PortalSelect.jsx';
+import { useArmedConfirm } from '../hooks/useArmedConfirm.js';
 
 // Singer options for the dropdown
 const SINGER_OPTIONS = [
@@ -334,6 +335,7 @@ export function LyricLine({
   // local draft (effectively uncontrolled - stable caret, untouched
   // composition); the parent still receives every committed change.
   const [textDraft, setTextDraft] = useState(null);
+  const [deleteArmed, fireDelete] = useArmedConfirm();
   const composingRef = useRef(false);
 
   const handleTextChange = (e) => {
@@ -521,14 +523,16 @@ export function LyricLine({
           }}
         />
         <IconButton
-          icon="delete"
-          tooltip="Delete line"
-          className="w-8 h-8 p-0 flex items-center justify-center border border-gray-300 dark:border-gray-600 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded cursor-pointer transition-all hover:bg-red-600 hover:border-red-600 hover:text-white dark:hover:bg-red-500 dark:hover:border-red-500"
+          icon={deleteArmed ? 'delete_forever' : 'delete'}
+          tooltip={deleteArmed ? 'Click again to delete' : 'Delete line'}
+          className={`w-8 h-8 p-0 flex items-center justify-center border rounded cursor-pointer transition-all hover:bg-red-600 hover:border-red-600 hover:text-white dark:hover:bg-red-500 dark:hover:border-red-500 ${
+            deleteArmed
+              ? 'bg-red-600 border-red-600 text-white dark:bg-red-500 dark:border-red-500'
+              : 'border-gray-300 dark:border-gray-600 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200'
+          }`}
           onClick={(e) => {
             e.stopPropagation();
-            if (confirm('Delete this lyric line?')) {
-              onDelete(index);
-            }
+            fireDelete(() => onDelete(index));
           }}
         />
         <IconButton

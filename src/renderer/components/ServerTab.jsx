@@ -3,6 +3,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useArmedConfirm } from '../../shared/hooks/useArmedConfirm.js';
 import { generateQRCode } from '../utils/qrCodeGenerator.js';
 
 export function ServerTab({ bridge }) {
@@ -154,10 +155,9 @@ export function ServerTab({ bridge }) {
     }
   };
 
+  const [clearReqArmed, fireClearReq] = useArmedConfirm();
   const handleClearRequests = async () => {
-    if (!confirm('Are you sure you want to clear all song requests? This cannot be undone.')) {
-      return;
-    }
+    if (!fireClearReq(() => {})) return; // first click arms; second proceeds
 
     try {
       if (bridge.clearAllRequests) {
@@ -438,7 +438,7 @@ export function ServerTab({ bridge }) {
                 onClick={handleClearRequests}
               >
                 <span className="material-icons text-lg">delete_sweep</span>
-                Clear All Requests
+                {clearReqArmed ? 'Click again to clear all requests' : 'Clear All Requests'}
               </button>
             </div>
           </div>
