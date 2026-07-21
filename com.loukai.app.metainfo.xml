@@ -48,6 +48,14 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.10.1" date="2026-07-21">
+      <description>
+        <p>Security dependency updates</p>
+        <ul>
+          <li>Updates bundled dependencies for newly published advisories (node-tar, body-parser); no feature changes from 0.10.0</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.10.0" date="2026-07-21">
       <description>
         <p>Chords on screen - play along with any song</p>
