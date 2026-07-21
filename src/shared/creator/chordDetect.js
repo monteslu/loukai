@@ -12,7 +12,6 @@ const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 
 const WINDOW = 8192;
 const HOP = 4096;
 const MIN_SEGMENT_SEC = 0.6;
-const ROOT_BOOST = 0.35; // weight of the bass root vote vs the harmony template fit
 const ENERGY_FLOOR = 1e-4; // frames quieter than this are "no chord"
 
 /** In-place iterative radix-2 FFT (real input, magnitudes out). */
@@ -88,80 +87,63 @@ function hann(n) {
   return hannCache.get(n);
 }
 
-/** 24 triad templates (12 major, 12 minor), L2-normalized. */
-function buildTemplates() {
-  const templates = [];
-  for (let root = 0; root < 12; root++) {
-    for (const [suffix, intervals] of [
-      ['', [0, 4, 7]],
-      ['m', [0, 3, 7]],
-    ]) {
-      const t = new Float32Array(12);
-      for (const iv of intervals) t[(root + iv) % 12] = 1 / Math.sqrt(3);
-      templates.push({ name: NOTE_NAMES[root] + suffix, root, t });
-    }
-  }
-  return templates;
-}
-
 /**
- * Detect the chord timeline from separated stems.
+ * Detect the ROOT NOTE timeline from separated stems (issue #93 feedback from
+ * the field: full maj/min chord guessing missed changes; a bass-driven root is
+ * far more reliable, and the editor lets players add the quality by hand).
+ *
+ * Per frame: the bass stem is nearly monophonic, so when it is sounding its
+ * dominant pitch class IS the root. When the bass rests or is ambiguous, fall
+ * back to the strongest pitch class of the harmony stem.
  *
  * @param {{left: Float32Array, right?: Float32Array}} other  harmony stem
  * @param {{left: Float32Array, right?: Float32Array}} bass   bass stem
  * @param {number} sampleRate
- * @returns {Array<{start: number, end: number, chord: string}>} merged segments;
- *   silent/ambiguous stretches are simply absent (no 'N' entries in the output).
+ * @returns {Array<{start: number, end: number, chord: string}>} merged segments
+ *   of bare roots ('C', 'F#'); silent stretches are simply absent.
  */
 export function detectChords(other, bass, sampleRate) {
   if (!other?.left?.length) return [];
   const harm = downmix(other);
   const bassMono = bass?.left?.length ? downmix(bass) : null;
   const win = hann(WINDOW);
-  const templates = buildTemplates();
   const re = new Float32Array(WINDOW);
   const im = new Float32Array(WINDOW);
 
-  const frames = [];
-  for (let start = 0; start + WINDOW <= harm.length; start += HOP) {
-    for (let i = 0; i < WINDOW; i++) {
-      re[i] = harm[start + i] * win[i];
-      im[i] = 0;
-    }
-    const chroma = chromaFromMags(fftMagnitudes(re, im), sampleRate, 82, 2000);
+  const dominantPc = (chroma) => {
     let energy = 0;
     for (let i = 0; i < 12; i++) energy += chroma[i];
-    if (energy < ENERGY_FLOOR) {
-      frames.push(null);
-      continue;
-    }
-    for (let i = 0; i < 12; i++) chroma[i] /= energy;
+    if (energy < ENERGY_FLOOR) return null;
+    let best = 0;
+    for (let i = 1; i < 12; i++) if (chroma[i] > chroma[best]) best = i;
+    // Demand real dominance: the top pitch class must carry a meaningful share
+    // of the frame's energy or the frame is ambiguous (transients, noise).
+    return chroma[best] / energy >= 0.22 ? best : null;
+  };
 
-    let bassChroma = null;
+  const frames = [];
+  for (let start = 0; start + WINDOW <= harm.length; start += HOP) {
+    let pc = null;
+
+    // Bass first: monophonic, low register, the root nearly by definition.
     if (bassMono && start + WINDOW <= bassMono.length) {
       for (let i = 0; i < WINDOW; i++) {
         re[i] = bassMono[start + i] * win[i];
         im[i] = 0;
       }
-      bassChroma = chromaFromMags(fftMagnitudes(re, im), sampleRate, 41, 300);
-      let be = 0;
-      for (let i = 0; i < 12; i++) be += bassChroma[i];
-      if (be > ENERGY_FLOOR) for (let i = 0; i < 12; i++) bassChroma[i] /= be;
-      else bassChroma = null;
+      pc = dominantPc(chromaFromMags(fftMagnitudes(re, im), sampleRate, 41, 300));
     }
 
-    let best = null;
-    let bestScore = -Infinity;
-    for (const tpl of templates) {
-      let score = 0;
-      for (let i = 0; i < 12; i++) score += chroma[i] * tpl.t[i];
-      if (bassChroma) score += ROOT_BOOST * bassChroma[tpl.root];
-      if (score > bestScore) {
-        bestScore = score;
-        best = tpl.name;
+    // Harmony fallback when the bass is silent or ambiguous.
+    if (pc === null) {
+      for (let i = 0; i < WINDOW; i++) {
+        re[i] = harm[start + i] * win[i];
+        im[i] = 0;
       }
+      pc = dominantPc(chromaFromMags(fftMagnitudes(re, im), sampleRate, 82, 2000));
     }
-    frames.push(best);
+
+    frames.push(pc === null ? null : NOTE_NAMES[pc]);
   }
 
   // Merge frames into segments; drop blips shorter than MIN_SEGMENT_SEC by

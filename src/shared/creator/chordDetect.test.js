@@ -24,16 +24,15 @@ function concat(parts) {
   return out;
 }
 
-describe('detectChords', () => {
-  it('identifies a C major then A minor progression with bass roots', () => {
-    // C major: C4 E4 G4; A minor: A3 C4 E4. Two seconds each.
+describe('detectChords (root notes)', () => {
+  it('follows the bass root through a progression', () => {
+    // C major triad over C bass, then A minor triad over A bass.
     const other = concat([tone([261.6, 329.6, 392.0], 2), tone([220.0, 261.6, 329.6], 2)]);
     const bass = concat([tone([65.4], 2), tone([55.0], 2)]); // C2 then A1
     const segs = detectChords({ left: other }, { left: bass }, SR);
     const names = segs.map((s) => s.chord);
     expect(names[0]).toBe('C');
-    expect(names[names.length - 1]).toBe('Am');
-    // timeline is ordered and non-overlapping
+    expect(names[names.length - 1]).toBe('A');
     for (let i = 1; i < segs.length; i++) {
       expect(segs[i].start).toBeGreaterThanOrEqual(segs[i - 1].start);
     }
@@ -44,15 +43,22 @@ describe('detectChords', () => {
     expect(detectChords({ left: silent }, { left: silent }, SR)).toEqual([]);
   });
 
-  it('handles a missing bass stem', () => {
-    const other = tone([196.0, 246.9, 293.7], 2); // G major: G3 B3 D4
+  it('falls back to the harmony stem when the bass is silent', () => {
+    const other = tone([196.0], 2); // G3 alone - dominance is unambiguous
     const segs = detectChords({ left: other }, null, SR);
     expect(segs.length).toBeGreaterThan(0);
     expect(segs[0].chord).toBe('G');
   });
 
+  it('emits bare roots only (no maj/min suffix)', () => {
+    const other = tone([220.0, 261.6, 329.6], 2); // A minor triad
+    const bass = tone([55.0], 2);
+    const segs = detectChords({ left: other }, { left: bass }, SR);
+    for (const s of segs) expect(s.chord).toMatch(/^[A-G]#?$/);
+  });
+
   it('rounds segment times to centiseconds', () => {
-    const other = tone([261.6, 329.6, 392.0], 1.5);
+    const other = tone([196.0], 1.5);
     const segs = detectChords({ left: other }, null, SR);
     for (const s of segs) {
       expect(s.start).toBeCloseTo(Math.round(s.start * 100) / 100, 10);
