@@ -325,7 +325,14 @@ export function searchSongList(songs, query, limit = 50) {
   // SOME field (AND across terms). This is what lets "diamond caroline" or "artist title"
   // find a song even though the words aren't contiguous — the #1 reason the old substring
   // filter failed users. A single term just runs Fuse directly.
-  const terms = trimmed.split(/\s+/).filter(Boolean);
+  //
+  // Terms below Fuse's minMatchCharLength can NEVER match, so requiring them
+  // guaranteed zero results — typing the full title "i shot the sheriff"
+  // found NOTHING because of the "i". Ignore them.
+  const terms = trimmed
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((t) => t.length >= 2);
 
   const ql = trimmed.toLowerCase();
   // Title-first tiebreak: a row whose TITLE contains the query ranks above one that only
@@ -342,25 +349,33 @@ export function searchSongList(songs, query, limit = 50) {
   if (terms.length <= 1) {
     ranked = fuse.search(trimmed).sort(titleFirst);
   } else {
-    // Intersect per-term result sets; combine scores (lower = better in Fuse).
+    // SOFT-AND across terms: count how many terms each song matches (union of
+    // per-term result sets, so a dud FIRST term can't nuke everything), require
+    // all-but-one, and rank by matched count then combined score. A stray word,
+    // a number, or a term aimed at a missing artist tag now degrades ranking
+    // instead of guaranteeing zero results.
     const perTerm = terms.map((t) => new Map(fuse.search(t).map((r) => [r.item, r.score ?? 1])));
-    const first = perTerm[0];
-    const combined = [];
-    for (const [item, score0] of first) {
-      let total = score0;
-      let inAll = true;
-      for (let i = 1; i < perTerm.length; i++) {
-        const s = perTerm[i].get(item);
-        if (s === undefined) {
-          inAll = false;
-          break;
-        }
-        total += s;
+    const tally = new Map(); // item -> { n: matched terms, total: summed score }
+    for (const m of perTerm) {
+      for (const [item, score] of m) {
+        const e = tally.get(item) || { n: 0, total: 0 };
+        e.n += 1;
+        e.total += score;
+        tally.set(item, e);
       }
-      if (inAll) combined.push({ item, score: total });
     }
-    combined.sort((a, b) => a.score - b.score);
+    const need = Math.max(1, terms.length - 1);
+    const combined = [];
+    for (const [item, e] of tally) {
+      if (e.n >= need) combined.push({ item, n: e.n, score: e.total / e.n });
+    }
+    combined.sort((a, b) => b.n - a.n || a.score - b.score);
     ranked = combined;
+    // Still nothing (e.g. heavy typos in several terms): fuzzy-match the whole
+    // query string as a last resort.
+    if (ranked.length === 0) {
+      ranked = fuse.search(trimmed).sort(titleFirst);
+    }
   }
 
   return ranked.slice(0, limit).map((r) => r.item);

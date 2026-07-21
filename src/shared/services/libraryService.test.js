@@ -261,6 +261,41 @@ describe('libraryService', () => {
     });
   });
 
+  describe('searchSongList soft-AND (fuzzy regressions)', () => {
+    const songs = [
+      { title: 'I Shot The Sheriff', artist: 'Bob Marley & The Wailers', album: 'Burnin' },
+      { title: 'Sweet Emotion', artist: '', album: '' },
+      { title: 'Dancing Queen', artist: 'ABBA', album: 'Arrival' },
+    ];
+
+    it('full title with sub-2-char words matches (the "i shot the sheriff" bug)', () => {
+      expect(libraryService.searchSongList(songs, 'i shot the sherrif', 10)[0].title).toBe(
+        'I Shot The Sheriff'
+      );
+    });
+
+    it('one stray word degrades ranking instead of returning nothing', () => {
+      expect(libraryService.searchSongList(songs, 'shot sheriff bob extra', 10)[0].title).toBe(
+        'I Shot The Sheriff'
+      );
+      expect(libraryService.searchSongList(songs, 'sheriff 2024', 10)[0].title).toBe(
+        'I Shot The Sheriff'
+      );
+    });
+
+    it('a term aimed at a missing artist tag does not kill the title match', () => {
+      expect(libraryService.searchSongList(songs, 'sweet emotion aerosmith', 10)[0].title).toBe(
+        'Sweet Emotion'
+      );
+    });
+
+    it('a dud FIRST term cannot nuke the result set', () => {
+      expect(libraryService.searchSongList(songs, 'xyz sheriff', 10)[0].title).toBe(
+        'I Shot The Sheriff'
+      );
+    });
+  });
+
   describe('searchSongs', () => {
     beforeEach(() => {
       mainApp.cachedLibrary = [
