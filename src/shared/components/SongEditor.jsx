@@ -16,7 +16,7 @@ import { LyricsEditorCanvas } from './LyricsEditorCanvas.jsx';
 import { LineDetailCanvas } from './LineDetailCanvas.jsx';
 import { LyricLine } from './LyricLine.jsx';
 import { ChordEditor } from './ChordEditor.jsx';
-import { useArmedConfirm } from '../hooks/useArmedConfirm.js';
+import { useConfirm } from '../hooks/useConfirm.jsx';
 import { Toast } from './Toast.jsx';
 import { LyricRejection } from './LyricRejection.jsx';
 import { LyricSuggestion } from './LyricSuggestion.jsx';
@@ -53,6 +53,7 @@ export function SongEditor({ bridge }) {
   // Lyrics state (for KAI files) - now array format for full editing
   const [lyricsData, setLyricsData] = useState([]);
   const [chordsData, setChordsData] = useState([]);
+  const [confirmDialog, confirmModal] = useConfirm();
   const [originalLyricsData, setOriginalLyricsData] = useState([]);
   const [selectedLineIndex, setSelectedLineIndex] = useState(null);
   const [songDuration, setSongDuration] = useState(0);
@@ -669,7 +670,8 @@ export function SongEditor({ bridge }) {
     setToast({ message, type });
   };
 
-  const handleLineDelete = (index) => {
+  const handleLineDelete = async (index) => {
+    if (!(await confirmDialog('Delete this lyric line?', { confirmLabel: 'Delete' }))) return;
     setLyricsData((prev) => prev.filter((_, i) => i !== index));
     setSelectedLineIndex(null);
     setHasChanges(true);
@@ -897,9 +899,9 @@ export function SongEditor({ bridge }) {
   };
 
   // Reset to original lyrics
-  const [resetArmed, fireReset] = useArmedConfirm();
-  const handleResetLyrics = () => {
-    if (!fireReset(() => {})) return; // first click arms; second proceeds below
+  const handleResetLyrics = async () => {
+    if (!(await confirmDialog('Reset all changes to original lyrics?', { confirmLabel: 'Reset' })))
+      return;
 
     setLyricsData(JSON.parse(JSON.stringify(originalLyricsData)));
     setHasChanges(false);
@@ -1288,7 +1290,7 @@ export function SongEditor({ bridge }) {
                     title="Reset to original lyrics"
                   >
                     <span className="material-icons text-base">restore</span>
-                    {resetArmed ? 'Click again to reset' : 'Reset'}
+                    Reset
                   </button>
                   <button
                     onClick={handleAddLineAtStart}
@@ -1399,6 +1401,7 @@ export function SongEditor({ bridge }) {
 
       {/* Toast notification */}
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      {confirmModal}
     </div>
   );
 }

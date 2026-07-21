@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useArmedConfirm } from '../../shared/hooks/useArmedConfirm.js';
+import { useConfirm } from '../../shared/hooks/useConfirm.jsx';
 import { generateQRCode } from '../utils/qrCodeGenerator.js';
 
 export function ServerTab({ bridge }) {
@@ -155,9 +155,14 @@ export function ServerTab({ bridge }) {
     }
   };
 
-  const [clearReqArmed, fireClearReq] = useArmedConfirm();
+  const [confirmDialog, confirmModal] = useConfirm();
   const handleClearRequests = async () => {
-    if (!fireClearReq(() => {})) return; // first click arms; second proceeds
+    if (
+      !(await confirmDialog('Clear all song requests? This cannot be undone.', {
+        confirmLabel: 'Clear all',
+      }))
+    )
+      return;
 
     try {
       if (bridge.clearAllRequests) {
@@ -438,7 +443,7 @@ export function ServerTab({ bridge }) {
                 onClick={handleClearRequests}
               >
                 <span className="material-icons text-lg">delete_sweep</span>
-                {clearReqArmed ? 'Click again to clear all requests' : 'Clear All Requests'}
+                Clear All Requests
               </button>
             </div>
           </div>
@@ -467,6 +472,7 @@ export function ServerTab({ bridge }) {
           </div>
         )}
       </div>
+      {confirmModal}
     </div>
   );
 }
