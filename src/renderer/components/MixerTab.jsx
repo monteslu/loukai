@@ -36,7 +36,7 @@ export function MixerTab({ bridge }) {
         IEM: mixer.IEM || { gain: 0, muted: false },
         mic: mixer.mic || { gain: 0, muted: false },
         stemMix: mixer.stemMix,
-        stems: mixer.stems || [],
+        stems: Array.isArray(mixer.stems) ? mixer.stems : [],
         songType: mixer.songType,
       });
     });
@@ -50,7 +50,7 @@ export function MixerTab({ bridge }) {
           IEM: state.IEM || { gain: 0, muted: false },
           mic: state.mic || { gain: 0, muted: false },
           stemMix: state.stemMix,
-          stems: state.stems || [],
+          stems: Array.isArray(state.stems) ? state.stems : [],
           songType: state.songType,
         });
       })

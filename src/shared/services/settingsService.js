@@ -156,7 +156,13 @@ function syncToAppState(key, value) {
   // Map settings keys to AppState update methods
   switch (key) {
     case 'mixer':
-      _appState.update('mixer', value);
+      // Heal the legacy object-shaped stems that old settings.json files carry
+      // (issue #106): mixer.stems must be the loaded-song stem ARRAY, or every
+      // mixer view crashes the renderer on mount.
+      _appState.update('mixer', {
+        ...value,
+        stems: Array.isArray(value?.stems) ? value.stems : [],
+      });
       break;
 
     case 'effects':
