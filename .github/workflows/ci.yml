@@ -31,7 +31,11 @@ jobs:
         run: npm run format:check
 
       - name: Security audit
-        run: npm audit --audit-level=high
+        # Gate on what ships: devDependencies (eslint, electron-builder, vitest)
+        # regularly pick up advisories with no non-breaking fix (e.g. GHSA-mh99
+        # brace-expansion, whose only patch breaks minimatch@3 consumers) and
+        # never reach users.
+        run: npm audit --omit=dev --audit-level=high
         continue-on-error: false
 
   test:
