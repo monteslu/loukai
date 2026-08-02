@@ -149,7 +149,18 @@ describe('settingsService', () => {
 
       await settingsService.setSetting('mixer', { PA: { gain: 10 } });
 
-      expect(mockAppState.update).toHaveBeenCalledWith('mixer', { PA: { gain: 10 } });
+      expect(mockAppState.update).toHaveBeenCalledWith('mixer', { PA: { gain: 10 }, stems: [] });
+    });
+
+    it('should heal legacy object-shaped mixer.stems when syncing to AppState (issue #106)', async () => {
+      settingsService.initSettingsService(mockSettingsManager, mockAppState, mockBroadcastFn);
+
+      await settingsService.setSetting('mixer', {
+        PA: { gain: 0 },
+        stems: { vocals: { gain: 0, muted: false } },
+      });
+
+      expect(mockAppState.update).toHaveBeenCalledWith('mixer', { PA: { gain: 0 }, stems: [] });
     });
 
     it('should sync effects settings to AppState', async () => {

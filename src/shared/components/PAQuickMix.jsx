@@ -40,7 +40,9 @@ export function PAQuickMix({ bridge }) {
 
   const pa = mixer?.PA || { gain: 0, muted: false };
   const isCdg = mixer?.songType === 'cdg';
-  const songStems = (mixer?.stems || []).map((s) => s.name).filter((n) => n && !isMixdownStem(n));
+  const songStems = (Array.isArray(mixer?.stems) ? mixer.stems : [])
+    .map((s) => s.name)
+    .filter((n) => n && !isMixdownStem(n));
   const names = isCdg ? ['music'] : songStems.length ? orderStems(songStems) : CANONICAL_STEMS;
   const disabled = !isCdg && songStems.length === 0;
 

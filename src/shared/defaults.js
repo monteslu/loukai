@@ -14,14 +14,10 @@ export const MIXER_DEFAULTS = {
   // PA plays the backing mix (vocals muted), IEM is the guide-vocal bus (vocals on,
   // rest muted; the IEM MASTER above stays muted as the no-second-device guard).
   stemMix: seedDefaultStemMix(),
-  // Legacy flat per-stem shape used by the dormant main-process mixer stub; superseded
-  // by stemMix (removed along with the stub in the control-plane step).
-  stems: {
-    vocals: { gain: 0, muted: false },
-    instrumental: { gain: 0, muted: false },
-    bass: { gain: 0, muted: false },
-    drums: { gain: 0, muted: false },
-  },
+  // stems must stay an ARRAY of loaded-song stems ([{ id, name, gain, index }]).
+  // A legacy object shape here once leaked through settings.json into AppState and
+  // crashed every mixer view on first run (issue #106) - do not reintroduce it.
+  stems: [],
 };
 
 export const EFFECTS_DEFAULTS = {

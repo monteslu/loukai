@@ -133,7 +133,7 @@ export function MixerPanel({
                         />
                       );
                     }
-                    const songStems = (state.stems || [])
+                    const songStems = (Array.isArray(state.stems) ? state.stems : [])
                       .map((st) => st.name)
                       .filter((n) => n && !isMixdownStem(n));
                     const names = songStems.length ? orderStems(songStems) : CANONICAL_STEMS;

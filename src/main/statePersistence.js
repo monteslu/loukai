@@ -36,9 +36,13 @@ class StatePersistence {
       // Don't restore queue - it should start empty each time
       // Queue is ephemeral, only mixer/effects/preferences persist
 
-      // Restore mixer state if available
+      // Restore mixer state if available. stems must stay an array (issue #106):
+      // old files carry a legacy object shape that crashes the mixer views.
       if (savedState.mixer) {
-        this.appState.state.mixer = savedState.mixer;
+        this.appState.state.mixer = {
+          ...savedState.mixer,
+          stems: Array.isArray(savedState.mixer.stems) ? savedState.mixer.stems : [],
+        };
         delete this.appState.state.mixer.keyShift;
         log('📂 Loaded mixer state');
       }
@@ -75,7 +79,10 @@ class StatePersistence {
 
         // Restore from backup
         if (savedState.mixer) {
-          this.appState.state.mixer = savedState.mixer;
+          this.appState.state.mixer = {
+            ...savedState.mixer,
+            stems: Array.isArray(savedState.mixer.stems) ? savedState.mixer.stems : [],
+          };
           delete this.appState.state.mixer.keyShift;
           log('📂 Loaded mixer state from backup');
         }
