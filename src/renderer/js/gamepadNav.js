@@ -71,6 +71,19 @@ const FOCUSABLE = [
  */
 const GAMEPAD_SKIP = '[data-gamepad-skip]';
 
+/**
+ * True for controls that capture typing. Checkboxes, sliders and buttons are
+ * <input> too, so the TYPE matters, not the tag: treating those as text would
+ * strand the focus ring on the first checkbox it reached.
+ */
+function isTextInput(el) {
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  if (el.tagName === 'TEXTAREA') return true;
+  if (el.tagName !== 'INPUT') return false;
+  return TEXT_INPUT_TYPES.has((el.type || 'text').toLowerCase());
+}
+
 export class GamepadNav {
   constructor({ onTabStep, onTogglePlayback } = {}) {
     this.onTabStep = onTabStep;
@@ -98,15 +111,7 @@ export class GamepadNav {
    * B still passes through so a controller can always back out of a text field.
    */
   isTextEntryFocused() {
-    const el = document.activeElement;
-    if (!el) return false;
-    if (el.isContentEditable) return true;
-    if (el.tagName === 'TEXTAREA') return true;
-    if (el.tagName !== 'INPUT') return false;
-    // Only inputs that actually swallow typing count. Checkboxes, sliders and
-    // buttons are <input> too, and suppressing navigation on those would strand
-    // the focus ring on the first checkbox it landed on.
-    return TEXT_INPUT_TYPES.has((el.type || 'text').toLowerCase());
+    return isTextInput(document.activeElement);
   }
 
   poll() {
@@ -221,6 +226,10 @@ export class GamepadNav {
   visibleFocusables() {
     return [...document.querySelectorAll(FOCUSABLE)].filter((el) => {
       if (el.closest(GAMEPAD_SKIP)) return false;
+      // A gamepad cannot type, so landing on a text field is a dead end: the ring
+      // parks there and the only escape is B. Skip them until there is a way to
+      // enter text with a controller (platform OSK or our own).
+      if (isTextInput(el)) return false;
       if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') return false;
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0;

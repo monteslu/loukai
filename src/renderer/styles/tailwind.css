@@ -108,15 +108,22 @@
 /*
  * Gamepad navigation focus ring (10-foot UI).
  *
- * The default focus outline is nearly invisible from a couch, so the element
- * the gamepad has landed on gets a deliberately loud ring. Scoped to the class
- * the nav layer applies, so mouse and keyboard users see no change.
+ * The default focus outline is nearly invisible from a couch, so the element the
+ * gamepad has landed on gets a deliberately loud ring. Scoped to the class the
+ * nav layer applies, so mouse and keyboard users see no change.
+ *
+ * The ring is drawn INSIDE the element with an inset shadow, not with `outline`.
+ * An outline paints outside the border box, so ancestors with `overflow-hidden`
+ * (the main layout columns, the tab strip) clip it: the canvas showed only its
+ * left edge, and tabs showed only their bottom and sides. An inset shadow lives
+ * within the element's own box and cannot be clipped by an ancestor.
  */
 .gamepad-focus:focus,
 .gamepad-focus:focus-visible {
-  outline: 4px solid #3b82f6 !important;
-  outline-offset: 2px !important;
+  outline: none !important;
+  box-shadow:
+    inset 0 0 0 4px #3b82f6,
+    inset 0 0 0 8px rgba(59, 130, 246, 0.3) !important;
   border-radius: 4px;
-  box-shadow: 0 0 0 8px rgba(59, 130, 246, 0.25) !important;
   scroll-margin: 80px;
 }

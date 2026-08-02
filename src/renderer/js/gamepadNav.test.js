@@ -193,6 +193,32 @@ describe('GamepadNav', () => {
       expect(document.activeElement).not.toBe(external);
     });
 
+    it('never lands on a text field, since a gamepad cannot type', () => {
+      const [start, textField, safe] = layout([
+        { top: 0, left: 0 },
+        { top: 50, left: 0, tag: 'input' },
+        { top: 100, left: 0 },
+      ]);
+      textField.type = 'text';
+      start.focus();
+
+      nav.moveFocus('DOWN');
+      expect(document.activeElement).toBe(safe);
+      expect(document.activeElement).not.toBe(textField);
+    });
+
+    it('still lands on checkboxes and sliders', () => {
+      const [start, checkbox] = layout([
+        { top: 0, left: 0 },
+        { top: 50, left: 0, tag: 'input' },
+      ]);
+      checkbox.type = 'checkbox';
+      start.focus();
+
+      nav.moveFocus('DOWN');
+      expect(document.activeElement).toBe(checkbox);
+    });
+
     it('skips anything inside a skipped container', () => {
       document.body.innerHTML = '';
       const wrapper = document.createElement('div');
