@@ -240,6 +240,20 @@ export const CREATOR_CHANNELS = {
 };
 
 // ============================================================================
+// GAMEPAD CHANNELS
+// ============================================================================
+
+export const GAMEPAD_CHANNELS = {
+  // Renderer asks for the full controller state (used to prime the shim on load)
+  GET_SNAPSHOT: 'gamepad:getSnapshot',
+
+  // Events (main -> renderer)
+  STATE_CHANGE: 'gamepad:state',
+  CONNECTED: 'gamepad:connected',
+  DISCONNECTED: 'gamepad:disconnected',
+};
+
+// ============================================================================
 // ALL CHANNELS (for validation)
 // ============================================================================
 
@@ -263,6 +277,7 @@ export const ALL_CHANNELS = {
   ...RENDERER_CHANNELS,
   ...SHELL_CHANNELS,
   ...CREATOR_CHANNELS,
+  ...GAMEPAD_CHANNELS,
 };
 
 // ============================================================================

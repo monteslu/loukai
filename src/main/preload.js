@@ -1,5 +1,15 @@
 const { ipcRenderer } = require('electron');
 
+// Mirrors GAMEPAD_CHANNELS in shared/ipcContracts.js. Duplicated as literals
+// because the preload is loaded raw (CommonJS) and cannot import the ESM
+// contracts module; a gamepadShim test asserts the two stay in sync.
+const GAMEPAD_CHANNELS = {
+  GET_SNAPSHOT: 'gamepad:getSnapshot',
+  STATE_CHANGE: 'gamepad:state',
+  CONNECTED: 'gamepad:connected',
+  DISCONNECTED: 'gamepad:disconnected',
+};
+
 const api = {
   app: {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
@@ -304,3 +314,103 @@ const api = {
 
 // Since contextIsolation is disabled, directly assign to window
 window.kaiAPI = api;
+
+/**
+ * navigator.getGamepads() shim, installed from the preload.
+ *
+ * Chromium only reports `mapping: "standard"` for a short list of well-known
+ * pads, so most controllers are unusable through the stock Gamepad API. The main
+ * process reads them through SDL (whose mapping DB covers nearly everything) and
+ * streams normalized state here; this replaces `navigator.getGamepads` so any
+ * standard Gamepad API consumer transparently gets SDL-quality data.
+ *
+ * Deliberately keeps the standard API shape rather than inventing a bespoke
+ * event API, so gamepad-aware code stays portable to the web admin (which has no
+ * SDL and falls through to Chromium's implementation).
+ *
+ * .cjs: the Electron preload is loaded raw (not bundled) and uses require(), so
+ * this cannot be ESM, and the package is "type": "module" so the extension is
+ * what makes Node/vitest treat it as CommonJS.
+ */
+
+/**
+ * @param {object} deps
+ * @param {(channel: string, handler: Function) => void} deps.on - subscribe to main->renderer events
+ * @param {(channel: string) => Promise<any>} deps.invoke - request/response to main
+ * @param {object} deps.channels - GAMEPAD_CHANNELS
+ * @param {object} [deps.target] - object hosting getGamepads (defaults to navigator)
+ */
+function installGamepadShim({ on, invoke, channels, target }) {
+  // `target === undefined` means "use the ambient navigator"; an explicit null
+  // means "there is no navigator here", which must not fall through to a global.
+  const nav = target === undefined ? (typeof navigator !== 'undefined' ? navigator : null) : target;
+  if (!nav) return null;
+
+  const nativeGetGamepads = nav.getGamepads?.bind(nav);
+  let pads = [];
+
+  const state = {
+    /** True once main has told us about at least one SDL pad. */
+    get active() {
+      return pads.length > 0;
+    },
+  };
+
+  nav.getGamepads = () => {
+    // Fall back to Chromium whenever SDL has nothing. A machine with no SDL, no
+    // controller, or no permission to read input devices must be no worse off
+    // than before the shim existed.
+    if (pads.length === 0) {
+      return nativeGetGamepads ? nativeGetGamepads() : [];
+    }
+    return pads;
+  };
+
+  on(channels.STATE_CHANGE, (_event, next) => {
+    const timestamp = performance.now();
+    pads = (next || []).map((pad) => ({ ...pad, timestamp }));
+  });
+
+  on(channels.CONNECTED, (_event, device) => {
+    // Standard-API consumers listen for these rather than polling for arrival.
+    dispatchGamepadEvent('gamepadconnected', device);
+  });
+
+  on(channels.DISCONNECTED, (_event, device) => {
+    pads = [];
+    dispatchGamepadEvent('gamepaddisconnected', device);
+  });
+
+  // Prime from the current state so a controller connected before the window
+  // opened is usable immediately, not only after its first input.
+  invoke(channels.GET_SNAPSHOT)
+    .then((snapshot) => {
+      if (snapshot?.length && pads.length === 0) {
+        const timestamp = performance.now();
+        pads = snapshot.map((pad) => ({ ...pad, timestamp }));
+      }
+    })
+    .catch(() => {
+      // No gamepad support available; the native fallback stays in place.
+    });
+
+  return state;
+}
+
+function dispatchGamepadEvent(type, device) {
+  if (typeof window === 'undefined') return;
+  // GamepadEvent's constructor demands a real Gamepad instance, which we can't
+  // synthesize, so use a plain Event and hang the detail off it.
+  const event = new Event(type);
+  event.gamepadInfo = device;
+  window.dispatchEvent(event);
+}
+
+// Back navigator.getGamepads() with SDL so controllers that Chromium can't map
+// still work. Falls through to Chromium when SDL has no pads, so this can only
+// add support, never remove it.
+window.kaiGamepad = installGamepadShim({
+  on: (channel, handler) => ipcRenderer.on(channel, handler),
+  invoke: (channel) => ipcRenderer.invoke(channel),
+  channels: GAMEPAD_CHANNELS,
+});

@@ -35,6 +35,8 @@ import { registerRendererHandlers } from './rendererHandlers.js';
 log('✓ rendererHandlers');
 import { registerAppHandlers } from './appHandlers.js';
 log('✓ appHandlers');
+import { registerGamepadHandlers } from './gamepadHandlers.js';
+log('✓ gamepadHandlers');
 import { registerAutotuneHandlers } from './autotuneHandlers.js';
 log('✓ autotuneHandlers');
 import { registerCreatorHandlers } from './creatorHandlers.js';
@@ -70,6 +72,7 @@ export function registerAllHandlers(mainApp) {
     registerFileHandlers(mainApp);
     registerRendererHandlers(mainApp);
     registerAppHandlers(mainApp);
+    registerGamepadHandlers(mainApp);
 
     // Creator handlers
     registerCreatorHandlers(mainApp);

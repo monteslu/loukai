@@ -8,9 +8,10 @@
  * resolves to the standard layout. SDL also reads evdev directly, so input keeps
  * working regardless of window focus.
  *
- * SPIKE STATUS: enumeration + open + event streaming only. The IPC bridge, the
- * `navigator.getGamepads()` shim, and the navigation layer are phase 2/3
- * (see internal-loukai/PLAN-gamepad-sdl.md).
+ * Emits `state` (full snapshot, only when something changed), `connected`, and
+ * `disconnected`. `gamepadHandlers` relays those to the renderer, where the
+ * preload shim backs `navigator.getGamepads()` with them. The navigation layer
+ * that consumes the shim is phase 3 (see internal-loukai/PLAN-gamepad-sdl.md).
  */
 
 import { createRequire } from 'node:module';
@@ -54,12 +55,18 @@ export const STANDARD_BUTTON_ORDER = [
 const TRIGGER_PRESS_THRESHOLD = 0.85;
 const TRIGGER_REST_EPSILON = 0.02;
 
+const POLL_INTERVAL_MS = 16; // ~60 Hz
+/** Analog sticks jitter around rest; ignore movement smaller than this. */
+const AXIS_EPSILON = 0.02;
+
 export class GamepadEngine extends EventEmitter {
   constructor() {
     super();
     this.sdl = null;
     this.available = false;
     this.controllers = new Map(); // sdl device id -> { device, handle }
+    this.pollTimer = null;
+    this.lastSnapshot = [];
   }
 
   /**
@@ -161,11 +168,73 @@ export class GamepadEngine extends EventEmitter {
     return { pressed: v > TRIGGER_PRESS_THRESHOLD, touched: true, value: v };
   }
 
+  /**
+   * Poll at 60 Hz but emit only when something actually changed. Nav cares about
+   * button edges and coarse stick direction, so a raw 60 Hz IPC stream would be
+   * pure waste: an idle controller costs zero messages, and even active input
+   * only sends on real transitions.
+   */
+  start() {
+    if (!this.available || this.pollTimer) return;
+    this.pollTimer = setInterval(() => this.poll(), POLL_INTERVAL_MS);
+    // Don't hold the event loop open on quit.
+    this.pollTimer.unref?.();
+  }
+
+  stop() {
+    if (!this.pollTimer) return;
+    clearInterval(this.pollTimer);
+    this.pollTimer = null;
+  }
+
+  poll() {
+    if (this.controllers.size === 0) {
+      if (this.lastSnapshot.length > 0) {
+        this.lastSnapshot = [];
+        this.emit('state', []);
+      }
+      return;
+    }
+
+    const snapshot = this.getSnapshot();
+    if (this.hasChanged(snapshot, this.lastSnapshot)) {
+      this.lastSnapshot = snapshot;
+      this.emit('state', snapshot);
+    }
+  }
+
+  /**
+   * True when anything a consumer would notice differs. Axes use a deadzone-ish
+   * epsilon so analog stick jitter (which never rests at exactly 0) doesn't
+   * masquerade as input and defeat the whole point of emit-on-change.
+   */
+  hasChanged(next, prev) {
+    if (next.length !== prev.length) return true;
+
+    for (let i = 0; i < next.length; i++) {
+      const a = next[i];
+      const b = prev[i];
+      if (!b || a.id !== b.id) return true;
+
+      for (let j = 0; j < a.buttons.length; j++) {
+        if (a.buttons[j].pressed !== b.buttons[j]?.pressed) return true;
+      }
+
+      for (let j = 0; j < a.axes.length; j++) {
+        if (Math.abs(a.axes[j] - (b.axes[j] ?? 0)) > AXIS_EPSILON) return true;
+      }
+    }
+
+    return false;
+  }
+
   shutdown() {
+    this.stop();
     for (const { device } of [...this.controllers.values()]) {
       this.closeDevice(device);
     }
     this.controllers.clear();
+    this.lastSnapshot = [];
   }
 }
 

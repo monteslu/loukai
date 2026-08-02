@@ -226,9 +226,11 @@ class KaiPlayerApp {
     // http://localhost (required for the in-browser WebGPU Creator: dynamic
     // import + cross-origin isolation + WASM threads only work on an http origin,
     // not file://). IPC handlers are set up first so the preload has them.
+    // The gamepad engine must exist BEFORE setupIPC: its handlers subscribe to
+    // the engine's events at registration time.
+    this.initializeGamepadEngine();
     this.setupIPC();
     this.initializeAudioEngine();
-    this.initializeGamepadEngine();
     await this.initializeWebServer();
     this.createMainWindow();
     this.createApplicationMenu();
@@ -832,7 +834,9 @@ class KaiPlayerApp {
   initializeGamepadEngine() {
     try {
       this.gamepadEngine = new GamepadEngine();
-      this.gamepadEngine.initialize();
+      if (this.gamepadEngine.initialize()) {
+        this.gamepadEngine.start();
+      }
     } catch (error) {
       // Gamepad support is a nicety; never let it break app launch.
       console.warn('Gamepad engine unavailable:', error.message);
