@@ -79,6 +79,34 @@ const GAMEPAD_SKIP = '[data-gamepad-skip]';
  */
 const OVERLAY = '.fixed.inset-0';
 
+/** Inside the window, so off-canvas panels are not navigable. */
+function isOnScreen(r) {
+  return r.bottom > 0 && r.right > 0 && r.top < window.innerHeight && r.left < window.innerWidth;
+}
+
+/**
+ * True when a scrolling/clipping ancestor has collapsed to nothing around this
+ * element. A collapsed drawer keeps its children in the DOM at full size (the
+ * sidebar animates to `w-0` rather than unmounting), so the child's own box
+ * still looks perfectly visible: only the ancestor reveals that it is hidden.
+ */
+function isClippedByAncestor(el, r) {
+  let n = el.parentElement;
+  while (n && n !== document.body) {
+    const cs = getComputedStyle(n);
+    if (cs.overflow !== 'visible' || cs.overflowX !== 'visible' || cs.overflowY !== 'visible') {
+      const nr = n.getBoundingClientRect();
+      if (nr.width <= 1 || nr.height <= 1) return true;
+      // Fully outside the clipping box means it is scrolled or slid out of view.
+      if (r.right <= nr.left || r.left >= nr.right || r.bottom <= nr.top || r.top >= nr.bottom) {
+        return true;
+      }
+    }
+    n = n.parentElement;
+  }
+  return false;
+}
+
 /** Range sliders are adjusted by the d-pad rather than activated by A. */
 function isSlider(el) {
   return el?.tagName === 'INPUT' && (el.type || '').toLowerCase() === 'range';
@@ -302,7 +330,8 @@ export class GamepadNav {
       if (isTextInput(el)) return false;
       if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') return false;
       const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0;
+      if (r.width <= 0 || r.height <= 0) return false;
+      return isOnScreen(r) && !isClippedByAncestor(el, r);
     });
   }
 

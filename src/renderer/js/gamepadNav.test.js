@@ -326,6 +326,109 @@ describe('GamepadNav', () => {
     });
   });
 
+  describe('hidden drawers', () => {
+    /**
+     * The sidebar collapses by sliding off-screen (margin-left: -320px), keeping
+     * its full width and its children's boxes intact. Per-element size checks
+     * therefore see it as perfectly visible, and the ring walked into a drawer
+     * the user could not see, which reads as the app losing focus.
+     */
+    function offScreenDrawer() {
+      document.body.innerHTML = '';
+      const drawer = document.createElement('div');
+      drawer.slideTo = (left) => {
+        drawer.getBoundingClientRect = () => ({
+          top: 0,
+          left,
+          width: 320,
+          height: 600,
+          right: left + 320,
+          bottom: 600,
+        });
+      };
+      drawer.slideTo(-320);
+      Object.defineProperty(drawer, 'offsetParent', { get: () => document.body });
+      const inner = document.createElement('button');
+      inner.textContent = 'hidden control';
+      inner.getBoundingClientRect = () => ({
+        top: 10,
+        left: -300,
+        width: 279,
+        height: 24,
+        right: -21,
+        bottom: 34,
+      });
+      Object.defineProperty(inner, 'offsetParent', { get: () => drawer });
+      drawer.appendChild(inner);
+      document.body.appendChild(drawer);
+
+      const onScreen = document.createElement('button');
+      onScreen.textContent = 'visible';
+      onScreen.getBoundingClientRect = () => ({
+        top: 10,
+        left: 100,
+        width: 100,
+        height: 30,
+        right: 200,
+        bottom: 40,
+      });
+      Object.defineProperty(onScreen, 'offsetParent', { get: () => document.body });
+      document.body.appendChild(onScreen);
+      return { inner, onScreen, drawer };
+    }
+
+    it('ignores controls in a drawer slid off-screen', () => {
+      const { inner, onScreen } = offScreenDrawer();
+      const focusables = nav.visibleFocusables();
+      expect(focusables).not.toContain(inner);
+      expect(focusables).toContain(onScreen);
+    });
+
+    it('still navigates the drawer once it slides back on-screen', () => {
+      const { inner, drawer } = offScreenDrawer();
+      // The real sidebar slides the whole panel back, children with it.
+      drawer.slideTo(0);
+      inner.getBoundingClientRect = () => ({
+        top: 10,
+        left: 20,
+        width: 279,
+        height: 24,
+        right: 299,
+        bottom: 34,
+      });
+      expect(nav.visibleFocusables()).toContain(inner);
+    });
+
+    it('ignores controls clipped by a zero-width ancestor', () => {
+      document.body.innerHTML = '';
+      const collapsed = document.createElement('div');
+      collapsed.style.overflow = 'hidden';
+      collapsed.getBoundingClientRect = () => ({
+        top: 0,
+        left: 0,
+        width: 0,
+        height: 600,
+        right: 0,
+        bottom: 600,
+      });
+      Object.defineProperty(collapsed, 'offsetParent', { get: () => document.body });
+      const inner = document.createElement('button');
+      inner.getBoundingClientRect = () => ({
+        top: 10,
+        left: 0,
+        width: 279,
+        height: 24,
+        right: 279,
+        bottom: 34,
+      });
+      Object.defineProperty(inner, 'offsetParent', { get: () => collapsed });
+      collapsed.appendChild(inner);
+      document.body.appendChild(collapsed);
+
+      expect(nav.visibleFocusables()).not.toContain(inner);
+    });
+  });
+
   describe('sliders', () => {
     function slider(props = {}) {
       document.body.innerHTML = '';
