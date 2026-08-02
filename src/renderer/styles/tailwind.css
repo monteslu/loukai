@@ -118,8 +118,9 @@
  * left edge, and tabs showed only their bottom and sides. An inset shadow lives
  * within the element's own box and cannot be clipped by an ancestor.
  */
-.gamepad-focus:focus,
-.gamepad-focus:focus-visible {
+/* Applied and removed by the nav layer, so it does not depend on :focus. The
+   ring can sit on a wrapping <label> whose checkbox holds the real focus. */
+.gamepad-focus {
   outline: none !important;
   box-shadow:
     inset 0 0 0 4px #3b82f6,

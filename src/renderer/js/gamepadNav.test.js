@@ -429,6 +429,81 @@ describe('GamepadNav', () => {
     });
   });
 
+  describe('focus ring target', () => {
+    it('rings the wrapping label for a checkbox, not the 16px box', () => {
+      document.body.innerHTML = '';
+      const label = document.createElement('label');
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.getBoundingClientRect = () => ({
+        top: 0,
+        left: 0,
+        width: 16,
+        height: 16,
+        right: 16,
+        bottom: 16,
+      });
+      Object.defineProperty(box, 'offsetParent', { get: () => label });
+      const text = document.createElement('span');
+      text.textContent = 'Enable Waveforms';
+      label.append(box, text);
+      document.body.appendChild(label);
+
+      nav.focus(box);
+
+      expect(label.classList.contains('gamepad-focus')).toBe(true);
+      expect(box.classList.contains('gamepad-focus')).toBe(false);
+      expect(document.activeElement).toBe(box); // real focus stays on the input
+    });
+
+    it('rings a plain button directly', () => {
+      const [button] = layout([{ top: 0, left: 0 }]);
+      nav.focus(button);
+      expect(button.classList.contains('gamepad-focus')).toBe(true);
+    });
+
+    it('clears the ring when navigation stops', () => {
+      const [button] = layout([{ top: 0, left: 0 }]);
+      nav.start();
+      nav.focus(button);
+      expect(button.classList.contains('gamepad-focus')).toBe(true);
+
+      nav.stop();
+      expect(button.classList.contains('gamepad-focus')).toBe(false);
+    });
+  });
+
+  describe('scrolling', () => {
+    it('can reach controls below the fold', () => {
+      // The viewport check must not exclude off-screen-but-scrollable content,
+      // or the ring gets stuck at the bottom edge of the window.
+      document.body.innerHTML = '';
+      const below = document.createElement('button');
+      below.getBoundingClientRect = () => ({
+        top: window.innerHeight + 200,
+        left: 20,
+        width: 100,
+        height: 30,
+        right: 120,
+        bottom: window.innerHeight + 230,
+      });
+      Object.defineProperty(below, 'offsetParent', { get: () => document.body });
+      document.body.appendChild(below);
+
+      expect(nav.visibleFocusables()).toContain(below);
+    });
+
+    it('centers the focused element instead of scrolling the bare minimum', () => {
+      const [button] = layout([{ top: 0, left: 0 }]);
+      const scrollIntoView = vi.fn();
+      button.scrollIntoView = scrollIntoView;
+
+      nav.focus(button);
+
+      expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'center' }));
+    });
+  });
+
   describe('sliders', () => {
     function slider(props = {}) {
       document.body.innerHTML = '';

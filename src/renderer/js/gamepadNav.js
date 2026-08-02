@@ -96,15 +96,75 @@ function isClippedByAncestor(el, r) {
     const cs = getComputedStyle(n);
     if (cs.overflow !== 'visible' || cs.overflowX !== 'visible' || cs.overflowY !== 'visible') {
       const nr = n.getBoundingClientRect();
+      // The container itself has collapsed to nothing: genuinely hidden.
       if (nr.width <= 1 || nr.height <= 1) return true;
-      // Fully outside the clipping box means it is scrolled or slid out of view.
-      if (r.right <= nr.left || r.left >= nr.right || r.bottom <= nr.top || r.top >= nr.bottom) {
-        return true;
-      }
+      // The container is off-screen (a drawer slid away), taking its contents
+      // with it. Scrolling cannot bring these back; only reopening can.
+      if (!isOnScreen(nr)) return true;
+      // Otherwise the element may simply be scrolled out of view. That is
+      // reachable, so long as SOME ancestor between it and this clipping box can
+      // scroll it back in. Checking only `n` was wrong: a scrollable panel is
+      // often wrapped in an overflow-hidden layout div, and that outer div
+      // rejected everything its scrolling child could legitimately reveal.
+      const outside =
+        r.right <= nr.left || r.left >= nr.right || r.bottom <= nr.top || r.top >= nr.bottom;
+      if (outside && !hasScrollableAncestorUpTo(el, n)) return true;
     }
     n = n.parentElement;
   }
   return false;
+}
+
+/**
+ * On screen already, or scrollable into view. An element below the fold is a
+ * legitimate target (focus() scrolls to it); one belonging to a panel that has
+ * been slid off-screen is not, and that case is caught by isClippedByAncestor.
+ */
+function isReachableByScrolling(el, r) {
+  if (isOnScreen(r)) return true;
+  // Horizontally off-window is never scrolled into view by this app's layouts;
+  // that is the signature of a drawer slid away rather than content below.
+  if (r.right <= 0 || r.left >= window.innerWidth) return false;
+  return true;
+}
+
+/**
+ * Is there a scrollable container between `el` and `stop` (inclusive) that could
+ * bring `el` into view? A scrolling list nested inside an overflow-hidden layout
+ * wrapper is the normal case, so the whole chain must be considered.
+ */
+function hasScrollableAncestorUpTo(el, stop) {
+  let n = el.parentElement;
+  while (n) {
+    if (isScrollable(n)) return true;
+    if (n === stop) break;
+    n = n.parentElement;
+  }
+  return false;
+}
+
+/** A container the user (or we) can scroll to reveal more content. */
+function isScrollable(n) {
+  const cs = getComputedStyle(n);
+  const scrollableY =
+    (cs.overflowY === 'auto' || cs.overflowY === 'scroll') && n.scrollHeight > n.clientHeight + 1;
+  const scrollableX =
+    (cs.overflowX === 'auto' || cs.overflowX === 'scroll') && n.scrollWidth > n.clientWidth + 1;
+  return scrollableY || scrollableX;
+}
+
+/**
+ * What actually wears the focus ring. Checkboxes and radios are tiny and usually
+ * sit inside a <label> next to the text explaining them, so ring the label: it
+ * shows what is selected instead of a lone 16px box.
+ */
+function ringTargetFor(el) {
+  const type = (el.type || '').toLowerCase();
+  if (el.tagName === 'INPUT' && (type === 'checkbox' || type === 'radio')) {
+    const label = el.closest('label');
+    if (label) return label;
+  }
+  return el;
 }
 
 /** Range sliders are adjusted by the d-pad rather than activated by A. */
@@ -144,6 +204,9 @@ export class GamepadNav {
     clearInterval(this.timer);
     this.timer = null;
     this.prev.clear();
+    // The ring is a plain class now, not tied to :focus, so it would linger.
+    this.lastRingTarget?.classList.remove('gamepad-focus');
+    this.lastRingTarget = null;
   }
 
   /**
@@ -331,7 +394,10 @@ export class GamepadNav {
       if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') return false;
       const r = el.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return false;
-      return isOnScreen(r) && !isClippedByAncestor(el, r);
+      // Below the fold is fine: focus() scrolls it into view. Only reject things
+      // no amount of scrolling can reveal (see isClippedByAncestor).
+      if (!isReachableByScrolling(el, r)) return false;
+      return !isClippedByAncestor(el, r);
     });
   }
 
@@ -397,14 +463,22 @@ export class GamepadNav {
   focus(el) {
     if (!el) return;
     el.focus({ preventScroll: true });
+    // Keep the ring near the middle rather than letting it ride the edge of the
+    // viewport. `nearest` scrolls the bare minimum, so the selection creeps to
+    // the bottom of the screen and the next item is already out of sight.
     // Not every focusable implements scrollIntoView (and jsdom does not at all).
-    el.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    el.scrollIntoView?.({ block: 'center', inline: 'nearest', behavior: 'smooth' });
     // Marks the focus ring as gamepad-driven so it can be styled boldly for a
     // 10-foot view without affecting mouse users.
-    el.classList.add('gamepad-focus');
-    if (this.lastFocused && this.lastFocused !== el) {
-      this.lastFocused.classList.remove('gamepad-focus');
+    // Ring the wrapping label when there is one, so a 16px checkbox highlights
+    // together with the text that says what it does. A bare checkbox alone gives
+    // no clue what is selected from across a room.
+    const ringTarget = ringTargetFor(el);
+    ringTarget.classList.add('gamepad-focus');
+    if (this.lastRingTarget && this.lastRingTarget !== ringTarget) {
+      this.lastRingTarget.classList.remove('gamepad-focus');
     }
+    this.lastRingTarget = ringTarget;
     this.lastFocused = el;
   }
 
