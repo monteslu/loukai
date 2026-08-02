@@ -326,6 +326,85 @@ describe('GamepadNav', () => {
     });
   });
 
+  describe('modals', () => {
+    function openModal() {
+      document.body.innerHTML = '';
+      const behind = document.createElement('button');
+      behind.textContent = 'behind';
+      behind.getBoundingClientRect = () => ({
+        top: 0,
+        left: 0,
+        width: 100,
+        height: 30,
+        right: 100,
+        bottom: 30,
+      });
+      Object.defineProperty(behind, 'offsetParent', { get: () => document.body });
+      document.body.appendChild(behind);
+
+      const overlay = document.createElement('div');
+      overlay.className = 'fixed inset-0';
+      overlay.getBoundingClientRect = () => ({
+        top: 0,
+        left: 0,
+        width: window.innerWidth,
+        height: window.innerHeight,
+        right: window.innerWidth,
+        bottom: window.innerHeight,
+      });
+      const closeBtn = document.createElement('button');
+      closeBtn.setAttribute('data-gamepad-close', '');
+      closeBtn.textContent = 'x';
+      closeBtn.getBoundingClientRect = () => ({
+        top: 10,
+        left: 10,
+        width: 30,
+        height: 30,
+        right: 40,
+        bottom: 40,
+      });
+      Object.defineProperty(closeBtn, 'offsetParent', { get: () => overlay });
+      overlay.appendChild(closeBtn);
+      document.body.appendChild(overlay);
+      return { behind, overlay, closeBtn };
+    }
+
+    it('traps navigation inside an open modal', () => {
+      // Otherwise the ring wanders the library behind the scrim while the dialog
+      // sits there uncloseable.
+      const { behind, closeBtn } = openModal();
+      const focusables = nav.visibleFocusables();
+      expect(focusables).toContain(closeBtn);
+      expect(focusables).not.toContain(behind);
+    });
+
+    it('pulls focus into a modal as soon as it opens', () => {
+      const { closeBtn } = openModal();
+      navigator.getGamepads = () => [pad()];
+      nav.poll();
+      expect(document.activeElement).toBe(closeBtn);
+    });
+
+    it('B closes the modal via its close button', () => {
+      const { closeBtn } = openModal();
+      const onClick = vi.fn();
+      closeBtn.addEventListener('click', onClick);
+
+      nav.back();
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('B clicks the scrim when a modal has no tagged close button', () => {
+      const { overlay, closeBtn } = openModal();
+      closeBtn.removeAttribute('data-gamepad-close');
+      const onClick = vi.fn();
+      overlay.addEventListener('click', onClick);
+
+      nav.back();
+      expect(onClick).toHaveBeenCalled();
+    });
+  });
+
   describe('fullscreen', () => {
     it('B exits fullscreen instead of relying on an Escape listener', () => {
       // A gamepad can put the canvas fullscreen; with no Escape handler mounted

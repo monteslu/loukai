@@ -72,6 +72,12 @@ const FOCUSABLE = [
 const GAMEPAD_SKIP = '[data-gamepad-skip]';
 
 /**
+ * Modal scrims. The app's dialogs are full-screen `fixed inset-0` overlays, not
+ * <dialog> elements, so they are matched by that shape and then size-checked.
+ */
+const OVERLAY = '.fixed.inset-0';
+
+/**
  * True for controls that capture typing. Checkboxes, sliders and buttons are
  * <input> too, so the TYPE matters, not the tag: treating those as text would
  * strand the focus ring on the first checkbox it reached.
@@ -121,6 +127,11 @@ export class GamepadNav {
       this.prev.clear();
       return;
     }
+
+    // A modal that just opened leaves focus behind the scrim. Pull the ring into
+    // it right away rather than making the user press a direction first to
+    // discover the dialog is even reachable.
+    this.syncOverlayFocus();
 
     const now = performance.now();
     const textEntry = this.isTextEntryFocused();
@@ -222,9 +233,53 @@ export class GamepadNav {
     }
   }
 
-  /** Everything focusable and actually on screen right now. */
+  /**
+   * Move the ring into a newly opened modal, and restore sane focus when it
+   * closes. Without this the ring sits on whatever was focused behind the scrim.
+   */
+  syncOverlayFocus() {
+    const overlay = this.topOverlay();
+    if (overlay === this.lastOverlay) return;
+    this.lastOverlay = overlay;
+    if (!overlay) return;
+
+    const inside = this.visibleFocusables();
+    // Prefer the explicit close affordance so B and A agree on the obvious action.
+    const close = inside.find((el) => el.hasAttribute('data-gamepad-close'));
+    this.focus(close || inside[0]);
+  }
+
+  /**
+   * The topmost open modal overlay, if any. Modals here are full-screen
+   * `fixed inset-0` scrims (the song info dialog, the shared confirm dialog)
+   * rather than <dialog> elements, so they are detected by shape.
+   */
+  topOverlay() {
+    const overlays = [...document.querySelectorAll(OVERLAY)].filter((el) => {
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      const r = el.getBoundingClientRect();
+      // A scrim covers essentially the whole window; a toast or dropdown does not.
+      return r.width >= window.innerWidth * 0.9 && r.height >= window.innerHeight * 0.9;
+    });
+    if (overlays.length === 0) return null;
+    // Highest stacking order wins when several are open.
+    return overlays.reduce((top, el) =>
+      Number(getComputedStyle(el).zIndex || 0) >= Number(getComputedStyle(top).zIndex || 0)
+        ? el
+        : top
+    );
+  }
+
+  /**
+   * Everything focusable and actually on screen right now. When a modal is open,
+   * navigation is trapped inside it: otherwise the ring wanders the library
+   * behind the scrim while the dialog sits there uncloseable.
+   */
   visibleFocusables() {
-    return [...document.querySelectorAll(FOCUSABLE)].filter((el) => {
+    const overlay = this.topOverlay();
+    const root = overlay || document;
+    return [...root.querySelectorAll(FOCUSABLE)].filter((el) => {
       if (el.closest(GAMEPAD_SKIP)) return false;
       // A gamepad cannot type, so landing on a text field is a dead end: the ring
       // parks there and the only escape is B. Skip them until there is a way to
@@ -339,6 +394,16 @@ export class GamepadNav {
     // would be a trap with no way back to the UI.
     if (document.fullscreenElement) {
       document.exitFullscreen?.();
+      return;
+    }
+    // Close an open modal. These dialogs close by clicking their scrim or their
+    // X button and do not listen for Escape, so dispatching a key here would do
+    // nothing and leave the dialog stuck open.
+    const overlay = this.topOverlay();
+    if (overlay) {
+      const closer = overlay.querySelector('[data-gamepad-close]');
+      if (closer) closer.click();
+      else overlay.click(); // the scrim's own click handler dismisses it
       return;
     }
     // Otherwise let whatever listens for Escape handle it (dialogs, overlays).
