@@ -48,6 +48,18 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.11.0" date="2026-08-02">
+      <description>
+        <p>Fixes the blank window on startup, plus smarter chords and editor search</p>
+        <ul>
+          <li>Fixes the app opening to a blank window on new installs and updates (a bad default in saved settings crashed the player screen; existing installs heal automatically)</li>
+          <li>Fixes the editor keyboard freezing after deleting or retiming lyric lines</li>
+          <li>Chord detection v2: bass-first root notes for much more accurate chords</li>
+          <li>Evaluate/Reevaluate Chords button in the song editor</li>
+          <li>Editor search overhaul: better multi-word matching, artist matches on short queries, stem-song-only results</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.10.1" date="2026-07-21">
       <description>
         <p>Security dependency updates</p>
