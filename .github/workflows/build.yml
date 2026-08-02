@@ -70,6 +70,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        env:
+          # @kmamal/sdl downloads a prebuilt binary for the BUILD HOST's arch.
+          # This job cross-builds arm64 on an x64 runner, so without this the
+          # arm64 artifacts would silently ship an x86_64 sdl.node.
+          CROSS_COMPILE_ARCH: arm64
 
       - name: Build renderer and web UI
         run: npm run build:all

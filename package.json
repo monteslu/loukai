@@ -70,6 +70,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.1",
     "@google/generative-ai": "^0.24.1",
+    "@kmamal/sdl": "^0.11.13",
     "@soundtouchjs/audio-worklet": "^0.2.1",
     "aubiojs": "^0.2.1",
     "bcryptjs": "^3.0.2",
@@ -175,7 +176,8 @@
         "--socket=pulseaudio",
         "--filesystem=home",
         "--share=network",
-        "--talk-name=org.freedesktop.Notifications"
+        "--talk-name=org.freedesktop.Notifications",
+        "--device=input"
       ]
     },
     "win": {
@@ -219,7 +221,11 @@
     },
     "dmg": {
       "writeUpdateInfo": false
-    }
+    },
+    "asarUnpack": [
+      "**/node_modules/@kmamal/**"
+    ],
+    "npmRebuild": false
   },
   "lint-staged": {
     "src/**/*.{js,jsx}": [

@@ -26,6 +26,7 @@ import {
   loadAndSync,
   getBroadcastChannel,
 } from '../shared/services/settingsService.js';
+import { GamepadEngine } from './gamepadEngine.js';
 import { log } from './logger.js';
 
 log('📦 About to import registerAllHandlers...');
@@ -227,6 +228,7 @@ class KaiPlayerApp {
     // not file://). IPC handlers are set up first so the preload has them.
     this.setupIPC();
     this.initializeAudioEngine();
+    this.initializeGamepadEngine();
     await this.initializeWebServer();
     this.createMainWindow();
     this.createApplicationMenu();
@@ -825,6 +827,17 @@ class KaiPlayerApp {
 
     const menu = Menu.buildFromTemplate(template);
     Menu.setApplicationMenu(menu);
+  }
+
+  initializeGamepadEngine() {
+    try {
+      this.gamepadEngine = new GamepadEngine();
+      this.gamepadEngine.initialize();
+    } catch (error) {
+      // Gamepad support is a nicety; never let it break app launch.
+      console.warn('Gamepad engine unavailable:', error.message);
+      this.gamepadEngine = null;
+    }
   }
 
   initializeAudioEngine() {
@@ -2439,6 +2452,10 @@ class KaiPlayerApp {
     // Save settings immediately before exiting
     if (this.settings) {
       await this.settings.saveNow();
+    }
+
+    if (this.gamepadEngine) {
+      this.gamepadEngine.shutdown();
     }
 
     // Save state before exiting
