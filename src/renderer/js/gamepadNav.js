@@ -63,6 +63,14 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',');
 
+/**
+ * Controls the gamepad must never land on. Anything that hands control to an
+ * external browser is a dead end from the couch: the new window is not driven by
+ * the controller and there is no way back. Mouse and keyboard users still get
+ * them; they are only removed from gamepad traversal.
+ */
+const GAMEPAD_SKIP = '[data-gamepad-skip]';
+
 export class GamepadNav {
   constructor({ onTabStep, onTogglePlayback } = {}) {
     this.onTabStep = onTabStep;
@@ -212,6 +220,7 @@ export class GamepadNav {
   /** Everything focusable and actually on screen right now. */
   visibleFocusables() {
     return [...document.querySelectorAll(FOCUSABLE)].filter((el) => {
+      if (el.closest(GAMEPAD_SKIP)) return false;
       if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') return false;
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0;
@@ -316,7 +325,14 @@ export class GamepadNav {
       el.blur();
       return;
     }
-    // Reuse whatever Escape already does (close dialogs, exit fullscreen).
+    // Exit fullscreen directly rather than relying on a keydown listener. A
+    // gamepad can put the canvas fullscreen, and if nothing handles Escape that
+    // would be a trap with no way back to the UI.
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.();
+      return;
+    }
+    // Otherwise let whatever listens for Escape handle it (dialogs, overlays).
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   }

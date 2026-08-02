@@ -253,6 +253,7 @@ export function PlayerControls({
         {onOpenViewer && (
           <button
             onClick={onOpenViewer}
+            data-gamepad-skip="external"
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition flex items-center justify-center"
             title="Open Browser Viewer"
           >

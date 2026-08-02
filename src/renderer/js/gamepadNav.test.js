@@ -176,6 +176,44 @@ describe('GamepadNav', () => {
     });
   });
 
+  describe('external-window controls', () => {
+    it('never lands on controls that open an external browser', () => {
+      // A browser window is not driven by the controller, so landing there from
+      // the couch is a dead end with no way back.
+      const [start, external, safe] = layout([
+        { top: 0, left: 0 },
+        { top: 50, left: 0 },
+        { top: 100, left: 0 },
+      ]);
+      external.setAttribute('data-gamepad-skip', 'external');
+      start.focus();
+
+      nav.moveFocus('DOWN');
+      expect(document.activeElement).toBe(safe);
+      expect(document.activeElement).not.toBe(external);
+    });
+
+    it('skips anything inside a skipped container', () => {
+      document.body.innerHTML = '';
+      const wrapper = document.createElement('div');
+      wrapper.setAttribute('data-gamepad-skip', 'external');
+      const inner = document.createElement('button');
+      inner.getBoundingClientRect = () => ({
+        top: 50,
+        left: 0,
+        width: 100,
+        height: 30,
+        right: 100,
+        bottom: 80,
+      });
+      Object.defineProperty(inner, 'offsetParent', { get: () => document.body });
+      wrapper.appendChild(inner);
+      document.body.appendChild(wrapper);
+
+      expect(nav.visibleFocusables()).not.toContain(inner);
+    });
+  });
+
   describe('activation', () => {
     it('A clicks the focused control', () => {
       const [button] = layout([{ top: 0, left: 0 }]);
@@ -259,6 +297,47 @@ describe('GamepadNav', () => {
       performance.now.mockReturnValue(1000 + 500); // past REPEAT_DELAY_MS
       nav.poll();
       expect(moveFocus).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('fullscreen', () => {
+    it('B exits fullscreen instead of relying on an Escape listener', () => {
+      // A gamepad can put the canvas fullscreen; with no Escape handler mounted
+      // that would strand the user with no way back to the UI.
+      const exitFullscreen = vi.fn();
+      Object.defineProperty(document, 'fullscreenElement', {
+        value: document.createElement('canvas'),
+        configurable: true,
+      });
+      document.exitFullscreen = exitFullscreen;
+
+      nav.back();
+
+      expect(exitFullscreen).toHaveBeenCalled();
+      Object.defineProperty(document, 'fullscreenElement', {
+        value: null,
+        configurable: true,
+      });
+    });
+
+    it('reaches a focusable canvas wrapper', () => {
+      // The canvas area is a role=button wrapper so the gamepad can toggle
+      // fullscreen, the most useful action in a living room.
+      const [start, canvasArea] = layout([
+        { top: 0, left: 0 },
+        { top: 100, left: 0, tag: 'div' },
+      ]);
+      canvasArea.setAttribute('role', 'button');
+      canvasArea.setAttribute('tabindex', '0');
+      const onClick = vi.fn();
+      canvasArea.addEventListener('click', onClick);
+      start.focus();
+
+      nav.moveFocus('DOWN');
+      expect(document.activeElement).toBe(canvasArea);
+
+      nav.activate();
+      expect(onClick).toHaveBeenCalledTimes(1);
     });
   });
 

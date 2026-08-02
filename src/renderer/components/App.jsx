@@ -263,11 +263,22 @@ export function App({ bridge }) {
                   <QueueTab bridge={bridge} />
                 </div>
 
-                {/* Canvas Area (Right 70%) */}
+                {/* Canvas Area (Right 70%). The wrapper is a real focusable
+                    button so the gamepad and keyboard can reach the canvas and
+                    toggle fullscreen, the most useful action in a living room. */}
                 <div className="flex-1 flex flex-col p-0 m-0 min-w-0">
                   <div
                     className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900 cursor-pointer"
                     onClick={toggleCanvasFullscreen}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleCanvasFullscreen();
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Toggle fullscreen video"
                   >
                     <canvas
                       id="karaokeCanvas"
