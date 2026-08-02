@@ -326,6 +326,100 @@ describe('GamepadNav', () => {
     });
   });
 
+  describe('sliders', () => {
+    function slider(props = {}) {
+      document.body.innerHTML = '';
+      const el = document.createElement('input');
+      el.type = 'range';
+      el.min = props.min ?? '-60';
+      el.max = props.max ?? '12';
+      el.step = props.step ?? '0.5';
+      el.value = props.value ?? '0';
+      el.getBoundingClientRect = () => ({
+        top: 0,
+        left: 0,
+        width: 200,
+        height: 20,
+        right: 200,
+        bottom: 20,
+      });
+      Object.defineProperty(el, 'offsetParent', { get: () => document.body });
+      document.body.appendChild(el);
+      el.focus();
+      return el;
+    }
+
+    it('RIGHT raises the value instead of moving focus off the slider', () => {
+      // Clicking a range input does nothing, so without this a slider is a
+      // control the gamepad can reach but never operate.
+      const el = slider({ value: '0' });
+      setPad(pad({ buttons: [BTN.RIGHT] }));
+      nav.poll();
+
+      expect(Number(el.value)).toBeGreaterThan(0);
+      expect(document.activeElement).toBe(el);
+    });
+
+    it('LEFT lowers the value', () => {
+      const el = slider({ value: '0' });
+      setPad(pad({ buttons: [BTN.LEFT] }));
+      nav.poll();
+
+      expect(Number(el.value)).toBeLessThan(0);
+    });
+
+    it('fires input and change so React state updates', () => {
+      // React-controlled inputs ignore a bare .value assignment; the event has to
+      // go through the native setter or the UI silently reverts.
+      const el = slider({ value: '0' });
+      const onInput = vi.fn();
+      const onChange = vi.fn();
+      el.addEventListener('input', onInput);
+      el.addEventListener('change', onChange);
+
+      nav.adjustSlider(el, 1);
+
+      expect(onInput).toHaveBeenCalled();
+      expect(onChange).toHaveBeenCalled();
+    });
+
+    it('clamps at the ends', () => {
+      const atMax = slider({ value: '12' });
+      nav.adjustSlider(atMax, 1);
+      expect(Number(atMax.value)).toBe(12);
+
+      const atMin = slider({ value: '-60' });
+      nav.adjustSlider(atMin, -1);
+      expect(Number(atMin.value)).toBe(-60);
+    });
+
+    it('UP and DOWN still leave the slider, so it is never a trap', () => {
+      const el = slider();
+      const other = document.createElement('button');
+      other.getBoundingClientRect = () => ({
+        top: 100,
+        left: 0,
+        width: 100,
+        height: 30,
+        right: 100,
+        bottom: 130,
+      });
+      Object.defineProperty(other, 'offsetParent', { get: () => document.body });
+      document.body.appendChild(other);
+      el.focus();
+
+      nav.moveFocus('DOWN');
+      expect(document.activeElement).toBe(other);
+    });
+
+    it('A nudges the slider rather than doing nothing', () => {
+      const el = slider({ value: '0' });
+      setPad(pad({ buttons: [BTN.A] }));
+      nav.poll();
+      expect(Number(el.value)).toBeGreaterThan(0);
+    });
+  });
+
   describe('modals', () => {
     function openModal() {
       document.body.innerHTML = '';

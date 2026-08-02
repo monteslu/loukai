@@ -24,6 +24,8 @@ const REPEAT_DELAY_MS = 400;
 const REPEAT_RATE_MS = 120;
 const STICK_THRESHOLD = 0.6;
 const POLL_INTERVAL_MS = 50;
+/** Sliders move several steps per press; one 0.5 dB step per tap is unusable. */
+const SLIDER_STEP_MULTIPLIER = 4;
 
 // Standard Gamepad API indices.
 const BTN = {
@@ -76,6 +78,11 @@ const GAMEPAD_SKIP = '[data-gamepad-skip]';
  * <dialog> elements, so they are matched by that shape and then size-checked.
  */
 const OVERLAY = '.fixed.inset-0';
+
+/** Range sliders are adjusted by the d-pad rather than activated by A. */
+function isSlider(el) {
+  return el?.tagName === 'INPUT' && (el.type || '').toLowerCase() === 'range';
+}
 
 /**
  * True for controls that capture typing. Checkboxes, sliders and buttons are
@@ -207,10 +214,18 @@ export class GamepadNav {
 
   dispatch(name) {
     switch (name) {
-      case 'UP':
-      case 'DOWN':
       case 'LEFT':
       case 'RIGHT':
+        // On a slider, left/right is the volume/gain gesture people expect. Up
+        // and down still move focus away, so a slider is never a trap.
+        if (isSlider(document.activeElement)) {
+          this.adjustSlider(document.activeElement, name === 'RIGHT' ? 1 : -1);
+          break;
+        }
+        this.moveFocus(name);
+        break;
+      case 'UP':
+      case 'DOWN':
         this.moveFocus(name);
         break;
       case 'A':
@@ -367,7 +382,37 @@ export class GamepadNav {
   activate() {
     const el = document.activeElement;
     if (!el || el === document.body) return;
+    // A click does not change a range input's value, so A would be a no-op on a
+    // slider. Nudge it up instead, which is at least a visible response.
+    if (isSlider(el)) {
+      this.adjustSlider(el, 1);
+      return;
+    }
     el.click();
+  }
+
+  /**
+   * Move a range input by one step and tell the app about it. React controls
+   * these inputs, so setting `.value` alone updates the DOM but never the state
+   * behind it: the change must be dispatched through the native value setter for
+   * React's synthetic `onChange` to fire.
+   */
+  adjustSlider(el, direction) {
+    const step = Number(el.step) || 1;
+    const min = el.min === '' ? 0 : Number(el.min);
+    const max = el.max === '' ? 100 : Number(el.max);
+    const next = Math.min(
+      max,
+      Math.max(min, Number(el.value) + step * direction * SLIDER_STEP_MULTIPLIER)
+    );
+    if (next === Number(el.value)) return;
+
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    if (setter) setter.call(el, String(next));
+    else el.value = String(next);
+
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   /**
