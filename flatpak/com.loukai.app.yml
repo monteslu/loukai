@@ -34,11 +34,21 @@ sdk-extensions:
 build-options:
   append-path: /usr/lib/sdk/node22/bin
   env:
-    # Keep npm's cache and Electron's download cache inside the build dir; both
-    # default to $HOME, which is not writable during a Flathub build.
-    NPM_CONFIG_CACHE: /run/build/loukai/npm-cache
-    ELECTRON_CACHE: /run/build/loukai/electron-cache
-    ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    # These paths are dictated by flatpak-node-generator's output: it unpacks an
+    # npm cache to flatpak-node/npm-cache and an Electron 42.4.1 binary cache to
+    # flatpak-node/cache/electron. Pointing npm anywhere else breaks the offline
+    # install with ENOTCACHED, and pointing electron-builder anywhere else makes
+    # it try to download Electron.
+    NPM_CONFIG_CACHE: /run/build/loukai/flatpak-node/npm-cache
+    NPM_CONFIG_OFFLINE: 'true'
+    XDG_CACHE_HOME: /run/build/loukai/flatpak-node/cache
+    # BOTH names are needed and they are not interchangeable: electron's own
+    # install.js reads the lowercase `electron_config_cache`, while
+    # electron-builder / @electron/get honour ELECTRON_CACHE. Setting only the
+    # uppercase one lets `npm ci` succeed and then electron-builder still tries
+    # to fetch Electron from github.com.
+    ELECTRON_CACHE: /run/build/loukai/flatpak-node/cache/electron
+    electron_config_cache: /run/build/loukai/flatpak-node/cache/electron
 
 finish-args:
   # Display
@@ -71,29 +81,48 @@ modules:
 
     build-options:
       env:
-        # @kmamal/sdl's postinstall otherwise DOWNLOADS a prebuilt sdl.node plus a
-        # vendored libSDL2 from GitHub releases, which Flathub does not allow.
-        # This forces a real source build; the runtime ships SDL 2.32.10 with
-        # headers, and binding.gyp reads these two vars.
-        NODE_SDL_FROM_SOURCE: '1'
-        SDL_INC: /usr/include/SDL2
-        SDL_LIB: /usr/lib/$FLATPAK_ARCH-linux-gnu
+        # @kmamal/sdl's postinstall downloads a prebuilt sdl.node, and with
+        # NODE_SDL_FROM_SOURCE it instead downloads SDL's OWN SOURCE from GitHub
+        # and builds node-gyp against that, overriding SDL_INC/SDL_LIB with its
+        # own paths. Both are network fetches Flathub forbids, so the postinstall
+        # is skipped entirely (npm ci --ignore-scripts) and node-gyp is invoked
+        # directly against the runtime's SDL in the build commands below.
+        npm_config_ignore_scripts: 'true'
 
     build-commands:
-      # 1. Offline npm install. generated-sources.json has already populated the
-      #    local registry mirror, so this never touches the network.
-      - npm ci --offline --no-audit --no-fund
+      # 1. Offline npm install from the mirror flatpak-node-generator staged.
+      #    --ignore-scripts is essential: several postinstalls (notably
+      #    @kmamal/sdl) fetch from the network, which is unavailable here.
+      #    (The generator's own `shell` source has already run
+      #    setup_sdk_node_headers.sh to wire up the node-gyp headers.)
+      - npm ci --offline --no-audit --no-fund --ignore-scripts
 
-      # 2. Compile @kmamal/sdl against the runtime's SDL2. node-gyp's configure
-      #    step fails without node-addon-api present, so it is installed above by
-      #    npm ci as a normal dependency.
+      # 1b. --ignore-scripts also skipped electron's own install script, which is
+      #     what unpacks its binary into node_modules/electron/dist. Run just that
+      #     one: it reads the Electron 42.4.1 zip that flatpak-node-generator
+      #     staged in ELECTRON_CACHE, so it stays offline.
+      - node node_modules/electron/install.js
+
+      # 2. Compile @kmamal/sdl against the RUNTIME's SDL2 (2.32.10, with headers
+      #    and pkg-config). binding.gyp reads SDL_INC/SDL_LIB, so they are set
+      #    here rather than letting the package's own build.mjs point them at a
+      #    downloaded SDL tree.
+      #
+      #    NOTE: binding.gyp needs `node-addon-api`, which upstream declares only
+      #    as a devDependency, so `npm ci` does not install it for consumers.
+      #    loukai therefore depends on it explicitly; without that this step
+      #    fails with "Call to 'node -p require('node-addon-api').targets'
+      #    returned exit status 1".
       - |
         cd node_modules/@kmamal/sdl
-        npx node-gyp rebuild
+        export SDL_INC=/usr/include/SDL2
+        export SDL_LIB=/usr/lib/$(gcc -dumpmachine)
+        npx -y node-gyp rebuild
         mkdir -p dist
         cp build/Release/sdl.node dist/sdl.node
-        # Do NOT ship the vendored libSDL2: we link the runtime's copy.
+        # Do NOT ship a vendored libSDL2: we link the runtime's copy.
         rm -f dist/libSDL2-*.so*
+        ldd dist/sdl.node | grep -q '/usr/lib.*libSDL2' || { echo 'ERROR: not linked against runtime SDL'; exit 1; }
 
       # 3. Build the renderer and web bundles. `npm run build:all` also runs
       #    vendor:webgpu, which DOWNLOADS assets, so the vendored files are
@@ -103,16 +132,32 @@ modules:
 
       # 4. Package with electron-builder in `dir` mode. This produces the
       #    unpacked tree (including the `loukai-app` binary the launcher execs)
-      #    without building any installer format. Electron itself comes from the
-      #    offline npm sources; ELECTRON_SKIP_BINARY_DOWNLOAD keeps it from
-      #    fetching one.
+      #    without building any installer format. Electron comes from the zip
+      #    flatpak-node-generator staged in the electron cache (see the env
+      #    block above), so nothing is fetched.
       #
       #    npmRebuild is forced OFF here for the same reason it is off in
       #    package.json: @electron/rebuild would try to rebuild @kmamal/sdl and
       #    clobber the source build done in step 2.
-      - npx electron-builder --linux dir --config.npmRebuild=false
+      # `--config.electronDist` points straight at the Electron zip that
+      #  flatpak-node-generator staged. This is deliberate over relying on cache
+      #  env vars: ELECTRON_CACHE / electron_config_cache are honoured by
+      #  electron's own install.js but electron-builder still went to github.com,
+      #  and a direct path cannot silently fall back to the network.
+      - |
+        zip="flatpak-node/cache/electron/electron-v42.4.1-linux-$(node -p 'process.arch').zip"
+        test -f "$zip" || { echo "ERROR: staged Electron zip not found at $zip"; ls flatpak-node/cache/electron; exit 1; }
+        npx electron-builder --linux dir \
+          --config.npmRebuild=false \
+          --config.electronDist="$zip"
       - mkdir -p /app/loukai
       - cp -r dist/linux-*unpacked/. /app/loukai/
+      # Chromium's setuid sandbox helper cannot be SUID inside a flatpak, and if
+      # it is present Chromium tries to use it: the zygote, the network service
+      # and the GPU process all fail to spawn and it aborts with "GPU process
+      # isn't usable. Goodbye." zypak (see the launcher) maps Chromium's sandbox
+      # onto the flatpak sandbox instead, but only if this binary is gone.
+      - rm -f /app/loukai/chrome-sandbox
       - install -Dm755 flatpak/loukai-launcher.sh /app/bin/loukai
 
       # 5. Desktop integration
