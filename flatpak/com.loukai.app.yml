@@ -1,0 +1,144 @@
+# Flathub manifest for Loukai.
+#
+# Differs from the electron-builder flatpak target (package.json -> build.flatpak)
+# in the ways Flathub requires: everything is built from source with no network
+# access, so npm dependencies and the Electron binary come from pre-generated
+# offline sources, and @kmamal/sdl is COMPILED against the runtime's SDL2 rather
+# than downloading its prebuilt binary.
+#
+# See internal-loukai/NETWORK-AUDIT.md for the full egress audit that backs the
+# permission set below.
+#
+# Before building, generate the offline sources (needs network, run outside the
+# build):
+#
+#   # npm dependencies -> generated-sources.json
+#   python3 flatpak-builder-tools/node/flatpak-node-generator.py \
+#     npm ../package-lock.json -o generated-sources.json
+#
+# Build and install locally:
+#   flatpak-builder --user --install --force-clean build-dir com.loukai.app.yml
+
+app-id: com.loukai.app
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+base: org.electronjs.Electron2.BaseApp
+base-version: '24.08'
+command: loukai
+
+sdk-extensions:
+  # Node is not in the base SDK; @kmamal/sdl and the renderer build both need it.
+  - org.freedesktop.Sdk.Extension.node22
+
+build-options:
+  append-path: /usr/lib/sdk/node22/bin
+  env:
+    # Keep npm's cache and Electron's download cache inside the build dir; both
+    # default to $HOME, which is not writable during a Flathub build.
+    NPM_CONFIG_CACHE: /run/build/loukai/npm-cache
+    ELECTRON_CACHE: /run/build/loukai/electron-cache
+    ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+finish-args:
+  # Display
+  - --socket=wayland
+  - --socket=x11
+  - --share=ipc
+  # GPU: UI rendering, Butterchurn visualisations, and WebGPU compute in the Creator
+  - --device=dri
+  # Core feature: karaoke audio out (PA + IEM buses)
+  - --socket=pulseaudio
+  # Chromium requires the session bus; also used by the notifications portal
+  - --socket=session-bus
+  - --talk-name=org.freedesktop.Notifications
+  # The LAN web remote (phones connect to it), lyrics lookup, and the Creator's
+  # optional ML model downloads. See NETWORK-AUDIT.md: the player itself makes no
+  # external requests.
+  - --share=network
+  # Gamepad navigation for living-room / SteamOS use. SDL reads controllers via
+  # evdev, which the sandbox blocks by default. Deliberately narrower than
+  # --device=all.
+  - --device=input
+  # The song library is a user-chosen folder anywhere under home and the scanner
+  # reads audio files directly. Migration to the file-chooser portal is planned;
+  # see flatpak/PERMISSIONS.md.
+  - --filesystem=home
+
+modules:
+  - name: loukai
+    buildsystem: simple
+
+    build-options:
+      env:
+        # @kmamal/sdl's postinstall otherwise DOWNLOADS a prebuilt sdl.node plus a
+        # vendored libSDL2 from GitHub releases, which Flathub does not allow.
+        # This forces a real source build; the runtime ships SDL 2.32.10 with
+        # headers, and binding.gyp reads these two vars.
+        NODE_SDL_FROM_SOURCE: '1'
+        SDL_INC: /usr/include/SDL2
+        SDL_LIB: /usr/lib/$FLATPAK_ARCH-linux-gnu
+
+    build-commands:
+      # 1. Offline npm install. generated-sources.json has already populated the
+      #    local registry mirror, so this never touches the network.
+      - npm ci --offline --no-audit --no-fund
+
+      # 2. Compile @kmamal/sdl against the runtime's SDL2. node-gyp's configure
+      #    step fails without node-addon-api present, so it is installed above by
+      #    npm ci as a normal dependency.
+      - |
+        cd node_modules/@kmamal/sdl
+        npx node-gyp rebuild
+        mkdir -p dist
+        cp build/Release/sdl.node dist/sdl.node
+        # Do NOT ship the vendored libSDL2: we link the runtime's copy.
+        rm -f dist/libSDL2-*.so*
+
+      # 3. Build the renderer and web bundles. `npm run build:all` also runs
+      #    vendor:webgpu, which DOWNLOADS assets, so the vendored files are
+      #    supplied as a source archive instead and only the bundlers run here.
+      - npm run build:renderer
+      - npm run build:web
+
+      # 4. Package with electron-builder in `dir` mode. This produces the
+      #    unpacked tree (including the `loukai-app` binary the launcher execs)
+      #    without building any installer format. Electron itself comes from the
+      #    offline npm sources; ELECTRON_SKIP_BINARY_DOWNLOAD keeps it from
+      #    fetching one.
+      #
+      #    npmRebuild is forced OFF here for the same reason it is off in
+      #    package.json: @electron/rebuild would try to rebuild @kmamal/sdl and
+      #    clobber the source build done in step 2.
+      - npx electron-builder --linux dir --config.npmRebuild=false
+      - mkdir -p /app/loukai
+      - cp -r dist/linux-*unpacked/. /app/loukai/
+      - install -Dm755 flatpak/loukai-launcher.sh /app/bin/loukai
+
+      # 5. Desktop integration
+      - install -Dm644 com.loukai.app.desktop /app/share/applications/com.loukai.app.desktop
+      - install -Dm644 com.loukai.app.metainfo.xml /app/share/metainfo/com.loukai.app.metainfo.xml
+      - install -Dm644 static/images/logo-512.png /app/share/icons/hicolor/512x512/apps/com.loukai.app.png
+
+    sources:
+      - type: git
+        url: https://github.com/monteslu/loukai.git
+        tag: v0.11.0
+        # commit: filled in at submission time; Flathub requires a pinned commit
+
+      # Offline npm registry mirror, generated from package-lock.json by
+      # flatpak-node-generator. Regenerate whenever the lockfile changes.
+      - generated-sources.json
+
+      # The Creator's WebGPU assets (onnxruntime-web, transformers.js,
+      # ffmpeg-core wasm) are normally fetched by `npm run vendor:webgpu` at build
+      # time. That needs network, so they are supplied here as a pinned archive
+      # instead. Contents are byte-identical to what vendor:webgpu produces.
+      #
+      # NOTE: ML model weights (Demucs, Whisper) are NOT here. They are optional,
+      # hundreds of MB, user-tiered, and downloaded only when the user opens the
+      # Creator and starts a job. The player never needs them.
+      - type: archive
+        url: https://github.com/monteslu/loukai/releases/download/v0.11.0/webgpu-assets-0.11.0.tar.gz
+        sha256: 0000000000000000000000000000000000000000000000000000000000000000 # TODO: publish the archive and fill this in
+        dest: static/webgpu
