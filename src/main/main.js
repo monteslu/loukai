@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, session } from 'electron';
 import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -202,6 +202,12 @@ class KaiPlayerApp {
 
     await app.whenReady();
 
+    // Spellcheck is unused (lyric lines are short) and disabling it is correct
+    // hygiene. NOTE: this does NOT stop Chromium's dictionary download from
+    // redirector.gvt1.com at startup, which is still unresolved. See
+    // internal-loukai/NETWORK-AUDIT.md.
+    session.defaultSession.setSpellCheckerEnabled(false);
+
     log('🚀 App starting...', {
       isPackaged: app.isPackaged,
       __dirname,
@@ -265,6 +271,8 @@ class KaiPlayerApp {
         nodeIntegration: true,
         contextIsolation: false,
         preload: path.join(__dirname, 'preload.js'),
+        // Nothing here is prose worth checking (lyric lines are short).
+        spellcheck: false,
       },
       title: 'Loukai',
     };
@@ -412,6 +420,7 @@ class KaiPlayerApp {
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
+        spellcheck: false, // see the main window: avoids the gvt1.com dictionary fetch
       },
       title: 'Canvas Window',
       show: false,
