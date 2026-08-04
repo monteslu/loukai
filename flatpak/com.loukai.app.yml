@@ -145,13 +145,24 @@ modules:
       #  electron's own install.js but electron-builder still went to github.com,
       #  and a direct path cannot silently fall back to the network.
       - |
+        # Any dist/linux-*unpacked carried in from a host checkout would make the
+        # staging glob below ambiguous, and the wrong arch could be copied.
+        rm -rf dist/linux-unpacked dist/linux-*-unpacked
         zip="flatpak-node/cache/electron/electron-v42.4.1-linux-$(node -p 'process.arch').zip"
         test -f "$zip" || { echo "ERROR: staged Electron zip not found at $zip"; ls flatpak-node/cache/electron; exit 1; }
         npx electron-builder --linux dir \
           --config.npmRebuild=false \
           --config.electronDist="$zip"
       - mkdir -p /app/loukai
-      - cp -r dist/linux-*unpacked/. /app/loukai/
+      # electron-builder names the output per arch: `linux-unpacked` on x64 but
+      # `linux-arm64-unpacked` on arm64. The glob covers both, and the guard
+      # catches the case where a stale directory from another arch would make it
+      # ambiguous (copying the wrong one would produce a silently broken app).
+      - |
+        set -e
+        dirs=$(ls -d dist/linux-*unpacked 2>/dev/null | wc -l)
+        test "$dirs" -eq 1 || { echo "ERROR: expected exactly one unpacked dir, found $dirs:"; ls -d dist/linux-*unpacked; exit 1; }
+        cp -r dist/linux-*unpacked/. /app/loukai/
       # Chromium's setuid sandbox helper cannot be SUID inside a flatpak, and if
       # it is present Chromium tries to use it: the zygote, the network service
       # and the GPU process all fail to spawn and it aborts with "GPU process
@@ -170,6 +181,10 @@ modules:
         url: https://github.com/monteslu/loukai.git
         tag: v0.11.0
         # commit: filled in at submission time; Flathub requires a pinned commit
+        # (A `type: git` source is inherently clean. When testing locally with a
+        #  `type: dir` source instead, the host's dist/ and node_modules/ come
+        #  along too, so the build must clear dist/ before packaging - see the
+        #  build-commands - or electron-builder's output is ambiguous.)
 
       # Offline npm registry mirror, generated from package-lock.json by
       # flatpak-node-generator. Regenerate whenever the lockfile changes.
