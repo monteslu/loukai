@@ -1,26 +1,27 @@
 #!/usr/bin/env node
 /**
- * Ensure Electron is installed AND correctly extracted.
+ * Ensure an installed Electron is correctly extracted (repair-only).
  *
  * Electron lives in `devDependencies` because electron-builder requires it
  * there (and bundles its own copy into the DMG/installer — Electron in
  * `dependencies`/`optionalDependencies` makes electron-builder copy the whole
- * ~200MB Electron package into the app on top of the framework). But a
- * production/npx install skips devDependencies, so Electron is absent at
- * runtime. `postinstall` still runs for those installs, so this bridges the gap
- * with two jobs:
+ * ~200MB Electron package into the app on top of the framework).
  *
- *  1. INSTALL: if Electron is missing (production/npx consumer), install it from
- *     the version range declared in our own package.json. In the dev repo
- *     Electron is already present, so this never triggers.
+ * REPAIR: if Electron is present but its dist/ is incomplete (e.g. an
+ * interrupted first install), re-run Electron's own install.js. Historical
+ * note: this job used to hand-roll download + system-unzip because Electron's
+ * old extract-zip (bundling the dead yauzl@2) silently stalled on Node 24.
+ * Electron now extracts with the native @electron-internal/extract-zip
+ * (verified working on Node 24 with Electron 42), so its own installer is the
+ * repair.
  *
- *  2. REPAIR: if Electron is present but its dist/ is incomplete (e.g. an
- *     interrupted first install), re-run Electron's own install.js. Historical
- *     note: this job used to hand-roll download + system-unzip because
- *     Electron's old extract-zip (bundling the dead yauzl@2) silently stalled
- *     on Node 24. Electron now extracts with the native
- *     @electron-internal/extract-zip (verified working on Node 24 with
- *     Electron 42), so its own installer is the repair.
+ * If Electron is missing entirely (production/npx consumer — devDependencies
+ * are skipped there), this does NOTHING: bin/loukai.js installs Electron into
+ * a per-user runtime directory at launch instead. It used to `npm install`
+ * Electron into this package's own node_modules here, but anything npm's
+ * dependency tree doesn't declare gets pruned by npx's cache revalidation on
+ * the next run, which broke every `npx loukai-app` launch after the first.
+ * The launch-time install is outside npm's reach and self-heals.
  *
  * When Electron is already present and healthy, this is a silent no-op.
  * Best-effort throughout: it never fails the install; if it can't finish it
@@ -65,19 +66,6 @@ function resolveElectronDir() {
   }
 }
 
-function declaredElectronRange() {
-  try {
-    const pkg = require(join(projectDir, 'package.json'));
-    return (
-      (pkg.devDependencies && pkg.devDependencies.electron) ||
-      (pkg.dependencies && pkg.dependencies.electron) ||
-      null
-    );
-  } catch {
-    return null;
-  }
-}
-
 function isInstalled(electronDir, version, platformPath) {
   try {
     const distVersion = readFileSync(join(electronDir, 'dist', 'version'), 'utf-8').replace(/^v/, '');
@@ -87,17 +75,6 @@ function isInstalled(electronDir, version, platformPath) {
     return false;
   }
   return existsSync(join(electronDir, 'dist', platformPath));
-}
-
-function installElectron(range) {
-  const spec = `electron@${range || 'latest'}`;
-  log(`Electron not found; installing ${spec} (devDependency is skipped by production/npx installs)…`);
-  // --no-save: don't touch package.json; install into this package's node_modules.
-  execFileSync(
-    'npm',
-    ['install', spec, '--no-save', '--no-audit', '--no-fund', '--loglevel', 'error'],
-    { cwd: projectDir, stdio: 'inherit', env: { ...process.env, npm_config_save: 'false' } }
-  );
 }
 
 function main() {
@@ -113,30 +90,16 @@ function main() {
     return;
   }
 
-  // ---- Job 1: ensure the Electron package is present ----
-  let electronDir = resolveElectronDir();
+  // Missing entirely = production/npx consumer; bin/loukai.js handles that at
+  // launch (see header). Only an existing install gets repaired here.
+  const electronDir = resolveElectronDir();
   if (electronDir == null) {
-    const range = declaredElectronRange();
-    if (range == null) {
-      return; // we don't declare Electron at all — nothing to do
-    }
-    try {
-      installElectron(range);
-    } catch (err) {
-      log(`Could not install Electron automatically: ${err.message}`);
-      log('Install it manually with `npm install electron`, then re-run.');
-      return;
-    }
-    electronDir = resolveElectronDir();
-    if (electronDir == null) {
-      log('Electron still not resolvable after install; aborting (best-effort).');
-      return;
-    }
+    return;
   }
 
   const { version } = require(join(electronDir, 'package.json'));
 
-  // ---- Job 2: ensure the binary is actually extracted ----
+  // ---- Ensure the binary is actually extracted ----
   if (isInstalled(electronDir, version, platformPath)) {
     return; // healthy — silent no-op (the common dev-repo case)
   }
