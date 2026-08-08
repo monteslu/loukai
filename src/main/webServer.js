@@ -63,6 +63,9 @@ class WebServer {
     // Viewer sockets keyed by viewerId for WebRTC signaling
     this.viewerSockets = new Map();
 
+    // appState subscriptions owned by the current start(); see stop()
+    this.stateListeners = null;
+
     this.setupMiddleware();
     this.setupRoutes();
   }
@@ -2290,36 +2293,56 @@ class WebServer {
   }
 
   setupStateChangeListeners() {
-    // Subscribe to mixer state changes and broadcast to admin clients
-    this.mainApp.appState.on('mixerChanged', (mixerState) => {
-      this.io.to('admin-clients').emit('mixer-update', mixerState);
-    });
+    // start() runs this on every (re)start, so drop any previous set first or
+    // a settings-change restart stacks duplicate broadcasts.
+    this.removeStateChangeListeners();
 
-    // Subscribe to effects state changes and broadcast to admin clients
-    this.mainApp.appState.on('effectsChanged', (effectsState) => {
-      this.io.to('admin-clients').emit('effects-update', effectsState);
-    });
+    this.stateListeners = {
+      // Broadcast mixer state changes to admin clients
+      mixerChanged: (mixerState) => {
+        this.io.to('admin-clients').emit('mixer-update', mixerState);
+      },
 
-    // Subscribe to queue changes and broadcast to admin clients
-    this.mainApp.appState.on('queueChanged', (queue) => {
-      const currentSong = this.mainApp.appState.state.currentSong;
-      this.io.to('admin-clients').emit('queue-update', {
-        queue,
-        currentSong,
-      });
-    });
+      // Broadcast effects state changes to admin clients
+      effectsChanged: (effectsState) => {
+        this.io.to('admin-clients').emit('effects-update', effectsState);
+      },
 
-    // Subscribe to current song changes and broadcast to admin clients (includes isLoading state)
-    this.mainApp.appState.on('currentSongChanged', (currentSong) => {
-      this.io.to('admin-clients').emit('current-song-update', currentSong);
-    });
+      // Broadcast queue changes to admin clients
+      queueChanged: (queue) => {
+        const currentSong = this.mainApp.appState.state.currentSong;
+        this.io.to('admin-clients').emit('queue-update', {
+          queue,
+          currentSong,
+        });
+      },
 
-    // Subscribe to playback state changes and broadcast to admin clients
-    this.mainApp.appState.on('playbackChanged', (playbackState) => {
-      this.io.to('admin-clients').emit('playback-state-update', playbackState);
-    });
+      // Broadcast current song changes to admin clients (includes isLoading state)
+      currentSongChanged: (currentSong) => {
+        this.io.to('admin-clients').emit('current-song-update', currentSong);
+      },
+
+      // Broadcast playback state changes to admin clients
+      playbackChanged: (playbackState) => {
+        this.io.to('admin-clients').emit('playback-state-update', playbackState);
+      },
+    };
+
+    for (const [event, handler] of Object.entries(this.stateListeners)) {
+      this.mainApp.appState.on(event, handler);
+    }
 
     log('✅ State change listeners configured for WebSocket broadcasting');
+  }
+
+  removeStateChangeListeners() {
+    if (!this.stateListeners) {
+      return;
+    }
+    for (const [event, handler] of Object.entries(this.stateListeners)) {
+      this.mainApp.appState.off(event, handler);
+    }
+    this.stateListeners = null;
   }
 
   setupSocketHandlers() {
@@ -2597,6 +2620,13 @@ class WebServer {
   }
 
   stop() {
+    // Unsubscribe BEFORE dropping io: during shutdown the renderer is still
+    // emitting state over IPC for a moment, and a listener firing after
+    // `this.io = null` crashes the main process (uncaught "reading 'to' of
+    // null" — seen when quitting via Ctrl-C in a terminal launch, where the
+    // window outlives cleanup()).
+    this.removeStateChangeListeners();
+
     if (this.io) {
       this.io.close();
       this.io = null;
