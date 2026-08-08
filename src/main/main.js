@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, session } from 'electron';
 import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -26,6 +26,7 @@ import {
   loadAndSync,
   getBroadcastChannel,
 } from '../shared/services/settingsService.js';
+import { GamepadEngine } from './gamepadEngine.js';
 import { log } from './logger.js';
 
 log('📦 About to import registerAllHandlers...');
@@ -201,6 +202,12 @@ class KaiPlayerApp {
 
     await app.whenReady();
 
+    // Spellcheck is unused (lyric lines are short) and disabling it is correct
+    // hygiene. NOTE: this does NOT stop Chromium's dictionary download from
+    // redirector.gvt1.com at startup, which is still unresolved. See
+    // internal-loukai/NETWORK-AUDIT.md.
+    session.defaultSession.setSpellCheckerEnabled(false);
+
     log('🚀 App starting...', {
       isPackaged: app.isPackaged,
       __dirname,
@@ -225,6 +232,9 @@ class KaiPlayerApp {
     // http://localhost (required for the in-browser WebGPU Creator: dynamic
     // import + cross-origin isolation + WASM threads only work on an http origin,
     // not file://). IPC handlers are set up first so the preload has them.
+    // The gamepad engine must exist BEFORE setupIPC: its handlers subscribe to
+    // the engine's events at registration time.
+    this.initializeGamepadEngine();
     this.setupIPC();
     this.initializeAudioEngine();
     await this.initializeWebServer();
@@ -261,6 +271,8 @@ class KaiPlayerApp {
         nodeIntegration: true,
         contextIsolation: false,
         preload: path.join(__dirname, 'preload.js'),
+        // Nothing here is prose worth checking (lyric lines are short).
+        spellcheck: false,
       },
       title: 'Loukai',
     };
@@ -408,6 +420,7 @@ class KaiPlayerApp {
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
+        spellcheck: false, // see the main window: avoids the gvt1.com dictionary fetch
       },
       title: 'Canvas Window',
       show: false,
@@ -825,6 +838,19 @@ class KaiPlayerApp {
 
     const menu = Menu.buildFromTemplate(template);
     Menu.setApplicationMenu(menu);
+  }
+
+  initializeGamepadEngine() {
+    try {
+      this.gamepadEngine = new GamepadEngine();
+      if (this.gamepadEngine.initialize()) {
+        this.gamepadEngine.start();
+      }
+    } catch (error) {
+      // Gamepad support is a nicety; never let it break app launch.
+      console.warn('Gamepad engine unavailable:', error.message);
+      this.gamepadEngine = null;
+    }
   }
 
   initializeAudioEngine() {
@@ -2439,6 +2465,10 @@ class KaiPlayerApp {
     // Save settings immediately before exiting
     if (this.settings) {
       await this.settings.saveNow();
+    }
+
+    if (this.gamepadEngine) {
+      this.gamepadEngine.shutdown();
     }
 
     // Save state before exiting

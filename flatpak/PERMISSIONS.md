@@ -13,6 +13,7 @@ needed and the plan to narrow the broad ones.
 | `--share=network` | The web remote-control server (Express + Socket.IO) that singers connect to from phones; lyrics lookup (LRCLIB); model/runtime downloads for the Creator | No |
 | `--filesystem=home` | The song library is a **user-chosen folder** anywhere under home; the library scanner reads audio files directly | **Yes — see below** |
 | `--talk-name=org.freedesktop.Notifications` | Song-request notifications | Already minimal (talk-name, not own-name) |
+| `--device=input` | Gamepad/controller navigation for living-room and SteamOS/Deck use. SDL reads controllers via evdev, which the sandbox blocks by default | No (narrower than `--device=all`, which we deliberately avoid) |
 
 ## Narrowing `--filesystem=home` (the one reviewers flag)
 

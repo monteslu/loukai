@@ -4,7 +4,13 @@
  * Manages tab switching between different app sections
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+
+/**
+ * Lets non-React code (the gamepad nav layer) step tabs without lifting this
+ * component's state. Set while TabNavigation is mounted, cleared on unmount.
+ */
+export const tabStepper = { step: null };
 
 export function TabNavigation({ requestsCount = 0 }) {
   const [activeTab, setActiveTab] = useState('player');
@@ -48,6 +54,18 @@ export function TabNavigation({ requestsCount = 0 }) {
       }, 10);
     }
   };
+
+  // Shoulder buttons step through tabs (gamepad nav, phase 3).
+  useEffect(() => {
+    tabStepper.step = (delta) => {
+      const i = tabs.findIndex((t) => t.id === activeTab);
+      const next = tabs[(i + delta + tabs.length) % tabs.length];
+      if (next) handleTabClick(next.id);
+    };
+    return () => {
+      tabStepper.step = null;
+    };
+  });
 
   return (
     <div className="flex border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">

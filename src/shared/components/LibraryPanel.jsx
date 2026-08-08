@@ -29,6 +29,7 @@ function SongInfoModal({ song, onClose }) {
         <div className="flex justify-between items-center px-5 py-4 border-b border-gray-700 dark:border-gray-800">
           <h2 className="m-0 text-lg font-semibold text-white">Song Information</h2>
           <button
+            data-gamepad-close
             className="bg-none border-none text-white text-[32px] leading-none cursor-pointer p-0 w-8 h-8 flex items-center justify-center rounded transition-colors hover:bg-gray-700 dark:hover:bg-gray-800"
             onClick={onClose}
           >

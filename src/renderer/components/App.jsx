@@ -14,7 +14,8 @@ import { QueueTab } from './QueueTab.jsx';
 import { SongInfoBarWrapper } from './SongInfoBarWrapper.jsx';
 import { TransportControlsWrapper } from './TransportControlsWrapper.jsx';
 import { StatusBar } from './StatusBar.jsx';
-import { TabNavigation } from './TabNavigation.jsx';
+import { TabNavigation, tabStepper } from './TabNavigation.jsx';
+import { GamepadNav } from '../js/gamepadNav.js';
 import { ServerTab } from './ServerTab.jsx';
 import { VisualizationSettings } from '../../shared/components/VisualizationSettings.jsx';
 import { PAQuickMix } from '../../shared/components/PAQuickMix.jsx';
@@ -29,6 +30,14 @@ export function App({ bridge }) {
   // secure context) can command it to create on the host GPU. Works regardless of the
   // open tab — must not depend on the Create tab being mounted.
   useHostCreateListener();
+
+  // Gamepad navigation (phase 3): lets the app be driven from a couch on
+  // SteamOS/Deck/HTPC boxes. Idle unless a controller is actually connected.
+  useEffect(() => {
+    const nav = new GamepadNav({ onTabStep: (delta) => tabStepper.step?.(delta) });
+    nav.start();
+    return () => nav.stop();
+  }, []);
 
   // Update QR code on players when server URL or settings change
   useEffect(() => {
@@ -254,11 +263,22 @@ export function App({ bridge }) {
                   <QueueTab bridge={bridge} />
                 </div>
 
-                {/* Canvas Area (Right 70%) */}
+                {/* Canvas Area (Right 70%). The wrapper is a real focusable
+                    button so the gamepad and keyboard can reach the canvas and
+                    toggle fullscreen, the most useful action in a living room. */}
                 <div className="flex-1 flex flex-col p-0 m-0 min-w-0">
                   <div
                     className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900 cursor-pointer"
                     onClick={toggleCanvasFullscreen}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleCanvasFullscreen();
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Toggle fullscreen video"
                   >
                     <canvas
                       id="karaokeCanvas"

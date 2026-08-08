@@ -112,6 +112,7 @@ export function PlayerControls({
 
         <button
           onClick={isPlaying ? onPause : onPlay}
+          data-gamepad-action="play-pause"
           title={loading ? 'Loading...' : isPlaying ? 'Pause' : 'Play'}
           className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition disabled:opacity-50 flex items-center justify-center"
           disabled={loading}
@@ -241,6 +242,7 @@ export function PlayerControls({
         {onOpenCanvasWindow && (
           <button
             onClick={onOpenCanvasWindow}
+            data-gamepad-skip="external"
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition flex items-center justify-center"
             title="Open Canvas Window"
           >
@@ -252,6 +254,7 @@ export function PlayerControls({
         {onOpenViewer && (
           <button
             onClick={onOpenViewer}
+            data-gamepad-skip="external"
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition flex items-center justify-center"
             title="Open Browser Viewer"
           >

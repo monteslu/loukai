@@ -1,0 +1,204 @@
+# Flathub manifest for Loukai.
+#
+# Differs from the electron-builder flatpak target (package.json -> build.flatpak)
+# in the ways Flathub requires: everything is built from source with no network
+# access, so npm dependencies and the Electron binary come from pre-generated
+# offline sources, and @kmamal/sdl is COMPILED against the runtime's SDL2 rather
+# than downloading its prebuilt binary.
+#
+# See internal-loukai/NETWORK-AUDIT.md for the full egress audit that backs the
+# permission set below.
+#
+# Before building, generate the offline sources (needs network, run outside the
+# build):
+#
+#   # npm dependencies -> generated-sources.json
+#   python3 flatpak-builder-tools/node/flatpak-node-generator.py \
+#     npm ../package-lock.json -o generated-sources.json
+#
+# Build and install locally:
+#   flatpak-builder --user --install --force-clean build-dir com.loukai.app.yml
+
+app-id: com.loukai.app
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+base: org.electronjs.Electron2.BaseApp
+base-version: '24.08'
+command: loukai
+
+sdk-extensions:
+  # Node is not in the base SDK; @kmamal/sdl and the renderer build both need it.
+  - org.freedesktop.Sdk.Extension.node22
+
+build-options:
+  append-path: /usr/lib/sdk/node22/bin
+  env:
+    # These paths are dictated by flatpak-node-generator's output: it unpacks an
+    # npm cache to flatpak-node/npm-cache and an Electron 42.4.1 binary cache to
+    # flatpak-node/cache/electron. Pointing npm anywhere else breaks the offline
+    # install with ENOTCACHED, and pointing electron-builder anywhere else makes
+    # it try to download Electron.
+    NPM_CONFIG_CACHE: /run/build/loukai/flatpak-node/npm-cache
+    NPM_CONFIG_OFFLINE: 'true'
+    XDG_CACHE_HOME: /run/build/loukai/flatpak-node/cache
+    # BOTH names are needed and they are not interchangeable: electron's own
+    # install.js reads the lowercase `electron_config_cache`, while
+    # electron-builder / @electron/get honour ELECTRON_CACHE. Setting only the
+    # uppercase one lets `npm ci` succeed and then electron-builder still tries
+    # to fetch Electron from github.com.
+    ELECTRON_CACHE: /run/build/loukai/flatpak-node/cache/electron
+    electron_config_cache: /run/build/loukai/flatpak-node/cache/electron
+
+finish-args:
+  # Display
+  - --socket=wayland
+  - --socket=x11
+  - --share=ipc
+  # GPU: UI rendering, Butterchurn visualisations, and WebGPU compute in the Creator
+  - --device=dri
+  # Core feature: karaoke audio out (PA + IEM buses)
+  - --socket=pulseaudio
+  # Chromium requires the session bus; also used by the notifications portal
+  - --socket=session-bus
+  - --talk-name=org.freedesktop.Notifications
+  # The LAN web remote (phones connect to it), lyrics lookup, and the Creator's
+  # optional ML model downloads. See NETWORK-AUDIT.md: the player itself makes no
+  # external requests.
+  - --share=network
+  # Gamepad navigation for living-room / SteamOS use. SDL reads controllers via
+  # evdev, which the sandbox blocks by default. Deliberately narrower than
+  # --device=all.
+  - --device=input
+  # The song library is a user-chosen folder anywhere under home and the scanner
+  # reads audio files directly. Migration to the file-chooser portal is planned;
+  # see flatpak/PERMISSIONS.md.
+  - --filesystem=home
+
+modules:
+  - name: loukai
+    buildsystem: simple
+
+    build-options:
+      env:
+        # @kmamal/sdl's postinstall downloads a prebuilt sdl.node, and with
+        # NODE_SDL_FROM_SOURCE it instead downloads SDL's OWN SOURCE from GitHub
+        # and builds node-gyp against that, overriding SDL_INC/SDL_LIB with its
+        # own paths. Both are network fetches Flathub forbids, so the postinstall
+        # is skipped entirely (npm ci --ignore-scripts) and node-gyp is invoked
+        # directly against the runtime's SDL in the build commands below.
+        npm_config_ignore_scripts: 'true'
+
+    build-commands:
+      # 1. Offline npm install from the mirror flatpak-node-generator staged.
+      #    --ignore-scripts is essential: several postinstalls (notably
+      #    @kmamal/sdl) fetch from the network, which is unavailable here.
+      #    (The generator's own `shell` source has already run
+      #    setup_sdk_node_headers.sh to wire up the node-gyp headers.)
+      - npm ci --offline --no-audit --no-fund --ignore-scripts
+
+      # 1b. --ignore-scripts also skipped electron's own install script, which is
+      #     what unpacks its binary into node_modules/electron/dist. Run just that
+      #     one: it reads the Electron 42.4.1 zip that flatpak-node-generator
+      #     staged in ELECTRON_CACHE, so it stays offline.
+      - node node_modules/electron/install.js
+
+      # 2. Compile @kmamal/sdl against the RUNTIME's SDL2 (2.32.10, with headers
+      #    and pkg-config). binding.gyp reads SDL_INC/SDL_LIB, so they are set
+      #    here rather than letting the package's own build.mjs point them at a
+      #    downloaded SDL tree.
+      #
+      #    NOTE: binding.gyp needs `node-addon-api`, which upstream declares only
+      #    as a devDependency, so `npm ci` does not install it for consumers.
+      #    loukai therefore depends on it explicitly; without that this step
+      #    fails with "Call to 'node -p require('node-addon-api').targets'
+      #    returned exit status 1".
+      - |
+        cd node_modules/@kmamal/sdl
+        export SDL_INC=/usr/include/SDL2
+        export SDL_LIB=/usr/lib/$(gcc -dumpmachine)
+        npx -y node-gyp rebuild
+        mkdir -p dist
+        cp build/Release/sdl.node dist/sdl.node
+        # Do NOT ship a vendored libSDL2: we link the runtime's copy.
+        rm -f dist/libSDL2-*.so*
+        ldd dist/sdl.node | grep -q '/usr/lib.*libSDL2' || { echo 'ERROR: not linked against runtime SDL'; exit 1; }
+
+      # 3. Build the renderer and web bundles. `npm run build:all` also runs
+      #    vendor:webgpu, which DOWNLOADS assets, so the vendored files are
+      #    supplied as a source archive instead and only the bundlers run here.
+      - npm run build:renderer
+      - npm run build:web
+
+      # 4. Package with electron-builder in `dir` mode. This produces the
+      #    unpacked tree (including the `loukai-app` binary the launcher execs)
+      #    without building any installer format. Electron comes from the zip
+      #    flatpak-node-generator staged in the electron cache (see the env
+      #    block above), so nothing is fetched.
+      #
+      #    npmRebuild is forced OFF here for the same reason it is off in
+      #    package.json: @electron/rebuild would try to rebuild @kmamal/sdl and
+      #    clobber the source build done in step 2.
+      # `--config.electronDist` points straight at the Electron zip that
+      #  flatpak-node-generator staged. This is deliberate over relying on cache
+      #  env vars: ELECTRON_CACHE / electron_config_cache are honoured by
+      #  electron's own install.js but electron-builder still went to github.com,
+      #  and a direct path cannot silently fall back to the network.
+      - |
+        # Any dist/linux-*unpacked carried in from a host checkout would make the
+        # staging glob below ambiguous, and the wrong arch could be copied.
+        rm -rf dist/linux-unpacked dist/linux-*-unpacked
+        zip="flatpak-node/cache/electron/electron-v42.4.1-linux-$(node -p 'process.arch').zip"
+        test -f "$zip" || { echo "ERROR: staged Electron zip not found at $zip"; ls flatpak-node/cache/electron; exit 1; }
+        npx electron-builder --linux dir \
+          --config.npmRebuild=false \
+          --config.electronDist="$zip"
+      - mkdir -p /app/loukai
+      # electron-builder names the output per arch: `linux-unpacked` on x64 but
+      # `linux-arm64-unpacked` on arm64. The glob covers both, and the guard
+      # catches the case where a stale directory from another arch would make it
+      # ambiguous (copying the wrong one would produce a silently broken app).
+      - |
+        set -e
+        dirs=$(ls -d dist/linux-*unpacked 2>/dev/null | wc -l)
+        test "$dirs" -eq 1 || { echo "ERROR: expected exactly one unpacked dir, found $dirs:"; ls -d dist/linux-*unpacked; exit 1; }
+        cp -r dist/linux-*unpacked/. /app/loukai/
+      # Chromium's setuid sandbox helper cannot be SUID inside a flatpak, and if
+      # it is present Chromium tries to use it: the zygote, the network service
+      # and the GPU process all fail to spawn and it aborts with "GPU process
+      # isn't usable. Goodbye." zypak (see the launcher) maps Chromium's sandbox
+      # onto the flatpak sandbox instead, but only if this binary is gone.
+      - rm -f /app/loukai/chrome-sandbox
+      - install -Dm755 flatpak/loukai-launcher.sh /app/bin/loukai
+
+      # 5. Desktop integration
+      - install -Dm644 com.loukai.app.desktop /app/share/applications/com.loukai.app.desktop
+      - install -Dm644 com.loukai.app.metainfo.xml /app/share/metainfo/com.loukai.app.metainfo.xml
+      - install -Dm644 static/images/logo-512.png /app/share/icons/hicolor/512x512/apps/com.loukai.app.png
+
+    sources:
+      - type: git
+        url: https://github.com/monteslu/loukai.git
+        tag: v0.11.0
+        # commit: filled in at submission time; Flathub requires a pinned commit
+        # (A `type: git` source is inherently clean. When testing locally with a
+        #  `type: dir` source instead, the host's dist/ and node_modules/ come
+        #  along too, so the build must clear dist/ before packaging - see the
+        #  build-commands - or electron-builder's output is ambiguous.)
+
+      # Offline npm registry mirror, generated from package-lock.json by
+      # flatpak-node-generator. Regenerate whenever the lockfile changes.
+      - generated-sources.json
+
+      # The Creator's WebGPU assets (onnxruntime-web, transformers.js,
+      # ffmpeg-core wasm) are normally fetched by `npm run vendor:webgpu` at build
+      # time. That needs network, so they are supplied here as a pinned archive
+      # instead. Contents are byte-identical to what vendor:webgpu produces.
+      #
+      # NOTE: ML model weights (Demucs, Whisper) are NOT here. They are optional,
+      # hundreds of MB, user-tiered, and downloaded only when the user opens the
+      # Creator and starts a job. The player never needs them.
+      - type: archive
+        url: https://github.com/monteslu/loukai/releases/download/v0.11.0/webgpu-assets-0.11.0.tar.gz
+        sha256: 0000000000000000000000000000000000000000000000000000000000000000 # TODO: publish the archive and fill this in
+        dest: static/webgpu
