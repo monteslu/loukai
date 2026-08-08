@@ -48,6 +48,18 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.12.0" date="2026-08-08">
+      <description>
+        <p>Play from the couch: full gamepad navigation, plus a fix for npx launches</p>
+        <ul>
+          <li>Game controller support: drive the entire app with a gamepad — d-pad or stick moves a visible focus ring, A activates, B closes dialogs, Start toggles play/pause, shoulder buttons switch tabs</li>
+          <li>Controllers are read natively (SDL), so they keep working when the window isn't focused</li>
+          <li>Fixed "npx loukai-app" failing to find Electron on every launch after the first</li>
+          <li>Disabled spellcheck underlines in text fields</li>
+          <li>Security updates for networking dependencies</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.11.0" date="2026-08-02">
       <description>
         <p>Fixes the blank window on startup, plus smarter chords and editor search</p>
