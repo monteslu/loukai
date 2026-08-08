@@ -7,7 +7,7 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![React 19](https://img.shields.io/badge/React-19-blue)](https://react.dev/)
 [![Electron 42](https://img.shields.io/badge/Electron-42-blue)](https://www.electronjs.org/)
-[![Tests](https://img.shields.io/badge/tests-340-green)](./.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-447-green)](./.github/workflows/ci.yml)
 
 Loukai is a free, open source karaoke software that runs locally on your computer to **play** and **create** karaoke files from your own music. Built on M4A Stems (MPEG-4 multi-track audio), it uses industry-standard formats compatible with DJ software, giving you full control over your personal karaoke library.
 
@@ -16,6 +16,8 @@ Loukai is a free, open source karaoke software that runs locally on your compute
 ```
 npx loukai-app
 ```
+
+The first launch downloads Electron once into a per-user cache (`~/.cache/loukai` on Linux, `~/Library/Caches/loukai` on macOS, `%LOCALAPPDATA%\loukai` on Windows); every launch after that starts instantly.
 
 **Key highlights:**
 - **Open Format**: Built on NI Stems — no vendor lock-in, works with Traktor, Mixxx, and other DJ software
@@ -62,6 +64,12 @@ npx loukai-app
 - **Smart Search**: Fuzzy search across titles, artists, and albums
 - **Alphabet Navigation**: Quick filtering by first letter
 - **Pagination**: Efficient handling of large libraries (tested with 23K+ songs)
+
+### Gamepad / Couch Control
+- **Full app navigation with a game controller**: D-pad or left stick moves a visible focus ring through the UI
+- **SDL-backed input in the main process**: controllers work even when the window isn't focused, on every platform
+- **Sensible bindings**: A activates, B closes dialogs/leaves fullscreen, Start toggles play/pause, LB/RB switch tabs
+- **Sliders just work**: left/right on a focused fader adjusts it; up/down moves on so nothing becomes a trap
 
 ### Web Admin Interface
 - **Remote Control**: Full player control from any device on the network
@@ -383,6 +391,16 @@ The karaoke canvas shows helpful information when not playing:
 | `M` | Toggle mute |
 | `F` | Toggle fullscreen canvas |
 
+### Gamepad Bindings
+
+| Control | Action |
+|---------|--------|
+| D-pad / Left stick | Move focus (left/right adjusts a focused slider) |
+| `A` | Activate focused control |
+| `B` | Close dialog / leave fullscreen |
+| `Start` | Play/Pause |
+| `LB` / `RB` | Previous / next tab |
+
 ---
 
 ## Testing
@@ -403,7 +421,7 @@ npm run test:coverage
 npm run test:ui
 ```
 
-**Current Coverage:** 340 tests across 17 test files
+**Current Coverage:** 447 tests across 23 test files
 
 ---
 
@@ -516,6 +534,10 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 - Verify server is enabled in Settings
 - Check port is not in use (default: 3069)
 - Try accessing via IP address instead of hostname
+
+### `npx loukai-app` Can't Find Electron
+- Fixed in 0.12.0: earlier versions installed Electron inside npx's cache, which npx itself deletes on the next run
+- If a broken older install lingers, reset with `rm -rf ~/.npm/_npx` and run `npx loukai-app@latest`
 
 ### Build Errors
 ```bash

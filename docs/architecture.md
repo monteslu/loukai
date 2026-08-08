@@ -55,7 +55,8 @@ src/
 │   ├── audioEngine.js      # Legacy state stub (NO audio I/O — all audio is renderer Web Audio)
 │   ├── settingsManager.js  # JSON settings persistence
 │   ├── statePersistence.js # Auto-save state changes
-│   ├── preload.js          # Context bridge API
+│   ├── gamepadEngine.js    # SDL gamepad polling (works unfocused)
+│   ├── preload.js          # Context bridge API (incl. getGamepads() shim)
 │   ├── handlers/           # IPC handler modules
 │   └── creator/            # Song creation (main-process side)
 │       ├── audioInfo.js        # Pure-JS audio inspection
@@ -71,6 +72,7 @@ src/
 │   ├── components/         # Renderer-specific components
 │   ├── js/                 # Audio engine (vanilla JS)
 │   │   ├── kaiPlayer.js            # Stem playback + PA/IEM routing
+│   │   ├── gamepadNav.js           # Couch navigation (focus ring, geometric d-pad movement)
 │   │   ├── cdgPlayer.js
 │   │   ├── karaokeRenderer.js
 │   │   ├── microphoneEngine.js     # Mic capture + auto-tune chain
@@ -118,6 +120,7 @@ The orchestrator that coordinates all application functionality.
 - WebSocket broadcasting to web clients
 - Library scanning and song catalog management
 - Song queue management
+- Gamepad polling via SDL (`gamepadEngine.js`) — input works even when the window is unfocused; the preload shims `navigator.getGamepads()` over IPC and `gamepadNav.js` in the renderer turns it into geometric focus movement with a 10-foot focus ring
 
 ### 2. Renderer Process (React + Web Audio API)
 
@@ -496,6 +499,7 @@ Channels organized by domain:
 | `creator:*` | Song creation |
 | `effect:*` | Visual effects |
 | `canvas:*` | WebRTC streaming |
+| `gamepad:*` | Gamepad state polling |
 
 ## Technology Stack
 
@@ -507,6 +511,7 @@ Channels organized by domain:
 - **music-metadata** - Audio metadata parsing
 - **yauzl/yazl** - ZIP handling
 - **Fuse.js 7** - Fuzzy search
+- **@kmamal/sdl** - Gamepad input
 
 ### Renderer Process
 - **React 19** - UI framework
