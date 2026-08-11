@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { Tooltip } from './Tooltip.jsx';
 
 export function ThemeToggle({ className = '' }) {
   const [theme, setTheme] = useState('dark');
@@ -94,13 +95,14 @@ export function ThemeToggle({ className = '' }) {
   };
 
   return (
-    <button
-      onClick={cycleTheme}
-      className={`p-2 rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-gray-700 ${className}`}
-      title={getTitle()}
-      aria-label={getTitle()}
-    >
-      {getIcon()}
-    </button>
+    <Tooltip text={getTitle()}>
+      <button
+        onClick={cycleTheme}
+        className={`p-2 rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-gray-700 ${className}`}
+        aria-label={getTitle()}
+      >
+        {getIcon()}
+      </button>
+    </Tooltip>
   );
 }

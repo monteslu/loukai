@@ -5,75 +5,24 @@
  * Works with both ElectronBridge and WebBridge via callbacks
  */
 
-import { useState, useRef, useCallback } from 'react';
+import { useState } from 'react';
 import { useConfirm } from '../hooks/useConfirm.jsx';
-import { createPortal } from 'react-dom';
+import { Tooltip } from './Tooltip.jsx';
 
 /**
- * PortalTooltip - Tooltip that renders via portal for consistent positioning on Wayland
- */
-function PortalTooltip({ text, targetRect, visible }) {
-  if (!visible || !targetRect) return null;
-
-  const style = {
-    position: 'fixed',
-    left: targetRect.left + targetRect.width / 2,
-    top: targetRect.top - 4,
-    transform: 'translate(-50%, -100%)',
-    zIndex: 10000,
-  };
-
-  return createPortal(
-    <div
-      style={style}
-      className="px-2 py-1 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded shadow-lg whitespace-nowrap pointer-events-none"
-    >
-      {text}
-      <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900 dark:border-t-gray-700" />
-    </div>,
-    document.body
-  );
-}
-
-/**
- * TooltipButton - Button with portal-based tooltip
+ * TooltipButton - icon button with a hint.
+ *
+ * The tooltip used to be hand-rolled here (this file predates the shared
+ * component); it now delegates, which also fixes the stale-anchor drift the
+ * local copy had.
  */
 function TooltipButton({ icon, tooltip, onClick, className, iconSize = 'text-base' }) {
-  const [showTooltip, setShowTooltip] = useState(false);
-  const [tooltipRect, setTooltipRect] = useState(null);
-  const buttonRef = useRef(null);
-  const tooltipTimeoutRef = useRef(null);
-
-  const handleMouseEnter = useCallback(() => {
-    tooltipTimeoutRef.current = setTimeout(() => {
-      if (buttonRef.current) {
-        setTooltipRect(buttonRef.current.getBoundingClientRect());
-        setShowTooltip(true);
-      }
-    }, 400);
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    if (tooltipTimeoutRef.current) {
-      clearTimeout(tooltipTimeoutRef.current);
-      tooltipTimeoutRef.current = null;
-    }
-    setShowTooltip(false);
-  }, []);
-
   return (
-    <>
-      <button
-        ref={buttonRef}
-        onClick={onClick}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        className={className}
-      >
+    <Tooltip text={tooltip}>
+      <button onClick={onClick} className={className}>
         <span className={`material-icons ${iconSize}`}>{icon}</span>
       </button>
-      <PortalTooltip text={tooltip} targetRect={tooltipRect} visible={showTooltip} />
-    </>
+    </Tooltip>
   );
 }
 
@@ -309,19 +258,18 @@ export function QueueList({
                 {index + 1}
               </div>
               <div className="flex-1 min-w-0">
-                <div
-                  className="font-medium text-gray-900 dark:text-white whitespace-nowrap overflow-hidden text-ellipsis mb-0.5 text-sm"
-                  title={item.title}
-                >
-                  {item.title}
-                </div>
-                <div
-                  className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis"
-                  title={`${item.artist}${requesterText}`}
-                >
-                  {item.artist}
-                  {requesterText}
-                </div>
+                {/* Hover reveals the full text: these lines are ellipsized. */}
+                <Tooltip text={item.title}>
+                  <div className="font-medium text-gray-900 dark:text-white whitespace-nowrap overflow-hidden text-ellipsis mb-0.5 text-sm">
+                    {item.title}
+                  </div>
+                </Tooltip>
+                <Tooltip text={`${item.artist}${requesterText}`}>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis">
+                    {item.artist}
+                    {requesterText}
+                  </div>
+                </Tooltip>
               </div>
               <div className="flex gap-1 flex-shrink-0">
                 {/* Up/Down reorder buttons - only show if more than one item */}

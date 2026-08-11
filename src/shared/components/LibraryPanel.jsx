@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { getFormatIcon, formatDuration } from '../formatUtils.js';
+import { Tooltip } from './Tooltip.jsx';
 
 function SongInfoModal({ song, onClose }) {
   if (!song) return null;
@@ -611,22 +612,24 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
                     </td>
                     <td className="px-3 py-1.5 text-xs leading-relaxed border-b border-gray-200 dark:border-gray-800/50">
                       <div className="flex flex-row gap-1 items-center">
-                        <button
-                          className="w-7 h-7 min-w-[28px] min-h-[28px] max-w-[28px] max-h-[28px] p-0 flex items-center justify-center bg-transparent border border-gray-200 dark:border-gray-700 rounded text-gray-700 dark:text-white cursor-pointer transition-all flex-shrink-0 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-blue-600"
-                          onClick={() => handleAddToQueue(song)}
-                          title="Add to Queue"
-                        >
-                          <span className="material-icons text-base leading-none">
-                            playlist_add
-                          </span>
-                        </button>
-                        <button
-                          className="w-7 h-7 min-w-[28px] min-h-[28px] max-w-[28px] max-h-[28px] p-0 flex items-center justify-center bg-transparent border border-gray-200 dark:border-gray-700 rounded text-gray-700 dark:text-white cursor-pointer transition-all flex-shrink-0 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-blue-600"
-                          onClick={() => handleShowInfo(song)}
-                          title="Song Info"
-                        >
-                          <span className="material-icons text-base leading-none">info</span>
-                        </button>
+                        <Tooltip text="Add to Queue">
+                          <button
+                            className="w-7 h-7 min-w-[28px] min-h-[28px] max-w-[28px] max-h-[28px] p-0 flex items-center justify-center bg-transparent border border-gray-200 dark:border-gray-700 rounded text-gray-700 dark:text-white cursor-pointer transition-all flex-shrink-0 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-blue-600"
+                            onClick={() => handleAddToQueue(song)}
+                          >
+                            <span className="material-icons text-base leading-none">
+                              playlist_add
+                            </span>
+                          </button>
+                        </Tooltip>
+                        <Tooltip text="Song Info">
+                          <button
+                            className="w-7 h-7 min-w-[28px] min-h-[28px] max-w-[28px] max-h-[28px] p-0 flex items-center justify-center bg-transparent border border-gray-200 dark:border-gray-700 rounded text-gray-700 dark:text-white cursor-pointer transition-all flex-shrink-0 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-blue-600"
+                            onClick={() => handleShowInfo(song)}
+                          >
+                            <span className="material-icons text-base leading-none">info</span>
+                          </button>
+                        </Tooltip>
                       </div>
                     </td>
                   </tr>

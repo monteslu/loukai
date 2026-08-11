@@ -5,6 +5,7 @@
  */
 
 import { useState } from 'react';
+import { Tooltip } from './Tooltip.jsx';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 // The detector's vocabulary as pick-list suggestions; typing stays free-form
@@ -155,17 +156,18 @@ export function ChordEditor({ chords, onChange, onAnalyze, analyzing = false }) 
                   : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-750 hover:border-gray-400 dark:hover:border-gray-500'
               }`}
             >
-              <span
-                title={`Play chord ${i + 1} as a tone`}
-                className="flex items-center justify-center min-w-[36px] h-9 bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm font-semibold text-gray-700 dark:text-gray-200 cursor-pointer transition-all flex-shrink-0 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-500"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedIndex(i);
-                  playChordTone(c.chord, c.end - c.start);
-                }}
-              >
-                {i + 1}
-              </span>
+              <Tooltip text={`Play chord ${i + 1} as a tone`}>
+                <span
+                  className="flex items-center justify-center min-w-[36px] h-9 bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm font-semibold text-gray-700 dark:text-gray-200 cursor-pointer transition-all flex-shrink-0 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-500"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedIndex(i);
+                    playChordTone(c.chord, c.end - c.start);
+                  }}
+                >
+                  {i + 1}
+                </span>
+              </Tooltip>
               <TimeField value={c.start} onCommit={(v) => update(i, { start: v })} />
               <span className="text-gray-400 text-xs">to</span>
               <TimeField value={c.end} onCommit={(v) => update(i, { end: v })} />
@@ -176,22 +178,26 @@ export function ChordEditor({ chords, onChange, onAnalyze, analyzing = false }) 
                 value={c.chord}
                 onChange={(e) => update(i, { chord: e.target.value })}
               />
-              <button
-                type="button"
-                onClick={() => addAfter(i)}
-                title="Add chord after"
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-              >
-                <span className="material-icons text-gray-500 text-base leading-none">add</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => remove(i)}
-                title="Delete chord"
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-              >
-                <span className="material-icons text-gray-500 text-base leading-none">delete</span>
-              </button>
+              <Tooltip text="Add chord after">
+                <button
+                  type="button"
+                  onClick={() => addAfter(i)}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                >
+                  <span className="material-icons text-gray-500 text-base leading-none">add</span>
+                </button>
+              </Tooltip>
+              <Tooltip text="Delete chord">
+                <button
+                  type="button"
+                  onClick={() => remove(i)}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                >
+                  <span className="material-icons text-gray-500 text-base leading-none">
+                    delete
+                  </span>
+                </button>
+              </Tooltip>
             </div>
           ))}
         </div>
