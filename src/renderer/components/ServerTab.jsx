@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useConfirm } from '../../shared/hooks/useConfirm.jsx';
 import { generateQRCode } from '../utils/qrCodeGenerator.js';
+import { normalizePublicUrl } from '../../shared/utils/publicUrl.js';
 
 export function ServerTab({ bridge }) {
   const [serverUrl, setServerUrl] = useState(null);
@@ -17,6 +18,8 @@ export function ServerTab({ bridge }) {
     streamVocalsToClients: false,
     showQrCode: true,
     displayQueue: true,
+    publicUrlEnabled: false,
+    publicUrl: '',
   });
   const [adminPassword, setAdminPassword] = useState('');
   const [hasPassword, setHasPassword] = useState(false);
@@ -24,6 +27,12 @@ export function ServerTab({ bridge }) {
   const [totalRequests, setTotalRequests] = useState(0);
   const [message, setMessage] = useState(null);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState(null);
+
+  // Show what the typed override actually resolves to (it accepts a bare host
+  // and assumes https), so a bad value is obvious before saving.
+  const publicUrlPreview = settings.publicUrlEnabled
+    ? normalizePublicUrl(settings.publicUrl)
+    : null;
 
   // Wrap in useCallback to stabilize reference
   const updateRequestsStats = useCallback(async () => {
@@ -44,12 +53,16 @@ export function ServerTab({ bridge }) {
 
     const loadData = async () => {
       try {
-        // Get server URL
+        // Advertised URL (may be a proxy override) for display and the QR code.
         const url = await bridge.getServerUrl();
         setServerUrl(url);
-        if (url) {
-          const port = new URL(url).port;
-          setServerPort(port);
+        // The real port comes from the local address: a proxy URL like
+        // https://karaoke.example.com has no port to parse.
+        const localUrl = (await bridge.getLocalServerUrl?.()) || url;
+        if (localUrl) {
+          setServerPort(
+            new URL(localUrl).port || (new URL(localUrl).protocol === 'https:' ? '443' : '80')
+          );
         }
 
         // Get settings
@@ -63,6 +76,8 @@ export function ServerTab({ bridge }) {
             streamVocalsToClients: serverSettings.streamVocalsToClients === true,
             showQrCode: serverSettings.showQrCode !== false,
             displayQueue: serverSettings.displayQueue !== false,
+            publicUrlEnabled: serverSettings.publicUrlEnabled === true,
+            publicUrl: serverSettings.publicUrl || '',
           });
         }
 
@@ -89,9 +104,7 @@ export function ServerTab({ bridge }) {
           .then((url) => {
             setServerUrl(url);
             if (url) {
-              const port = new URL(url).port;
-              setServerPort(port);
-              // Generate QR code when URL is available
+              // QR code shows the advertised address (override included).
               generateQRCode(url, { width: 300 }).then(setQrCodeDataUrl).catch(console.error);
             }
           })
@@ -356,6 +369,38 @@ export function ServerTab({ bridge }) {
                 />
                 <span className="text-gray-900 dark:text-gray-100">Display queue</span>
               </label>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  id="publicUrlEnabled"
+                  className="w-4 h-4 mr-2 cursor-pointer"
+                  checked={settings.publicUrlEnabled}
+                  onChange={(e) => handleSettingChange('publicUrlEnabled', e.target.checked)}
+                />
+                <span className="text-gray-900 dark:text-gray-100">
+                  Use a custom address for the QR code
+                </span>
+              </label>
+              {settings.publicUrlEnabled && (
+                <div className="ml-6 flex flex-col gap-1">
+                  <input
+                    type="text"
+                    id="publicUrl"
+                    className="w-full max-w-md px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
+                    placeholder="https://karaoke.example.com"
+                    value={settings.publicUrl}
+                    onChange={(e) => handleSettingChange('publicUrl', e.target.value)}
+                  />
+                  <span className="text-xs text-gray-600 dark:text-gray-400">
+                    {publicUrlPreview
+                      ? `Singers will be sent to ${publicUrlPreview}`
+                      : 'Enter the address singers should reach, e.g. a reverse proxy or tunnel in front of this port. Until it is valid, the local address is used.'}
+                  </span>
+                </div>
+              )}
             </div>
 
             <button

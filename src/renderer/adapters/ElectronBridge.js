@@ -576,6 +576,11 @@ export class ElectronBridge extends BridgeInterface {
     return await this.api.webServer.getUrl();
   }
 
+  /** The real listening address, ignoring any public-URL override. */
+  async getLocalServerUrl() {
+    return await this.api.webServer.getLocalUrl?.();
+  }
+
   async getServerSettings() {
     return await this.api.webServer.getSettings();
   }

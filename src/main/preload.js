@@ -157,6 +157,7 @@ const api = {
   webServer: {
     getPort: () => ipcRenderer.invoke('webServer:getPort'),
     getUrl: () => ipcRenderer.invoke('webServer:getUrl'),
+    getLocalUrl: () => ipcRenderer.invoke('webServer:getLocalUrl'),
     getSettings: () => ipcRenderer.invoke('webServer:getSettings'),
     updateSettings: (settings) => ipcRenderer.invoke('webServer:updateSettings', settings),
     getSongRequests: () => ipcRenderer.invoke('webServer:getSongRequests'),

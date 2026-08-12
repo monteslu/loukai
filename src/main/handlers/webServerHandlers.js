@@ -21,10 +21,16 @@ export function registerWebServerHandlers(mainApp) {
     return mainApp.getWebServerPort();
   });
 
-  // Get web server URL
+  // Get web server URL — what singers should reach (may be a proxy override)
   ipcMain.handle('webServer:getUrl', () => {
     // log('🔍 webServer:getUrl called', { hasWebServer: Boolean(mainApp.webServer) });
     return mainApp.webServer?.getServerUrl() || null;
+  });
+
+  // Get the address this process actually listens on, ignoring any override.
+  // The UI needs it for the real port and for localhost-only links.
+  ipcMain.handle('webServer:getLocalUrl', () => {
+    return mainApp.webServer?.getLocalServerUrl() || null;
   });
 
   // Get web server settings
