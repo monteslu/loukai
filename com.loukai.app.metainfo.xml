@@ -48,10 +48,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
-    <release version="0.12.1" date="2026-08-12">
+    <release version="0.13.0" date="2026-08-12">
       <description>
-        <p>Fixes tooltips, visuals while minimized, and a crash on quit</p>
+        <p>Custom QR code address, plus fixes for tooltips, minimized visuals and a crash on quit</p>
         <ul>
+          <li>NEW: point the QR code at your own address - useful when a reverse proxy, tunnel or custom hostname fronts the app, so singers scan something they can actually reach (Server settings)</li>
           <li>Tooltips stay visible instead of flashing and vanishing</li>
           <li>Visuals keep running when the main window is minimized, so projected karaoke and remote viewers no longer freeze while the control window is out of the way</li>
           <li>Fixes a crash when quitting the app or turning the web server off during a song</li>
