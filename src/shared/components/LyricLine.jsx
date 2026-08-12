@@ -16,8 +16,8 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { PortalSelect } from './PortalSelect.jsx';
+import { Tooltip } from './Tooltip.jsx';
 
 // Singer options for the dropdown
 const SINGER_OPTIONS = [
@@ -37,43 +37,12 @@ const REPEAT_DELAY = 400;
 const REPEAT_INTERVAL = 80;
 
 /**
- * PortalTooltip - Tooltip that renders via portal for consistent positioning
- */
-function PortalTooltip({ text, targetRect, visible }) {
-  if (!visible || !targetRect) return null;
-
-  // Position tooltip above the button, centered
-  const style = {
-    position: 'fixed',
-    left: targetRect.left + targetRect.width / 2,
-    top: targetRect.top - 4,
-    transform: 'translate(-50%, -100%)',
-    zIndex: 10000,
-  };
-
-  return createPortal(
-    <div
-      style={style}
-      className="px-2 py-1 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded shadow-lg whitespace-nowrap pointer-events-none"
-    >
-      {text}
-      {/* Arrow pointing down */}
-      <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900 dark:border-t-gray-700" />
-    </div>,
-    document.body
-  );
-}
-
-/**
  * TimeAdjustButton - Button for adjusting time values with hold-to-repeat
  */
 function TimeAdjustButton({ direction, onAdjust, tooltip, isStart }) {
-  const [showTooltip, setShowTooltip] = useState(false);
-  const [tooltipRect, setTooltipRect] = useState(null);
-  const buttonRef = useRef(null);
+  const [repeating, setRepeating] = useState(false);
   const intervalRef = useRef(null);
   const timeoutRef = useRef(null);
-  const tooltipTimeoutRef = useRef(null);
 
   const doAdjust = useCallback(
     (e) => {
@@ -88,8 +57,8 @@ function TimeAdjustButton({ direction, onAdjust, tooltip, isStart }) {
     (e) => {
       // Prevent text selection during hold
       e.preventDefault();
-      // Hide tooltip during adjustment
-      setShowTooltip(false);
+      // Hide the hint while the button is doing its repeat gesture
+      setRepeating(true);
       // Do first adjustment immediately
       doAdjust(e);
 
@@ -106,6 +75,7 @@ function TimeAdjustButton({ direction, onAdjust, tooltip, isStart }) {
   );
 
   const stopRepeat = useCallback(() => {
+    setRepeating(false);
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
@@ -116,29 +86,9 @@ function TimeAdjustButton({ direction, onAdjust, tooltip, isStart }) {
     }
   }, []);
 
-  const handleMouseEnter = useCallback(() => {
-    // Delay tooltip show slightly to avoid flicker
-    tooltipTimeoutRef.current = setTimeout(() => {
-      if (buttonRef.current) {
-        setTooltipRect(buttonRef.current.getBoundingClientRect());
-        setShowTooltip(true);
-      }
-    }, 400);
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    if (tooltipTimeoutRef.current) {
-      clearTimeout(tooltipTimeoutRef.current);
-      tooltipTimeoutRef.current = null;
-    }
-    setShowTooltip(false);
-    stopRepeat();
-  }, [stopRepeat]);
-
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
@@ -156,21 +106,18 @@ function TimeAdjustButton({ direction, onAdjust, tooltip, isStart }) {
   const tooltipText = `${tooltip} (${shortcutKey}, shift for ±0.5s)`;
 
   return (
-    <>
+    <Tooltip text={tooltipText} suppressed={repeating}>
       <button
-        ref={buttonRef}
         type="button"
         className="w-6 h-7 flex items-center justify-center bg-gray-200 dark:bg-gray-600 hover:bg-blue-500 hover:text-white dark:hover:bg-blue-500 border border-gray-300 dark:border-gray-500 rounded text-gray-700 dark:text-gray-200 font-bold text-base cursor-pointer transition-colors select-none"
         onMouseDown={startRepeat}
         onMouseUp={stopRepeat}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
+        onMouseLeave={stopRepeat}
         onClick={(e) => e.stopPropagation()}
       >
         {symbol}
       </button>
-      <PortalTooltip text={tooltipText} targetRect={tooltipRect} visible={showTooltip} />
-    </>
+    </Tooltip>
   );
 }
 
@@ -179,48 +126,16 @@ function TimeAdjustButton({ direction, onAdjust, tooltip, isStart }) {
  * Wraps button in span to ensure tooltip works even when disabled
  */
 function IconButton({ icon, tooltip, onClick, className, disabled = false }) {
-  const [showTooltip, setShowTooltip] = useState(false);
-  const [tooltipRect, setTooltipRect] = useState(null);
-  const wrapperRef = useRef(null);
-  const tooltipTimeoutRef = useRef(null);
-
-  const handleMouseEnter = useCallback(() => {
-    tooltipTimeoutRef.current = setTimeout(() => {
-      if (wrapperRef.current) {
-        setTooltipRect(wrapperRef.current.getBoundingClientRect());
-        setShowTooltip(true);
-      }
-    }, 400);
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    if (tooltipTimeoutRef.current) {
-      clearTimeout(tooltipTimeoutRef.current);
-      tooltipTimeoutRef.current = null;
-    }
-    setShowTooltip(false);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
-    };
-  }, []);
-
   return (
-    <>
-      <span
-        ref={wrapperRef}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        className="inline-flex"
-      >
+    // The span wrapper keeps the hint working on a disabled button, which fires
+    // no pointer events of its own.
+    <Tooltip text={tooltip}>
+      <span className="inline-flex">
         <button type="button" className={className} disabled={disabled} onClick={onClick}>
           <span className="material-icons text-base">{icon}</span>
         </button>
       </span>
-      <PortalTooltip text={tooltip} targetRect={tooltipRect} visible={showTooltip} />
-    </>
+    </Tooltip>
   );
 }
 
@@ -228,49 +143,15 @@ function IconButton({ icon, tooltip, onClick, className, disabled = false }) {
  * LineNumberButton - Clickable line number with play functionality and tooltip
  */
 function LineNumberButton({ index, onClick }) {
-  const [showTooltip, setShowTooltip] = useState(false);
-  const [tooltipRect, setTooltipRect] = useState(null);
-  const buttonRef = useRef(null);
-  const tooltipTimeoutRef = useRef(null);
-
-  const handleMouseEnter = useCallback(() => {
-    tooltipTimeoutRef.current = setTimeout(() => {
-      if (buttonRef.current) {
-        setTooltipRect(buttonRef.current.getBoundingClientRect());
-        setShowTooltip(true);
-      }
-    }, 400);
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    if (tooltipTimeoutRef.current) {
-      clearTimeout(tooltipTimeoutRef.current);
-      tooltipTimeoutRef.current = null;
-    }
-    setShowTooltip(false);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
-    };
-  }, []);
-
-  const tooltipText = `Play line ${index + 1} (p)`;
-
   return (
-    <>
+    <Tooltip text={`Play line ${index + 1} (p)`}>
       <span
-        ref={buttonRef}
         className="flex items-center justify-center min-w-[36px] h-9 bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm font-semibold text-gray-700 dark:text-gray-200 cursor-pointer transition-all flex-shrink-0 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-500"
         onClick={onClick}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
       >
         {index + 1}
       </span>
-      <PortalTooltip text={tooltipText} targetRect={tooltipRect} visible={showTooltip} />
-    </>
+    </Tooltip>
   );
 }
 
@@ -419,28 +300,31 @@ export function LyricLine({
           tooltip="Earlier"
           isStart={true}
         />
-        <input
-          type="number"
-          className={`w-[58px] px-1 py-1.5 bg-gray-100 dark:bg-gray-700 rounded text-gray-900 dark:text-white text-xs text-center font-mono focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
-            hasOverlap
-              ? 'border-2 border-red-500 dark:border-red-400 focus:border-red-600 dark:focus:border-red-300'
-              : 'border border-gray-300 dark:border-gray-600 focus:border-blue-500 dark:focus:border-blue-400'
-          }`}
-          value={startDraft ?? startTime.toFixed(1)}
-          onChange={handleStartTimeChange}
-          onBlur={() => setStartDraft(null)}
-          step="0.1"
-          min="0"
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect(index);
-          }}
-          title={
+        <Tooltip
+          text={
             hasOverlap
               ? 'Warning: This line overlaps with the previous line for the same singer'
               : 'Start time (d/f to adjust)'
           }
-        />
+        >
+          <input
+            type="number"
+            className={`w-[58px] px-1 py-1.5 bg-gray-100 dark:bg-gray-700 rounded text-gray-900 dark:text-white text-xs text-center font-mono focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+              hasOverlap
+                ? 'border-2 border-red-500 dark:border-red-400 focus:border-red-600 dark:focus:border-red-300'
+                : 'border border-gray-300 dark:border-gray-600 focus:border-blue-500 dark:focus:border-blue-400'
+            }`}
+            value={startDraft ?? startTime.toFixed(1)}
+            onChange={handleStartTimeChange}
+            onBlur={() => setStartDraft(null)}
+            step="0.1"
+            min="0"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(index);
+            }}
+          />
+        </Tooltip>
         <TimeAdjustButton
           direction="increase"
           onAdjust={onAdjustStartTime}
@@ -457,20 +341,21 @@ export function LyricLine({
           tooltip="Earlier"
           isStart={false}
         />
-        <input
-          type="number"
-          className="w-[58px] px-1 py-1.5 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs text-center font-mono focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          value={endDraft ?? endTime.toFixed(1)}
-          onChange={handleEndTimeChange}
-          onBlur={() => setEndDraft(null)}
-          step="0.1"
-          min="0"
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect(index);
-          }}
-          title="End time (j/k to adjust)"
-        />
+        <Tooltip text="End time (j/k to adjust)">
+          <input
+            type="number"
+            className="w-[58px] px-1 py-1.5 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white text-xs text-center font-mono focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            value={endDraft ?? endTime.toFixed(1)}
+            onChange={handleEndTimeChange}
+            onBlur={() => setEndDraft(null)}
+            step="0.1"
+            min="0"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(index);
+            }}
+          />
+        </Tooltip>
         <TimeAdjustButton
           direction="increase"
           onAdjust={onAdjustEndTime}

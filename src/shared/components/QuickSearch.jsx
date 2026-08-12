@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { getFormatIcon } from '../formatUtils.js';
+import { Tooltip } from './Tooltip.jsx';
 
 export function QuickSearch({ bridge, requester = 'KJ' }) {
   const [searchResults, setSearchResults] = useState([]);
@@ -107,15 +108,16 @@ export function QuickSearch({ bridge, requester = 'KJ' }) {
                     {song.artist}
                   </div>
                 </div>
-                <button
-                  className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition flex-shrink-0"
-                  onClick={() => handleAddFromSearch(song)}
-                  title="Add to Queue"
-                >
-                  <span className="material-icons text-gray-700 dark:text-gray-300">
-                    playlist_add
-                  </span>
-                </button>
+                <Tooltip text="Add to Queue">
+                  <button
+                    className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition flex-shrink-0"
+                    onClick={() => handleAddFromSearch(song)}
+                  >
+                    <span className="material-icons text-gray-700 dark:text-gray-300">
+                      playlist_add
+                    </span>
+                  </button>
+                </Tooltip>
               </div>
             ))
           )}

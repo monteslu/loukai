@@ -6,6 +6,8 @@
  * gain state — two mounted views of one fader must never diverge, §11.13).
  */
 
+import { Tooltip } from './Tooltip.jsx';
+
 export function StemStrip({
   bus,
   name,
@@ -35,21 +37,25 @@ export function StemStrip({
         disabled={disabled}
         onChange={(e) => onGain?.(bus, name, parseInt(e.target.value, 10) / 100)}
         onDoubleClick={() => onGain?.(bus, name, 1)}
-        title={`${name} on ${bus}: ${pct}% (double-click = 100%)`}
       />
-      <div className="text-[11px] font-mono text-gray-600 dark:text-gray-400">{pct}%</div>
-      <button
-        className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${
-          muted
-            ? 'bg-red-600 hover:bg-red-700 text-white'
-            : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100'
-        }`}
-        disabled={disabled}
-        onClick={() => onMute?.(bus, name, !muted)}
-        title={muted ? 'Unmute' : 'Mute'}
-      >
-        {muted ? 'MUTED' : 'ON'}
-      </button>
+      {/* The hint rides the readout, not the slider: a bubble anchored to the
+          track would sit under the cursor mid-drag. */}
+      <Tooltip text={`${name} on ${bus}: ${pct}% (double-click = 100%)`}>
+        <div className="text-[11px] font-mono text-gray-600 dark:text-gray-400">{pct}%</div>
+      </Tooltip>
+      <Tooltip text={muted ? 'Unmute' : 'Mute'}>
+        <button
+          className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${
+            muted
+              ? 'bg-red-600 hover:bg-red-700 text-white'
+              : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100'
+          }`}
+          disabled={disabled}
+          onClick={() => onMute?.(bus, name, !muted)}
+        >
+          {muted ? 'MUTED' : 'ON'}
+        </button>
+      </Tooltip>
     </div>
   );
 }

@@ -6,6 +6,7 @@
  */
 
 import { StemStrip } from './StemStrip.jsx';
+import { Tooltip } from './Tooltip.jsx';
 import { resolveStemEntry, orderStems, CANONICAL_STEMS } from '../utils/stemGain.js';
 import { isMixdownStem } from '../utils/stemClassify.js';
 
@@ -87,11 +88,13 @@ export function MixerPanel({
                 onChange={(e) => handleGainChangeLocal(bus.id, e.target.value)}
                 onDoubleClick={(e) => handleDoubleClick(bus.id, e)}
                 data-bus={bus.id}
-                title="Master (double-click = 0 dB)"
               />
-              <span className="text-sm font-mono text-gray-700 dark:text-gray-300 w-16">
-                {gain.toFixed(1)} dB
-              </span>
+              {/* Hint on the readout, not the slider (see StemStrip). */}
+              <Tooltip text="Master (double-click = 0 dB)">
+                <span className="text-sm font-mono text-gray-700 dark:text-gray-300 w-16">
+                  {gain.toFixed(1)} dB
+                </span>
+              </Tooltip>
               <button
                 className={`px-3 py-1 rounded text-sm font-semibold transition ${
                   muted

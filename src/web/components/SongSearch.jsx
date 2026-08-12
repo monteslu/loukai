@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { getFormatIcon, formatDuration } from '../../shared/formatUtils.js';
+import { Tooltip } from '../../shared/components/Tooltip.jsx';
 
 export function SongSearch({ onAddToQueue }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -146,20 +147,22 @@ export function SongSearch({ onAddToQueue }) {
                     </div>
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
-                    <button
-                      className="btn btn-sm min-w-[32px] px-2 py-1 text-base font-semibold bg-blue-600 dark:bg-blue-500 border-blue-600 dark:border-blue-500 text-white hover:bg-blue-700 dark:hover:bg-blue-600"
-                      onClick={() => handleLoadSong(song)}
-                      title="Load & Play Now"
-                    >
-                      ▶
-                    </button>
-                    <button
-                      className="btn btn-sm min-w-[32px] px-2 py-1 text-base font-semibold bg-green-600 dark:bg-green-500 border-green-600 dark:border-green-500 text-white hover:bg-green-700 dark:hover:bg-green-600"
-                      onClick={() => handleAddToQueue(song)}
-                      title="Add to Queue"
-                    >
-                      +
-                    </button>
+                    <Tooltip text="Load & Play Now">
+                      <button
+                        className="btn btn-sm min-w-[32px] px-2 py-1 text-base font-semibold bg-blue-600 dark:bg-blue-500 border-blue-600 dark:border-blue-500 text-white hover:bg-blue-700 dark:hover:bg-blue-600"
+                        onClick={() => handleLoadSong(song)}
+                      >
+                        ▶
+                      </button>
+                    </Tooltip>
+                    <Tooltip text="Add to Queue">
+                      <button
+                        className="btn btn-sm min-w-[32px] px-2 py-1 text-base font-semibold bg-green-600 dark:bg-green-500 border-green-600 dark:border-green-500 text-white hover:bg-green-700 dark:hover:bg-green-600"
+                        onClick={() => handleAddToQueue(song)}
+                      >
+                        +
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
               ))}

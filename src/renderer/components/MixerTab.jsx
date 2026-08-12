@@ -9,6 +9,7 @@
 import React, { useState, useEffect } from 'react';
 import { MixerPanel } from '../../shared/components/MixerPanel.jsx';
 import { AudioDeviceSettings } from './AudioDeviceSettings.jsx';
+import { Tooltip } from '../../shared/components/Tooltip.jsx';
 
 export function MixerTab({ bridge }) {
   const [mixerState, setMixerState] = useState({
@@ -225,13 +226,14 @@ export function MixerTab({ bridge }) {
       <div className="mb-8">
         <h2 className="m-0 mb-5 text-2xl text-gray-900 dark:text-gray-100 flex items-center justify-between">
           Audio Mixer
-          <button
-            onClick={handleRefreshDevices}
-            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors text-base"
-            title="Refresh device list"
-          >
-            ↻
-          </button>
+          <Tooltip text={'Refresh device list'}>
+            <button
+              onClick={handleRefreshDevices}
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors text-base"
+            >
+              ↻
+            </button>
+          </Tooltip>
         </h2>
         <MixerPanel
           mixerState={mixerState}

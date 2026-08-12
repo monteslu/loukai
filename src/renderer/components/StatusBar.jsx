@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { Tooltip } from '../../shared/components/Tooltip.jsx';
 
 export function StatusBar({ bridge }) {
   const [statusText, _setStatusText] = useState('Ready');
@@ -74,13 +75,14 @@ export function StatusBar({ bridge }) {
       </div>
       <div className="flex-1 text-center">
         {webUrl && (
-          <span
-            className="text-blue-500 dark:text-blue-400 cursor-pointer hover:underline"
-            onClick={handleUrlClick}
-            title="Click to open in browser"
-          >
-            🌐 {webUrl}
-          </span>
+          <Tooltip text={'Click to open in browser'}>
+            <span
+              className="text-blue-500 dark:text-blue-400 cursor-pointer hover:underline"
+              onClick={handleUrlClick}
+            >
+              🌐 {webUrl}
+            </span>
+          </Tooltip>
         )}
       </div>
       <div className="flex-1 flex gap-4 justify-end">

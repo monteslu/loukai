@@ -21,6 +21,7 @@ import { Toast } from './Toast.jsx';
 import { LyricRejection } from './LyricRejection.jsx';
 import { LyricSuggestion } from './LyricSuggestion.jsx';
 import { splitLine, canSplitLine } from '../utils/lyricsUtils.js';
+import { Tooltip } from './Tooltip.jsx';
 
 // m:ss.t readout for the playback transport (tenths: precise enough to line up
 // lyric timing by eye, stable enough not to flicker at rAF update rate).
@@ -1315,16 +1316,15 @@ export function SongEditor({ bridge }) {
                   </button>
                   {/* Elapsed time (issue #67 request): tenths so lyric timing can be
                         checked against the start/end numbers while playing. */}
-                  <span
-                    className="font-mono text-xs text-gray-900 dark:text-white tabular-nums px-1.5 whitespace-nowrap"
-                    title={`${currentPosition.toFixed(2)}s`}
-                  >
-                    {formatEditorTime(currentPosition)}
-                    <span className="text-gray-500 dark:text-gray-400">
-                      {' / '}
-                      {formatEditorTime(songDuration)}
+                  <Tooltip text={`${currentPosition.toFixed(2)}s`}>
+                    <span className="font-mono text-xs text-gray-900 dark:text-white tabular-nums px-1.5 whitespace-nowrap">
+                      {formatEditorTime(currentPosition)}
+                      <span className="text-gray-500 dark:text-gray-400">
+                        {' / '}
+                        {formatEditorTime(songDuration)}
+                      </span>
                     </span>
-                  </span>
+                  </Tooltip>
                   <div className="flex gap-1.5 flex-wrap flex-1 items-center">
                     {audioElements.map((el, index) => (
                       <div
@@ -1334,49 +1334,63 @@ export function SongEditor({ bridge }) {
                         <span className="text-[11px] font-semibold text-gray-900 dark:text-white min-w-[45px]">
                           {el.name}
                         </span>
-                        <button
-                          onClick={() => toggleMute(index)}
-                          className={`flex items-center justify-center w-6 h-6 p-0.5 rounded cursor-pointer transition-colors ${el.muted ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-green-600 text-white hover:bg-green-700'}`}
-                          title={el.muted ? 'Unmute' : 'Mute'}
-                        >
-                          <span className="material-icons text-sm">
-                            {el.muted ? 'volume_off' : 'volume_up'}
-                          </span>
-                        </button>
+                        <Tooltip text={el.muted ? 'Unmute' : 'Mute'}>
+                          <button
+                            onClick={() => toggleMute(index)}
+                            className={`flex items-center justify-center w-6 h-6 p-0.5 rounded cursor-pointer transition-colors ${el.muted ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-green-600 text-white hover:bg-green-700'}`}
+                          >
+                            <span className="material-icons text-sm">
+                              {el.muted ? 'volume_off' : 'volume_up'}
+                            </span>
+                          </button>
+                        </Tooltip>
                       </div>
                     ))}
                   </div>
-                  <button
-                    onClick={handleExportLyrics}
-                    className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={!lyricsData || lyricsData.length === 0}
-                    title="Export lyrics as text file"
-                  >
-                    <span className="material-icons text-base">download</span>
-                    Export
-                  </button>
-                  <button
-                    onClick={handleResetLyrics}
-                    className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={!hasChanges}
-                    title="Reset to original lyrics"
-                  >
-                    <span className="material-icons text-base">restore</span>
-                    Reset
-                  </button>
-                  <button
-                    onClick={handleAddLineAtStart}
-                    className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={!canAddLineAtStart()}
-                    title={
+                  {/* Wrapped in a span: these go disabled, and a disabled button
+                      emits no pointer events for the tooltip to hang off. */}
+                  <Tooltip text="Export lyrics as text file">
+                    <span className="inline-flex">
+                      <button
+                        onClick={handleExportLyrics}
+                        className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!lyricsData || lyricsData.length === 0}
+                      >
+                        <span className="material-icons text-base">download</span>
+                        Export
+                      </button>
+                    </span>
+                  </Tooltip>
+                  <Tooltip text="Reset to original lyrics">
+                    <span className="inline-flex">
+                      <button
+                        onClick={handleResetLyrics}
+                        className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!hasChanges}
+                      >
+                        <span className="material-icons text-base">restore</span>
+                        Reset
+                      </button>
+                    </span>
+                  </Tooltip>
+                  <Tooltip
+                    text={
                       canAddLineAtStart()
                         ? 'Add line at beginning'
                         : 'Not enough space (need 0.6s gap)'
                     }
                   >
-                    <span className="material-icons text-base">add</span>
-                    Add First Line
-                  </button>
+                    <span className="inline-flex">
+                      <button
+                        onClick={handleAddLineAtStart}
+                        className="flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!canAddLineAtStart()}
+                      >
+                        <span className="material-icons text-base">add</span>
+                        Add First Line
+                      </button>
+                    </span>
+                  </Tooltip>
                 </div>
               )}
 

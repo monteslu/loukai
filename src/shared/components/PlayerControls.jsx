@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { Tooltip } from './Tooltip.jsx';
 import { formatDuration } from '../formatUtils.js';
 import { shiftKeyName, KEY_SHIFT_MIN, KEY_SHIFT_MAX } from '../utils/musicKey.js';
 
@@ -99,45 +100,48 @@ export function PlayerControls({
     >
       <div className="flex items-center gap-3">
         {/* Transport Controls */}
-        <button
-          onClick={onRestart}
-          title="Restart Track"
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition disabled:opacity-50 flex items-center justify-center"
-          disabled={loading}
-        >
-          <span className="material-icons text-gray-700 dark:text-gray-300 text-2xl leading-none">
-            replay
-          </span>
-        </button>
-
-        <button
-          onClick={isPlaying ? onPause : onPlay}
-          data-gamepad-action="play-pause"
-          title={loading ? 'Loading...' : isPlaying ? 'Pause' : 'Play'}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition disabled:opacity-50 flex items-center justify-center"
-          disabled={loading}
-        >
-          {loading ? (
-            <span className="material-icons text-gray-700 dark:text-gray-300 text-2xl leading-none animate-spin">
-              hourglass_empty
+        <Tooltip text="Restart Track">
+          <button
+            onClick={onRestart}
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition disabled:opacity-50 flex items-center justify-center"
+            disabled={loading}
+          >
+            <span className="material-icons text-gray-700 dark:text-gray-300 text-2xl leading-none">
+              replay
             </span>
-          ) : (
-            <span className="material-icons text-blue-600 dark:text-blue-400 text-2xl leading-none">
-              {isPlaying ? 'pause' : 'play_arrow'}
-            </span>
-          )}
-        </button>
+          </button>
+        </Tooltip>
 
-        <button
-          onClick={onNext}
-          title="Next Track"
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition disabled:opacity-50 flex items-center justify-center"
-          disabled={loading}
-        >
-          <span className="material-icons text-gray-700 dark:text-gray-300 text-2xl leading-none">
-            skip_next
-          </span>
-        </button>
+        <Tooltip text={loading ? 'Loading...' : isPlaying ? 'Pause' : 'Play'}>
+          <button
+            onClick={isPlaying ? onPause : onPlay}
+            data-gamepad-action="play-pause"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition disabled:opacity-50 flex items-center justify-center"
+            disabled={loading}
+          >
+            {loading ? (
+              <span className="material-icons text-gray-700 dark:text-gray-300 text-2xl leading-none animate-spin">
+                hourglass_empty
+              </span>
+            ) : (
+              <span className="material-icons text-blue-600 dark:text-blue-400 text-2xl leading-none">
+                {isPlaying ? 'pause' : 'play_arrow'}
+              </span>
+            )}
+          </button>
+        </Tooltip>
+
+        <Tooltip text="Next Track">
+          <button
+            onClick={onNext}
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition disabled:opacity-50 flex items-center justify-center"
+            disabled={loading}
+          >
+            <span className="material-icons text-gray-700 dark:text-gray-300 text-2xl leading-none">
+              skip_next
+            </span>
+          </button>
+        </Tooltip>
 
         {/* Progress Bar */}
         <div className="flex-1 mx-4">
@@ -166,10 +170,7 @@ export function PlayerControls({
         {/* Key shift (issue #90): per-loaded-song, resets on load, never saved */}
         {onKeyShift && (
           <>
-            <div
-              className="flex items-center flex-shrink-0"
-              title="Key shift (music and guide vocal, never the mic)"
-            >
+            <div className="flex items-center flex-shrink-0">
               <button
                 onClick={() => onKeyShift(keyShift - 1)}
                 disabled={loading || keyShift <= KEY_SHIFT_MIN}
@@ -179,21 +180,23 @@ export function PlayerControls({
                   remove
                 </span>
               </button>
-              <span
-                className={`text-sm font-mono text-center px-0.5 ${
-                  keyShift !== 0
-                    ? 'text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-gray-500 dark:text-gray-400'
-                }`}
-              >
-                {keyShift === 0
-                  ? songKey || 'Key'
-                  : `${keyShift > 0 ? '+' : ''}${keyShift}${
-                      songKey && shiftKeyName(songKey, keyShift)
-                        ? ` ${shiftKeyName(songKey, keyShift)}`
-                        : ''
-                    }`}
-              </span>
+              <Tooltip text="Key shift (music and guide vocal, never the mic)">
+                <span
+                  className={`text-sm font-mono text-center px-0.5 ${
+                    keyShift !== 0
+                      ? 'text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-gray-500 dark:text-gray-400'
+                  }`}
+                >
+                  {keyShift === 0
+                    ? songKey || 'Key'
+                    : `${keyShift > 0 ? '+' : ''}${keyShift}${
+                        songKey && shiftKeyName(songKey, keyShift)
+                          ? ` ${shiftKeyName(songKey, keyShift)}`
+                          : ''
+                      }`}
+                </span>
+              </Tooltip>
               <button
                 onClick={() => onKeyShift(keyShift + 1)}
                 disabled={loading || keyShift >= KEY_SHIFT_MAX}
@@ -212,56 +215,60 @@ export function PlayerControls({
 
         {/* Effects Controls */}
         {onPreviousEffect && (
-          <button
-            onClick={onPreviousEffect}
-            title="Previous Effect"
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition flex items-center justify-center"
-          >
-            <span className="material-icons text-gray-700 dark:text-gray-300 leading-none">
-              chevron_left
-            </span>
-          </button>
+          <Tooltip text="Previous Effect">
+            <button
+              onClick={onPreviousEffect}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition flex items-center justify-center"
+            >
+              <span className="material-icons text-gray-700 dark:text-gray-300 leading-none">
+                chevron_left
+              </span>
+            </button>
+          </Tooltip>
         )}
-        <span
-          className="px-3 py-1 bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium min-w-[120px] text-center"
-          title={currentEffect || 'No Effect'}
-        >
-          {truncateEffectName(currentEffect || 'No Effect')}
-        </span>
+        {/* Full name on hover: the label itself is truncated to 28 chars. */}
+        <Tooltip text={currentEffect || 'No Effect'}>
+          <span className="px-3 py-1 bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium min-w-[120px] text-center">
+            {truncateEffectName(currentEffect || 'No Effect')}
+          </span>
+        </Tooltip>
         {onNextEffect && (
-          <button
-            onClick={onNextEffect}
-            title="Next Effect"
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition flex items-center justify-center"
-          >
-            <span className="material-icons text-gray-700 dark:text-gray-300 leading-none">
-              chevron_right
-            </span>
-          </button>
+          <Tooltip text="Next Effect">
+            <button
+              onClick={onNextEffect}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition flex items-center justify-center"
+            >
+              <span className="material-icons text-gray-700 dark:text-gray-300 leading-none">
+                chevron_right
+              </span>
+            </button>
+          </Tooltip>
         )}
         {onOpenCanvasWindow && (
-          <button
-            onClick={onOpenCanvasWindow}
-            data-gamepad-skip="external"
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition flex items-center justify-center"
-            title="Open Canvas Window"
-          >
-            <span className="material-icons text-gray-700 dark:text-gray-300 leading-none">
-              open_in_new
-            </span>
-          </button>
+          <Tooltip text="Open Canvas Window">
+            <button
+              onClick={onOpenCanvasWindow}
+              data-gamepad-skip="external"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition flex items-center justify-center"
+            >
+              <span className="material-icons text-gray-700 dark:text-gray-300 leading-none">
+                open_in_new
+              </span>
+            </button>
+          </Tooltip>
         )}
         {onOpenViewer && (
-          <button
-            onClick={onOpenViewer}
-            data-gamepad-skip="external"
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition flex items-center justify-center"
-            title="Open Browser Viewer"
-          >
-            <span className="material-icons text-gray-700 dark:text-gray-300 leading-none">
-              open_in_new
-            </span>
-          </button>
+          <Tooltip text="Open Browser Viewer">
+            <button
+              onClick={onOpenViewer}
+              data-gamepad-skip="external"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition flex items-center justify-center"
+            >
+              <span className="material-icons text-gray-700 dark:text-gray-300 leading-none">
+                open_in_new
+              </span>
+            </button>
+          </Tooltip>
         )}
       </div>
     </div>

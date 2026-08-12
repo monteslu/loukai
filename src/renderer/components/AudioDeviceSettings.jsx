@@ -12,6 +12,7 @@
 
 import React from 'react';
 import { PortalSelect } from './PortalSelect.jsx';
+import { Tooltip } from '../../shared/components/Tooltip.jsx';
 
 export function AudioDeviceSettings({
   bus, // 'PA' | 'IEM' | 'mic' renders just that bus's slice (three-row Audio tab, #49); unset = legacy full block
@@ -76,19 +77,20 @@ export function AudioDeviceSettings({
             placeholder="Default"
           />
         </div>
-        <label
-          className="flex items-center cursor-pointer select-none text-gray-900 dark:text-gray-100 text-sm"
-          title="IEM is for in-ear monitoring; separate devices drift over long songs"
-        >
-          <input
-            type="checkbox"
-            id="iemMonoVocals"
-            className="w-4 h-4 mr-2 cursor-pointer"
-            checked={settings.iemMonoVocals ?? true}
-            onChange={(e) => onSettingChange && onSettingChange('iemMonoVocals', e.target.checked)}
-          />
-          Vocals in Mono (single earpiece)
-        </label>
+        <Tooltip text={'IEM is for in-ear monitoring; separate devices drift over long songs'}>
+          <label className="flex items-center cursor-pointer select-none text-gray-900 dark:text-gray-100 text-sm">
+            <input
+              type="checkbox"
+              id="iemMonoVocals"
+              className="w-4 h-4 mr-2 cursor-pointer"
+              checked={settings.iemMonoVocals ?? true}
+              onChange={(e) =>
+                onSettingChange && onSettingChange('iemMonoVocals', e.target.checked)
+              }
+            />
+            Vocals in Mono (single earpiece)
+          </label>
+        </Tooltip>
       </div>
     );
   }
@@ -135,13 +137,14 @@ export function AudioDeviceSettings({
       <div className="my-5 p-5 bg-gray-50 dark:bg-gray-800 rounded-lg">
         <h3 className="flex items-center justify-between m-0 mb-4 text-lg text-gray-900 dark:text-gray-100">
           Audio Devices
-          <button
-            onClick={onRefreshDevices}
-            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors text-base"
-            title="Refresh device list"
-          >
-            ↻
-          </button>
+          <Tooltip text={'Refresh device list'}>
+            <button
+              onClick={onRefreshDevices}
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors text-base"
+            >
+              ↻
+            </button>
+          </Tooltip>
         </h3>
 
         <div className="my-3">
