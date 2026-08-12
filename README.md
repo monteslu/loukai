@@ -331,6 +331,7 @@ Access in the Server tab:
 - **Max Requests**: Limit requests per user
 - **Show QR Code**: Display QR code on canvas for easy mobile access (on by default)
 - **Display Queue**: Show upcoming songs on canvas (on by default)
+- **Use a custom address for the QR code**: Advertise a different URL than the detected LAN address, for when a reverse proxy, tunnel, or custom hostname fronts the server (e.g. `https://karaoke.example.com`). A bare hostname assumes `https`. The QR code and the status-bar link follow it; the server keeps listening on the same local port, and an incomplete entry falls back to the local address.
 
 ### Settings Persistence
 All settings are automatically saved to:

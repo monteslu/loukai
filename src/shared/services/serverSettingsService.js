@@ -89,6 +89,14 @@ export function loadSettings(webServer) {
         'server.displayQueue',
         webServer.defaultSettings.displayQueue
       );
+      savedSettings.publicUrlEnabled = webServer.mainApp.settings.get(
+        'server.publicUrlEnabled',
+        webServer.defaultSettings.publicUrlEnabled
+      );
+      savedSettings.publicUrl = webServer.mainApp.settings.get(
+        'server.publicUrl',
+        webServer.defaultSettings.publicUrl
+      );
     }
 
     const finalSettings = { ...webServer.defaultSettings, ...savedSettings };
@@ -123,6 +131,11 @@ export function saveSettings(webServer) {
       );
       webServer.mainApp.settings.set('server.showQrCode', webServer.settings.showQrCode);
       webServer.mainApp.settings.set('server.displayQueue', webServer.settings.displayQueue);
+      webServer.mainApp.settings.set(
+        'server.publicUrlEnabled',
+        webServer.settings.publicUrlEnabled
+      );
+      webServer.mainApp.settings.set('server.publicUrl', webServer.settings.publicUrl);
       console.log('🔧 Server settings saved to persistent storage');
       return true;
     } else {

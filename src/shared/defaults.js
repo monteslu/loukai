@@ -58,6 +58,11 @@ export const SERVER_DEFAULTS = {
   maxRequestsPerIP: 10,
   showQrCode: true,
   displayQueue: true,
+  // Publish a different address than the detected LAN one (reverse proxy,
+  // tunnel, custom hostname). Only used when publicUrlEnabled is on AND
+  // publicUrl is a valid absolute http(s) URL.
+  publicUrlEnabled: false,
+  publicUrl: '',
 };
 
 export const LLM_DEFAULTS = {

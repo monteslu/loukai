@@ -31,6 +31,7 @@ import { getCacheDir } from './creator/systemChecker.js';
 import { registerWebGpuAssets } from './creator/webgpuAssets.js';
 import multer from 'multer';
 import { forwardViewerEvent } from './handlers/streamingHandlers.js';
+import { resolvePublicUrl } from '../shared/utils/publicUrl.js';
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -2745,7 +2746,13 @@ class WebServer {
     return false;
   }
 
+  /** The address to advertise (QR code, status bar): the override if set, else the LAN address. */
   getServerUrl() {
+    return resolvePublicUrl(this.settings, this.getLocalServerUrl());
+  }
+
+  /** The address this process actually listens on, ignoring any override. */
+  getLocalServerUrl() {
     if (!this.port) return null;
     const ip = this.getLanIp();
     return `http://${ip}:${this.port}`;
