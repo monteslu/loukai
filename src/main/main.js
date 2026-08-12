@@ -72,6 +72,27 @@ if (process.platform === 'linux') {
   app.commandLine.appendSwitch('disable-gpu-compositing');
 }
 
+// --- Keep rendering when the window isn't visible ---
+// Chromium throttles backgrounded renderers: requestAnimationFrame stops and
+// timers clamp to ~1 Hz. That is right for web pages and wrong for us. A KJ
+// puts visuals on the projector and minimizes the control window, but the
+// canvas window only plays a MediaStream captured from a canvas that
+// karaokeRenderer paints in the MAIN window - so throttling the main window
+// freezes the projected display and the WebRTC viewers with it. The gamepad
+// poller (50 ms setInterval) and lyric timing are on the same thread.
+//
+// Measured on Linux/Wayland with a probe that counts RAF ticks while
+// minimized: default 0 fps and timers at 1 Hz, versus 30 fps and 20 Hz with
+// the fix. backgroundThrottling: false on the window is what does the work
+// there (sufficient on its own). The switches below are for the paths that
+// flag does not cover - Chromium also deprioritizes whole backgrounded
+// renderer processes, and on Windows an occluded (not merely minimized)
+// window counts as hidden - so they are unverified insurance on Windows,
+// not load-bearing on Linux.
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+
 class KaiPlayerApp {
   constructor() {
     this.mainWindow = null;
@@ -273,6 +294,9 @@ class KaiPlayerApp {
         preload: path.join(__dirname, 'preload.js'),
         // Nothing here is prose worth checking (lyric lines are short).
         spellcheck: false,
+        // This window paints the karaoke canvas the projector and the WebRTC
+        // viewers consume, so it must keep rendering while minimized.
+        backgroundThrottling: false,
       },
       title: 'Loukai',
     };
@@ -421,6 +445,9 @@ class KaiPlayerApp {
         nodeIntegration: true,
         contextIsolation: false,
         spellcheck: false, // see the main window: avoids the gvt1.com dictionary fetch
+        // Keep the <video> presenting when this window is occluded by another
+        // app on the projector's display.
+        backgroundThrottling: false,
       },
       title: 'Canvas Window',
       show: false,
