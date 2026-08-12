@@ -2167,7 +2167,14 @@ class KaiPlayerApp {
       const port = await this.webServer.start(3069);
 
       log(`🌐 Web server started at http://localhost:${port}`);
-      log(`📱 Song requests available at: http://localhost:${port}`);
+      // The advertised address is what the QR code and singers' phones use; it
+      // differs from the local one when a proxy/tunnel override is configured.
+      const publicUrl = this.webServer.getServerUrl();
+      const localUrl = this.webServer.getLocalServerUrl();
+      log(`📱 Song requests available at: ${publicUrl || `http://localhost:${port}`}`);
+      if (publicUrl && publicUrl !== localUrl) {
+        log(`   (custom address; this server listens on ${localUrl})`);
+      }
 
       // Connect to Socket.IO server
       await this.connectToSocketServer(port);
