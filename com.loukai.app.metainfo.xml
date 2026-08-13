@@ -48,6 +48,15 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.13.2" date="2026-08-12">
+      <description>
+        <p>The custom QR address and the port setting now actually take effect</p>
+        <ul>
+          <li>The custom QR code address now updates the on-screen QR code and the Server tab as soon as it is saved, and reverts correctly when switched back off</li>
+          <li>The web server port setting is now saved and used (it was ignored, always starting on 3069); changing it takes effect after restarting the app</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.13.1" date="2026-08-12">
       <description>
         <p>Fixes the web pages failing to load when run with npx</p>
