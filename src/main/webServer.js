@@ -31,7 +31,7 @@ import { getCacheDir } from './creator/systemChecker.js';
 import { registerWebGpuAssets } from './creator/webgpuAssets.js';
 import multer from 'multer';
 import { forwardViewerEvent } from './handlers/streamingHandlers.js';
-import { resolvePublicUrl } from '../shared/utils/publicUrl.js';
+import { resolvePublicUrl, normalizePublicUrl } from '../shared/utils/publicUrl.js';
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -179,8 +179,11 @@ class WebServer {
             return callback(null, true);
           }
 
-          // Reject other origins
-          callback(new Error('CORS not allowed for this origin'));
+          // Deny by omitting the CORS headers rather than throwing. Throwing
+          // here becomes an Express 500 for the request itself, which took down
+          // the page's OWN same-origin script/style tags behind a tunnel — a
+          // blank app instead of a blocked cross-origin call.
+          callback(null, false);
         },
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -2728,6 +2731,22 @@ class WebServer {
       // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16
       if (this.isPrivateIP(hostname)) {
         return true;
+      }
+
+      // Allow the address the KJ configured as the public one (reverse proxy,
+      // tunnel, custom hostname). Without this, serving through a proxy fails:
+      // the browser sends the proxy's Origin, which matches neither localhost
+      // nor a LAN range. Compared by host, so the scheme/port of the setting
+      // does not have to match what the browser reports.
+      const publicUrl = normalizePublicUrl(this.settings?.publicUrl);
+      if (this.settings?.publicUrlEnabled && publicUrl) {
+        try {
+          if (new URL(publicUrl).hostname === hostname) {
+            return true;
+          }
+        } catch {
+          // unusable setting — fall through to reject
+        }
       }
 
       return false;
