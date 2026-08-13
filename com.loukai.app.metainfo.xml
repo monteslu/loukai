@@ -48,6 +48,14 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.13.3" date="2026-08-12">
+      <description>
+        <p>Fixes song requests when the app is behind a reverse proxy or tunnel</p>
+        <ul>
+          <li>Singers can now scan the QR code and browse and request songs when the app is reached through a reverse proxy or tunnel; the page and its requests previously failed with server errors</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.13.2" date="2026-08-12">
       <description>
         <p>The custom QR address and the port setting now actually take effect</p>
