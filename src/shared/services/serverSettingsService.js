@@ -77,6 +77,10 @@ export function loadSettings(webServer) {
         'server.requireKJApproval',
         webServer.defaultSettings.requireKJApproval
       );
+      savedSettings.port = webServer.mainApp.settings.get(
+        'server.port',
+        webServer.defaultSettings.port
+      );
       savedSettings.maxRequestsPerIP = webServer.mainApp.settings.get(
         'server.maxRequestsPerIP',
         webServer.defaultSettings.maxRequestsPerIP
@@ -125,6 +129,7 @@ export function saveSettings(webServer) {
         'server.requireKJApproval',
         webServer.settings.requireKJApproval
       );
+      webServer.mainApp.settings.set('server.port', webServer.settings.port);
       webServer.mainApp.settings.set(
         'server.maxRequestsPerIP',
         webServer.settings.maxRequestsPerIP

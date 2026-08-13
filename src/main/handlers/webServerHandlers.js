@@ -45,7 +45,15 @@ export function registerWebServerHandlers(mainApp) {
   // Update web server settings
   ipcMain.handle('webServer:updateSettings', (event, settings) => {
     if (mainApp.webServer) {
-      return serverSettingsService.updateServerSettings(mainApp.webServer, settings);
+      const result = serverSettingsService.updateServerSettings(mainApp.webServer, settings);
+      // The service broadcasts over Socket.IO, which reaches web admins and
+      // loops back through main's own socket — but that round trip is not
+      // guaranteed (the socket may not be connected yet), and settings saved
+      // from THIS renderer must update it regardless. Tell it directly.
+      if (result.success) {
+        mainApp.sendToRenderer('settings-update', result.settings);
+      }
+      return result;
     }
     return { success: false, error: 'Web server not available' };
   });
