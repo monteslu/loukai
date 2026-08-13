@@ -119,6 +119,14 @@ export function ServerTab({ bridge }) {
   const handleSaveSettings = async () => {
     try {
       await bridge.updateServerSettings(settings);
+      // Re-read the advertised URL immediately instead of waiting for the 5s
+      // poll: turning a custom address on OR off changes what this tab should
+      // show, and a stale URL/QR here reads as "the setting did not work".
+      const url = await bridge.getServerUrl();
+      setServerUrl(url);
+      if (url) {
+        generateQRCode(url, { width: 300 }).then(setQrCodeDataUrl).catch(console.error);
+      }
       showMessage('Settings saved successfully', 'success');
     } catch (error) {
       console.error('Failed to save settings:', error);

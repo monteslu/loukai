@@ -31,6 +31,7 @@ import { log } from './logger.js';
 
 log('📦 About to import registerAllHandlers...');
 import { registerAllHandlers } from './handlers/index.js';
+import { SERVER_DEFAULTS } from '../shared/defaults.js';
 log('✅ registerAllHandlers imported:', typeof registerAllHandlers);
 
 // ESM equivalent of __dirname
@@ -2164,7 +2165,16 @@ class KaiPlayerApp {
   async initializeWebServer() {
     try {
       this.webServer = new WebServer(this);
-      const port = await this.webServer.start(3069);
+      // Honor a configured port. This used to be hardcoded to 3069, so the port
+      // field in Server settings had no effect no matter what was saved.
+      // (webServer.settings is only populated once listen() succeeds, so read
+      // the persisted value directly here.)
+      const configuredPort = Number(this.settings?.get('server.port', SERVER_DEFAULTS.port));
+      const startPort =
+        Number.isInteger(configuredPort) && configuredPort > 0 && configuredPort < 65536
+          ? configuredPort
+          : SERVER_DEFAULTS.port;
+      const port = await this.webServer.start(startPort);
 
       log(`🌐 Web server started at http://localhost:${port}`);
       // The advertised address is what the QR code and singers' phones use; it
@@ -2284,8 +2294,10 @@ class KaiPlayerApp {
       this.webServer.settings = { ...this.webServer.settings, ...settings };
     }
 
-    // Send settings update to renderer to update UI
-    this.sendToRenderer('settings:update', settings);
+    // Send settings update to renderer to update UI. The channel is
+    // 'settings-update' (hyphen): App.jsx refreshes the canvas QR code on it,
+    // so a colon here silently stopped the QR from following a settings change.
+    this.sendToRenderer('settings-update', settings);
     log('🔧 Settings update sent to renderer');
   }
 

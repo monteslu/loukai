@@ -52,7 +52,9 @@ export function App({ bridge }) {
         const settings = await window.kaiAPI?.webServer?.getSettings?.();
         const showQrCode = settings?.showQrCode !== false; // Default to true
 
-        // Update both players
+        // Update both players. Push on every settings change, including when a
+        // custom address is switched OFF and `url` reverts to the LAN one — the
+        // QR has to be regenerated either way, not just when it first appears.
         const player = window.app?.player;
         if (player && url) {
           if (player.karaokeRenderer) {
