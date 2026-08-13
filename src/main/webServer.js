@@ -167,26 +167,33 @@ class WebServer {
   setupMiddleware() {
     // CORS configuration - restrict to localhost and LAN origins
     // Prevents malicious websites from making cross-origin requests
+    // Options *delegate* rather than a static object: deciding per request lets
+    // us see the Host/X-Forwarded-Host a proxy sent, which the plain
+    // `origin(origin, cb)` callback never receives.
     this.app.use(
-      cors({
-        origin: (origin, callback) => {
-          // Allow requests with no origin (same-origin, non-browser clients, curl, etc.)
-          if (!origin) {
-            return callback(null, true);
-          }
+      cors((req, callback) => {
+        const origin = req.headers.origin;
+        const allow =
+          // No origin at all: same-origin navigations, curl, non-browser clients.
+          !origin ||
+          this.isAllowedOrigin(origin) ||
+          // Same-origin through a proxy: a singer on https://karaoke.example.com
+          // sends that Origin, and the proxy forwards the matching Host. The
+          // request is not cross-origin from the browser's point of view, so
+          // rejecting it only breaks the singer's own page (browsing the library
+          // and submitting a request). A real cross-site attacker sends ITS
+          // origin with our host, so the two disagree and this does not fire.
+          this.isSameOriginViaProxy(origin, req);
 
-          if (this.isAllowedOrigin(origin)) {
-            return callback(null, true);
-          }
-
-          // Deny by omitting the CORS headers rather than throwing. Throwing
-          // here becomes an Express 500 for the request itself, which took down
-          // the page's OWN same-origin script/style tags behind a tunnel — a
-          // blank app instead of a blocked cross-origin call.
-          callback(null, false);
-        },
-        credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+        callback(null, {
+          // Deny by omitting the CORS headers, never by throwing: an Error here
+          // becomes an Express 500 for the request ITSELF, which took down the
+          // page's own same-origin script/style tags behind a tunnel (a blank
+          // app instead of a blocked cross-origin call).
+          origin: allow ? origin || true : false,
+          credentials: true,
+          methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+        });
       })
     );
     // Security headers. Cross-origin isolation (COOP + COEP) enables
@@ -2709,6 +2716,34 @@ class WebServer {
    * @param {string} origin - The origin to check
    * @returns {boolean} True if origin is allowed
    */
+  /**
+   * True when the Origin the browser sent matches the host this request arrived
+   * for — i.e. the page is talking to itself through a proxy or tunnel we do not
+   * otherwise know about. Compared host-to-host, preferring X-Forwarded-Host,
+   * so it holds whether or not the proxy rewrites Host.
+   *
+   * This is deliberately narrow: it grants nothing that the browser would not
+   * already treat as same-origin, and a cross-site request carries the
+   * attacker's origin against our host, which will not match.
+   */
+  isSameOriginViaProxy(origin, req) {
+    if (!origin || !req?.headers) return false;
+    try {
+      const originHost = new URL(origin).host; // host:port
+      const forwarded = req.headers['x-forwarded-host'];
+      const claimedHost = (Array.isArray(forwarded) ? forwarded[0] : forwarded || req.headers.host)
+        ?.split(',')[0]
+        ?.trim();
+      if (!claimedHost) return false;
+      // Compare hostname too, so a proxy that drops the port still matches.
+      const originName = new URL(origin).hostname;
+      const claimedName = claimedHost.split(':')[0];
+      return originHost === claimedHost || originName === claimedName;
+    } catch {
+      return false;
+    }
+  }
+
   isAllowedOrigin(origin) {
     if (!origin) return true;
 
