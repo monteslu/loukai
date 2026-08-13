@@ -550,7 +550,7 @@ export function SongRequestPage() {
         {/* Footer */}
         <footer className="mt-8 py-6 text-center">
           <a
-            href="https://loukai.app"
+            href="https://loukai.com"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors text-sm"

@@ -53,6 +53,7 @@
         <p>Fixes the web pages failing to load when run with npx</p>
         <ul>
           <li>Fixes the song request page and the whole web admin failing to load (server errors) when the app was started with "npx loukai-app"; installed desktop builds were unaffected</li>
+          <li>Fixes the "Powered by Loukai" link on the song request page pointing at the wrong domain</li>
         </ul>
       </description>
     </release>
