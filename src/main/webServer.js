@@ -37,6 +37,14 @@ import { resolvePublicUrl } from '../shared/utils/publicUrl.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// send/express refuse to serve a path containing a dot-segment ("dotfiles:
+// ignore" is the default), and every npx install lives under ~/.npm/_npx — so
+// the public request page and the whole admin SPA 404'd on any npx launch while
+// working fine from a normal checkout. These are our own bundled assets at
+// absolute paths we construct, not user-supplied input, so serving them is safe
+// regardless of what the install directory is named.
+const SEND_BUNDLED = { dotfiles: 'allow' };
+
 class WebServer {
   constructor(mainApp) {
     this.mainApp = mainApp;
@@ -225,29 +233,35 @@ class WebServer {
     );
 
     // Serve static files (shared between main app and web interface)
-    this.app.use('/static', express.static(path.join(__dirname, '../../static')));
+    this.app.use('/static', express.static(path.join(__dirname, '../../static'), SEND_BUNDLED));
 
     // Serve the Electron renderer over http://localhost/app so the main window
     // loads from an http origin (not file://). This is REQUIRED for the WebGPU
     // Creator: dynamic import() of the same-origin libs, cross-origin isolation,
     // and WASM threads (SharedArrayBuffer) only work on an http origin. index.html
     // uses relative dist/ + lib/ paths, so serving the whole renderer dir works.
-    this.app.use('/app', express.static(path.join(__dirname, '../renderer')));
+    this.app.use('/app', express.static(path.join(__dirname, '../renderer'), SEND_BUNDLED));
 
     // Serve Butterchurn libraries for the screenshot generator (both root and admin paths)
-    this.app.use('/lib', express.static(path.join(__dirname, '../renderer/lib')));
-    this.app.use('/admin/lib', express.static(path.join(__dirname, '../renderer/lib')));
+    this.app.use('/lib', express.static(path.join(__dirname, '../renderer/lib'), SEND_BUNDLED));
+    this.app.use(
+      '/admin/lib',
+      express.static(path.join(__dirname, '../renderer/lib'), SEND_BUNDLED)
+    );
 
     // Serve Butterchurn effect screenshots
     this.app.use(
       '/screenshots',
-      express.static(path.join(__dirname, '../../static/images/butterchurn-screenshots'))
+      express.static(
+        path.join(__dirname, '../../static/images/butterchurn-screenshots'),
+        SEND_BUNDLED
+      )
     );
 
     // Serve React web UI build (production)
     const webDistPath = path.join(__dirname, '../web/dist');
     if (fs.existsSync(webDistPath)) {
-      this.app.use('/admin', express.static(webDistPath));
+      this.app.use('/admin', express.static(webDistPath, SEND_BUNDLED));
     }
 
     // Rate limiting middleware - store clientIP for request tracking
@@ -304,7 +318,7 @@ class WebServer {
       const webDistPath = path.join(__dirname, '../web/dist');
       const indexPath = path.join(webDistPath, 'index.html');
       if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
+        res.sendFile(indexPath, SEND_BUNDLED);
       } else {
         res.status(404).send('Web UI not built. Run: npm run build:web');
       }
@@ -397,7 +411,7 @@ class WebServer {
       }
     };
     this.app.get('/viewer', requireAuthOrRedirect, (req, res) => {
-      res.sendFile(path.join(__dirname, '../../static/viewer.html'));
+      res.sendFile(path.join(__dirname, '../../static/viewer.html'), SEND_BUNDLED);
     });
 
     // Get available letters for alphabet navigation
@@ -721,7 +735,7 @@ class WebServer {
 
     // Screenshot generator utility (admin only - no linking from user interface)
     this.app.get('/admin/screenshot-generator', (req, res) => {
-      res.sendFile(path.join(__dirname, '../../static/screenshot-generator.html'));
+      res.sendFile(path.join(__dirname, '../../static/screenshot-generator.html'), SEND_BUNDLED);
     });
 
     // Butterchurn screenshot API - case insensitive filename matching
@@ -740,7 +754,7 @@ class WebServer {
         // First try exact match
         const exactPath = path.join(screenshotsDir, sanitizedName);
         if (fs.existsSync(exactPath)) {
-          return res.sendFile(exactPath);
+          return res.sendFile(exactPath, SEND_BUNDLED);
         }
 
         // If exact match fails, try case-insensitive search
@@ -751,7 +765,7 @@ class WebServer {
 
         if (matchingFile) {
           const matchedPath = path.join(screenshotsDir, matchingFile);
-          return res.sendFile(matchedPath);
+          return res.sendFile(matchedPath, SEND_BUNDLED);
         }
 
         // No match found
@@ -2286,7 +2300,7 @@ class WebServer {
       const webDistPath = path.join(__dirname, '../web/dist');
       const indexPath = path.join(webDistPath, 'index.html');
       if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
+        res.sendFile(indexPath, SEND_BUNDLED);
       } else {
         res.status(404).send('Web UI not built. Run: cd src/web && npm run build');
       }
