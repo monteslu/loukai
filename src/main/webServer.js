@@ -334,6 +334,21 @@ class WebServer {
       }
     });
 
+    // Kiosk page (React app - public, opt-in). Same bundle as `/`; the client
+    // routes on the path. Gated so the URL simply does not exist unless the KJ
+    // enabled it, rather than being a hidden-but-reachable page.
+    this.app.get(/^\/kiosk(\/.*)?$/, (req, res) => {
+      if (!this.settings.kioskEnabled) {
+        return res.status(404).send('Kiosk mode is not enabled.');
+      }
+      const indexPath = path.join(__dirname, '../web/dist', 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath, SEND_BUNDLED);
+      } else {
+        res.status(404).send('Web UI not built. Run: npm run build:web');
+      }
+    });
+
     // Check if admin password is set
     this.app.get('/admin/check-auth', (req, res) => {
       try {
@@ -792,6 +807,7 @@ class WebServer {
         serverName: this.settings.serverName,
         allowRequests: this.settings.allowSongRequests,
         requireApproval: this.settings.requireKJApproval,
+        kioskEnabled: Boolean(this.settings.kioskEnabled),
       });
     });
 

@@ -67,6 +67,16 @@ describe('serverSettingsService persistence', () => {
     expect(webServer.settings.showQrCode).toBe(SERVER_DEFAULTS.showQrCode);
   });
 
+  it('defaults kiosk mode to off', () => {
+    expect(loadSettings(webServer).kioskEnabled).toBe(false);
+  });
+
+  it('saves and reloads the kiosk setting', () => {
+    updateServerSettings(webServer, { kioskEnabled: true });
+    expect(webServer._store['server.kioskEnabled']).toBe(true);
+    expect(loadSettings(makeWebServer(webServer._store)).kioskEnabled).toBe(true);
+  });
+
   it('falls back to defaults when no settings manager exists', () => {
     const loaded = loadSettings({ defaultSettings: { ...SERVER_DEFAULTS } });
     expect(loaded).toEqual(SERVER_DEFAULTS);

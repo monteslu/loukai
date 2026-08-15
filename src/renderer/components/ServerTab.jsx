@@ -20,6 +20,7 @@ export function ServerTab({ bridge }) {
     displayQueue: true,
     publicUrlEnabled: false,
     publicUrl: '',
+    kioskEnabled: false,
   });
   const [adminPassword, setAdminPassword] = useState('');
   const [hasPassword, setHasPassword] = useState(false);
@@ -78,6 +79,7 @@ export function ServerTab({ bridge }) {
             displayQueue: serverSettings.displayQueue !== false,
             publicUrlEnabled: serverSettings.publicUrlEnabled === true,
             publicUrl: serverSettings.publicUrl || '',
+            kioskEnabled: serverSettings.kioskEnabled === true,
           });
         }
 
@@ -377,6 +379,27 @@ export function ServerTab({ bridge }) {
                 />
                 <span className="text-gray-900 dark:text-gray-100">Display queue</span>
               </label>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  id="kioskEnabled"
+                  className="w-4 h-4 mr-2 cursor-pointer"
+                  checked={settings.kioskEnabled}
+                  onChange={(e) => handleSettingChange('kioskEnabled', e.target.checked)}
+                />
+                <span className="text-gray-900 dark:text-gray-100">
+                  Enable kiosk page (shared tablet)
+                </span>
+              </label>
+              {settings.kioskEnabled && serverUrl && (
+                <span className="ml-6 text-xs text-gray-600 dark:text-gray-400">
+                  Open <span className="font-mono">{serverUrl}/kiosk</span> on the shared device.
+                  Every request asks who is singing, and nothing is remembered between them.
+                </span>
+              )}
             </div>
 
             <div className="flex flex-col gap-2">
