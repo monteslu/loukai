@@ -101,6 +101,10 @@ export function loadSettings(webServer) {
         'server.publicUrl',
         webServer.defaultSettings.publicUrl
       );
+      savedSettings.kioskEnabled = webServer.mainApp.settings.get(
+        'server.kioskEnabled',
+        webServer.defaultSettings.kioskEnabled
+      );
     }
 
     const finalSettings = { ...webServer.defaultSettings, ...savedSettings };
@@ -141,6 +145,7 @@ export function saveSettings(webServer) {
         webServer.settings.publicUrlEnabled
       );
       webServer.mainApp.settings.set('server.publicUrl', webServer.settings.publicUrl);
+      webServer.mainApp.settings.set('server.kioskEnabled', webServer.settings.kioskEnabled);
       console.log('🔧 Server settings saved to persistent storage');
       return true;
     } else {

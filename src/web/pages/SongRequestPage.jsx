@@ -4,7 +4,18 @@ import { getFormatIcon, formatDuration } from '../../shared/formatUtils.js';
 import { Toast } from '../../shared/components/Toast.jsx';
 import { ThemeToggle } from '../../shared/components/ThemeToggle.jsx';
 
-export function SongRequestPage() {
+/**
+ * The public song-request page, in two modes.
+ *
+ * Personal (default, at `/`): one phone, one singer. The name is asked once and
+ * remembered in localStorage.
+ *
+ * Kiosk (at `/kiosk`): a shared device — a tablet on the KJ's booth — where the
+ * next person to touch it is somebody else. Nothing is remembered: there is no
+ * up-front name gate, and every submission asks who is singing, so a request can
+ * never be filed under the previous person's name.
+ */
+export function SongRequestPage({ kiosk = false }) {
   const [userName, setUserName] = useState(null);
   const [nameInput, setNameInput] = useState('');
   const [serverName, setServerName] = useState('Loukai Karaoke');
@@ -21,6 +32,7 @@ export function SongRequestPage() {
   const [selectedSong, setSelectedSong] = useState(null);
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [requestMessage, setRequestMessage] = useState('');
+  const [kioskName, setKioskName] = useState('');
   const [toast, setToast] = useState(null);
 
   const socketRef = useRef(null);
@@ -30,13 +42,15 @@ export function SongRequestPage() {
     setToast({ message, type });
   };
 
-  // Load user name from localStorage on mount
+  // Load user name from localStorage on mount. Never in kiosk mode: a shared
+  // device must not carry the last singer's name into the next request.
   useEffect(() => {
+    if (kiosk) return;
     const storedName = localStorage.getItem('karaoke-user-name');
     if (storedName && storedName.trim()) {
       setUserName(storedName.trim());
     }
-  }, []);
+  }, [kiosk]);
 
   // Initialize socket connection
   useEffect(() => {
@@ -51,9 +65,13 @@ export function SongRequestPage() {
     };
   }, []);
 
-  // Load server info when user is set
+  // Browsing is gated on having a name only in personal mode; the kiosk shows
+  // the library immediately and asks who is singing at submit time.
+  const canBrowse = kiosk || Boolean(userName);
+
+  // Load server info once we're allowed to browse
   useEffect(() => {
-    if (!userName) return;
+    if (!canBrowse) return;
 
     fetch('/api/info')
       .then((res) => res.json())
@@ -63,11 +81,11 @@ export function SongRequestPage() {
         document.title = `${info.serverName || 'Karaoke'} - Song Requests`;
       })
       .catch((err) => console.error('Failed to load server info:', err));
-  }, [userName]);
+  }, [canBrowse]);
 
-  // Load available letters when user is set
+  // Load available letters
   useEffect(() => {
-    if (!userName) return;
+    if (!canBrowse) return;
 
     fetch('/api/letters')
       .then((res) => res.json())
@@ -80,11 +98,11 @@ export function SongRequestPage() {
         }
       })
       .catch((err) => console.error('Failed to load letters:', err));
-  }, [userName]);
+  }, [canBrowse]);
 
   // Load queue periodically
   useEffect(() => {
-    if (!userName) return;
+    if (!canBrowse) return;
 
     const loadQueue = () => {
       fetch('/api/queue')
@@ -96,7 +114,7 @@ export function SongRequestPage() {
     loadQueue();
     const interval = setInterval(loadQueue, 10000);
     return () => clearInterval(interval);
-  }, [userName]);
+  }, [canBrowse]);
 
   // Quick search handler
   useEffect(() => {
@@ -155,7 +173,9 @@ export function SongRequestPage() {
     const name = nameInput.trim();
     if (name) {
       setUserName(name);
-      localStorage.setItem('karaoke-user-name', name);
+      if (!kiosk) {
+        localStorage.setItem('karaoke-user-name', name);
+      }
     }
   };
 
@@ -163,11 +183,21 @@ export function SongRequestPage() {
     if (!allowRequests) return;
     setSelectedSong(song);
     setRequestMessage('');
+    // Kiosk: start every request with an empty name field. Not carrying the
+    // previous singer's name forward is the whole point of this mode.
+    if (kiosk) setKioskName('');
     setShowRequestModal(true);
   };
 
   const submitRequest = async () => {
     if (!selectedSong) return;
+
+    // Kiosk supplies the name per request; personal mode uses the stored one.
+    const requesterName = (kiosk ? kioskName : userName || '').trim();
+    if (!requesterName) {
+      showToast('Please enter your name', 'error');
+      return;
+    }
 
     try {
       const res = await fetch('/api/request', {
@@ -175,7 +205,7 @@ export function SongRequestPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           songId: selectedSong.id,
-          requesterName: userName,
+          requesterName,
           message: requestMessage,
         }),
       });
@@ -185,7 +215,9 @@ export function SongRequestPage() {
         setShowRequestModal(false);
         setSelectedSong(null);
         setRequestMessage('');
-        showToast(data.message || 'Request submitted!', 'success');
+        // Forget the name immediately so the device is clean for the next person.
+        if (kiosk) setKioskName('');
+        showToast(data.message || `Request submitted for ${requesterName}!`, 'success');
       } else {
         const error = await res.json();
         showToast(error.error || 'Request failed', 'error');
@@ -248,8 +280,8 @@ export function SongRequestPage() {
 
   const allLetters = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), '#'];
 
-  // Name prompt modal
-  if (!userName) {
+  // Name prompt modal (personal mode only — the kiosk asks per request)
+  if (!kiosk && !userName) {
     return (
       <div className="fixed top-0 left-0 w-full h-full bg-black/90 flex items-center justify-center z-[1000]">
         <div className="bg-white dark:bg-gray-800 rounded-xl p-8 max-w-md w-[90%] text-center border border-gray-300 dark:border-gray-600">
@@ -289,7 +321,11 @@ export function SongRequestPage() {
           <ThemeToggle />
         </div>
         <h1 className="m-0 mb-2 text-4xl text-gray-900 dark:text-white">{serverName}</h1>
-        <div className="text-gray-600 dark:text-gray-400 text-lg">Request your favorite songs!</div>
+        <div className="text-gray-600 dark:text-gray-400 text-lg">
+          {kiosk
+            ? 'Pick a song — you’ll enter your name when you request it'
+            : 'Request your favorite songs!'}
+        </div>
       </div>
 
       <div className="max-w-6xl mx-auto p-5">
@@ -579,12 +615,31 @@ export function SongRequestPage() {
             </div>
 
             <div className="mb-5">
-              <label className="block mb-2 text-gray-600 dark:text-gray-300 text-sm">
-                Your Name
+              <label
+                className="block mb-2 text-gray-600 dark:text-gray-300 text-sm"
+                htmlFor="kiosk-singer-name"
+              >
+                {kiosk ? 'Who is singing?' : 'Your Name'}
               </label>
-              <div className="px-3 py-2 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white font-medium">
-                {userName}
-              </div>
+              {kiosk ? (
+                <input
+                  id="kiosk-singer-name"
+                  type="text"
+                  className="w-full px-3 py-3 bg-gray-100 dark:bg-gray-900 border-2 border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white text-lg focus:outline-none focus:border-blue-600 dark:focus:border-blue-500"
+                  placeholder="Enter your name..."
+                  maxLength={50}
+                  value={kioskName}
+                  onChange={(e) => setKioskName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && kioskName.trim()) submitRequest();
+                  }}
+                  autoFocus
+                />
+              ) : (
+                <div className="px-3 py-2 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white font-medium">
+                  {userName}
+                </div>
+              )}
             </div>
 
             <div className="mb-5">
@@ -604,7 +659,11 @@ export function SongRequestPage() {
               <button className="btn btn-secondary" onClick={() => setShowRequestModal(false)}>
                 Cancel
               </button>
-              <button className="btn btn-primary" onClick={submitRequest}>
+              <button
+                className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={submitRequest}
+                disabled={kiosk && !kioskName.trim()}
+              >
                 Submit Request
               </button>
             </div>

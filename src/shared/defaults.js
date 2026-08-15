@@ -63,6 +63,10 @@ export const SERVER_DEFAULTS = {
   // publicUrl is a valid absolute http(s) URL.
   publicUrlEnabled: false,
   publicUrl: '',
+  // Kiosk page at /kiosk: a shared device (tablet at the KJ booth) where every
+  // submission asks for a name, since the next person to touch it is somebody
+  // else. Off by default — /kiosk 404s unless the KJ turns it on.
+  kioskEnabled: false,
 };
 
 export const LLM_DEFAULTS = {

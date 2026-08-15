@@ -91,6 +91,9 @@ export function App() {
     setIsAdminPath(window.location.pathname.startsWith('/admin'));
   }, []);
 
+  // /kiosk serves the same bundle as /, in shared-device mode.
+  const isKioskPath = window.location.pathname.startsWith('/kiosk');
+
   // Check authentication on mount (only for admin path)
   useEffect(() => {
     if (!isAdminPath) {
@@ -363,7 +366,7 @@ export function App() {
 
   // Show public song request page if not on admin path
   if (!isAdminPath) {
-    return <SongRequestPage />;
+    return <SongRequestPage kiosk={isKioskPath} />;
   }
 
   // Admin path only - check authentication
