@@ -294,6 +294,35 @@ describe('libraryService', () => {
         'I Shot The Sheriff'
       );
     });
+
+    // These are the cases the in-app library search used to fail outright,
+    // because it was a literal substring filter rather than this function.
+    // Each returned ZERO rows against a real 22k library.
+    it('tolerates a typo in the artist', () => {
+      expect(libraryService.searchSongList(songs, 'marly', 10)[0].title).toBe('I Shot The Sheriff');
+    });
+
+    it('tolerates a typo in the title', () => {
+      expect(libraryService.searchSongList(songs, 'dancing quen', 10)[0].title).toBe(
+        'Dancing Queen'
+      );
+    });
+
+    it('matches artist and title together, in either order', () => {
+      expect(libraryService.searchSongList(songs, 'abba dancing', 10)[0].title).toBe(
+        'Dancing Queen'
+      );
+      expect(libraryService.searchSongList(songs, 'dancing abba', 10)[0].title).toBe(
+        'Dancing Queen'
+      );
+    });
+
+    it('matches on album', () => {
+      expect(libraryService.searchSongList(songs, 'arrival', 10)[0].title).toBe('Dancing Queen');
+      expect(libraryService.searchSongList(songs, 'burnin', 10)[0].title).toBe(
+        'I Shot The Sheriff'
+      );
+    });
   });
 
   describe('searchSongs', () => {

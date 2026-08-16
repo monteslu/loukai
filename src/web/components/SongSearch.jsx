@@ -2,6 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { getFormatIcon, formatDuration } from '../../shared/formatUtils.js';
 import { Tooltip } from '../../shared/components/Tooltip.jsx';
 
+/** Match the desktop quick-search dropdown; the list scrolls. */
+const SEARCH_LIMIT = 50;
+
 export function SongSearch({ onAddToQueue }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState([]);
@@ -34,7 +37,7 @@ export function SongSearch({ onAddToQueue }) {
         setLoading(true);
         try {
           const response = await fetch(
-            `/api/songs?search=${encodeURIComponent(searchTerm)}&limit=20`,
+            `/api/songs?search=${encodeURIComponent(searchTerm)}&limit=${SEARCH_LIMIT}`,
             { credentials: 'include' }
           );
           const data = await response.json();

@@ -12,6 +12,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getFormatIcon, formatDuration } from '../formatUtils.js';
 import { Tooltip } from './Tooltip.jsx';
+import { searchSongList } from '../services/libraryService.js';
 
 function SongInfoModal({ song, onClose }) {
   if (!song) return null;
@@ -319,16 +320,11 @@ export function LibraryPanel({ bridge, showSetFolder = false, showFullRefresh = 
       return;
     }
 
-    const searchLower = term.toLowerCase();
-    const results = songs.filter((song) => {
-      return (
-        (song.title || '').toLowerCase().includes(searchLower) ||
-        (song.artist || '').toLowerCase().includes(searchLower) ||
-        (song.album || '').toLowerCase().includes(searchLower)
-      );
-    });
-
-    setFilteredSongs(results);
+    // THE shared search (same ranking as quick search, the web page and the
+    // phone). This used to be a literal substring filter, which returned
+    // nothing at all for a typo, for words in a different order, or for an
+    // artist+title query like "queen bohemian".
+    setFilteredSongs(searchSongList(songs, term));
   };
 
   const handleSetFolder = async () => {
