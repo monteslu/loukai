@@ -4,6 +4,9 @@ import { getFormatIcon, formatDuration } from '../../shared/formatUtils.js';
 import { Toast } from '../../shared/components/Toast.jsx';
 import { ThemeToggle } from '../../shared/components/ThemeToggle.jsx';
 
+/** Rows offered in the quick-search dropdown (it scrolls). 8 buried real hits. */
+const QUICK_SEARCH_LIMIT = 50;
+
 /**
  * The public song-request page, in two modes.
  *
@@ -126,7 +129,9 @@ export function SongRequestPage({ kiosk = false }) {
 
     const search = async () => {
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(quickSearchTerm)}`);
+        const res = await fetch(
+          `/api/search?q=${encodeURIComponent(quickSearchTerm)}&limit=${QUICK_SEARCH_LIMIT}`
+        );
         const data = await res.json();
         setQuickSearchResults(data.results || []);
         setShowQuickSearch(true);
@@ -353,7 +358,7 @@ export function SongRequestPage({ kiosk = false }) {
                   No songs found
                 </div>
               ) : (
-                quickSearchResults.slice(0, 8).map((song) => (
+                quickSearchResults.map((song) => (
                   <div
                     key={song.id}
                     className="p-3.5 cursor-pointer border-b border-gray-200 dark:border-gray-600 flex justify-between items-start gap-3 transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 last:border-b-0"

@@ -7,6 +7,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { getFormatIcon } from '../formatUtils.js';
 import { Tooltip } from './Tooltip.jsx';
 
+/** Rows offered in the quick-search dropdown (it scrolls). */
+const QUICK_SEARCH_LIMIT = 50;
+
 export function QuickSearch({ bridge, requester = 'KJ' }) {
   const [searchResults, setSearchResults] = useState([]);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
@@ -27,7 +30,10 @@ export function QuickSearch({ bridge, requester = 'KJ' }) {
     try {
       const result = await bridge.searchSongs(value);
       const songs = result.songs || [];
-      setSearchResults(songs.slice(0, 8)); // Limit to 8 results
+      // 8 was far too few on a real library: a common artist buries the song you
+      // actually want past the cutoff. The dropdown scrolls (max-h-80), so a
+      // larger slice costs nothing but gives the ranking room to be useful.
+      setSearchResults(songs.slice(0, QUICK_SEARCH_LIMIT));
       setShowSearchDropdown(true);
     } catch (error) {
       console.error('Quick search error:', error);
