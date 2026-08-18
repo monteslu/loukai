@@ -48,6 +48,16 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.14.0" date="2026-08-18">
+      <description>
+        <p>A kiosk page for a shared tablet, and song search that actually finds the song</p>
+        <ul>
+          <li>NEW: an optional kiosk page for a device everyone shares, such as a tablet on the KJ booth - it never remembers a name, so every request asks who is singing and nobody gets queued under the last person's name (Server settings, off by default)</li>
+          <li>Library search in the app now finds songs it used to miss entirely: typos, words in a different order, and artist-plus-title queries like "queen bohemian" all match, because every search box in the app now uses the same ranking as the singer page</li>
+          <li>Search results are no longer cut off at 8 rows, so the song you wanted stops getting dropped before it can be shown on a large library</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.13.3" date="2026-08-12">
       <description>
         <p>Fixes song requests when the app is behind a reverse proxy or tunnel</p>
