@@ -98,7 +98,7 @@ export function PlayerControls({
     <div
       className={`bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4 ${className}`}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center flex-wrap gap-3">
         {/* Transport Controls */}
         <Tooltip text="Restart Track">
           <button
@@ -143,8 +143,8 @@ export function PlayerControls({
           </button>
         </Tooltip>
 
-        {/* Progress Bar */}
-        <div className="flex-1 mx-4">
+        {/* Progress Bar: full width on its own line once the row wraps on narrow screens */}
+        <div className="order-last basis-full sm:order-none sm:basis-auto flex-1 mx-0 sm:mx-4 mt-2 sm:mt-0">
           <div
             className="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full cursor-pointer"
             onClick={handleProgressClick}

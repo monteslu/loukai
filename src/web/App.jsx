@@ -85,6 +85,7 @@ export function App() {
   const [effectsCategory, setEffectsCategory] = useState('all');
   const [waveformSettings, setWaveformSettings] = useState(null);
   const [autotuneSettings, setAutotuneSettings] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Check if we're on the admin path
   useEffect(() => {
@@ -364,6 +365,21 @@ export function App() {
     action.catch((err) => console.error('Toggle effect failed:', err));
   };
 
+  const pendingRequestCount = requests.filter((r) => r.status === 'pending').length;
+  const TABS = [
+    { id: 'queue', icon: '🎵', label: 'Queue' },
+    { id: 'library', icon: '📚', label: 'Library' },
+    { id: 'mixer', icon: '🎛️', label: 'Audio' },
+    { id: 'effects', icon: '✨', label: 'Effects' },
+    { id: 'requests', icon: '🎤', label: 'Requests', count: pendingRequestCount },
+    { id: 'editor', icon: '✏️', label: 'Edit' },
+    { id: 'create', icon: '⚡', label: 'Create' },
+  ];
+  const selectTab = (tabId) => {
+    setCurrentTab(tabId);
+    setMobileMenuOpen(false);
+  };
+
   // Show public song request page if not on admin path
   if (!isAdminPath) {
     return <SongRequestPage kiosk={isKioskPath} />;
@@ -384,101 +400,83 @@ export function App() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
-      <header className="flex justify-between items-center px-6 py-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <img src="/static/loukai-logo.png" alt="Loukai" className="w-8 h-8 rounded-lg" />
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Loukai Admin</h1>
+      <header className="flex justify-between items-center px-4 sm:px-6 py-3 sm:py-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          {/* Hamburger: only below sm, where the tab row (below) is hidden */}
+          <button
+            className="sm:hidden p-1.5 -ml-1 flex items-center justify-center text-gray-700 dark:text-gray-300 flex-shrink-0"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            aria-label="Toggle menu"
+            aria-expanded={mobileMenuOpen}
+          >
+            <span className="material-icons">{mobileMenuOpen ? 'close' : 'menu'}</span>
+          </button>
+          <img
+            src="/static/loukai-logo.png"
+            alt="Loukai"
+            className="w-8 h-8 rounded-lg flex-shrink-0"
+          />
+          <h1 className="text-lg sm:text-2xl font-semibold text-gray-900 dark:text-white truncate">
+            Loukai Admin
+          </h1>
         </div>
-        <button className="btn btn-sm" onClick={handleLogout}>
+        <button className="btn btn-sm flex-shrink-0" onClick={handleLogout}>
           Logout
         </button>
       </header>
 
       <SongInfoBar currentSong={currentSong} />
 
-      <div className="flex bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-        <button
-          className={`relative px-6 py-3 border-b-2 transition-colors font-medium flex items-center gap-2 ${
-            currentTab === 'queue'
-              ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400 bg-gray-50 dark:bg-gray-900'
-              : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-          }`}
-          onClick={() => setCurrentTab('queue')}
-        >
-          🎵 Queue
-        </button>
-        <button
-          className={`relative px-6 py-3 border-b-2 transition-colors font-medium flex items-center gap-2 ${
-            currentTab === 'library'
-              ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400 bg-gray-50 dark:bg-gray-900'
-              : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-          }`}
-          onClick={() => setCurrentTab('library')}
-        >
-          📚 Library
-        </button>
-        <button
-          className={`relative px-6 py-3 border-b-2 transition-colors font-medium flex items-center gap-2 ${
-            currentTab === 'mixer'
-              ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400 bg-gray-50 dark:bg-gray-900'
-              : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-          }`}
-          onClick={() => setCurrentTab('mixer')}
-        >
-          🎛️ Audio
-        </button>
-        <button
-          className={`relative px-6 py-3 border-b-2 transition-colors font-medium flex items-center gap-2 ${
-            currentTab === 'effects'
-              ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400 bg-gray-50 dark:bg-gray-900'
-              : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-          }`}
-          onClick={() => setCurrentTab('effects')}
-        >
-          ✨ Effects
-        </button>
-        <button
-          className={`relative px-6 py-3 border-b-2 transition-colors font-medium flex items-center gap-2 ${
-            currentTab === 'requests'
-              ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400 bg-gray-50 dark:bg-gray-900'
-              : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-          }`}
-          onClick={() => setCurrentTab('requests')}
-        >
-          🎤 Requests
-          {requests.filter((r) => r.status === 'pending').length > 0 && (
-            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 bg-red-600 text-white rounded-full text-xs font-semibold">
-              {requests.filter((r) => r.status === 'pending').length}
-            </span>
-          )}
-        </button>
-        <button
-          className={`relative px-6 py-3 border-b-2 transition-colors font-medium flex items-center gap-2 ${
-            currentTab === 'editor'
-              ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400 bg-gray-50 dark:bg-gray-900'
-              : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-          }`}
-          onClick={() => setCurrentTab('editor')}
-        >
-          ✏️ Edit
-        </button>
-        <button
-          className={`relative px-6 py-3 border-b-2 transition-colors font-medium flex items-center gap-2 ${
-            currentTab === 'create'
-              ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400 bg-gray-50 dark:bg-gray-900'
-              : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-          }`}
-          onClick={() => setCurrentTab('create')}
-        >
-          ⚡ Create
-        </button>
+      {/* Phone: hamburger dropdown. sm and up: normal tab row (hamburger button is hidden there). */}
+      {mobileMenuOpen && (
+        <div className="sm:hidden flex flex-col bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              className={`px-4 py-3 text-left font-medium flex items-center gap-2 ${
+                currentTab === tab.id
+                  ? 'text-blue-600 dark:text-blue-400 bg-gray-50 dark:bg-gray-900'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+              }`}
+              onClick={() => selectTab(tab.id)}
+            >
+              {tab.icon} {tab.label}
+              {Boolean(tab.count) && (
+                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 bg-red-600 text-white rounded-full text-xs font-semibold">
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="hidden sm:flex overflow-x-auto bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            className={`relative px-6 py-3 border-b-2 transition-colors font-medium flex items-center gap-2 whitespace-nowrap ${
+              currentTab === tab.id
+                ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400 bg-gray-50 dark:bg-gray-900'
+                : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
+            }`}
+            onClick={() => selectTab(tab.id)}
+          >
+            {tab.icon} {tab.label}
+            {Boolean(tab.count) && (
+              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 bg-red-600 text-white rounded-full text-xs font-semibold">
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       <main className="flex-1 min-h-0 overflow-hidden flex flex-col">
         <div
           className={`${currentTab === 'queue' ? 'flex' : 'hidden'} flex-col h-full gap-4 p-4 overflow-auto`}
         >
-          <div className="flex flex-col gap-4 h-full overflow-hidden">
+          <div className="flex flex-col gap-4 h-full sm:overflow-hidden">
             <div className="w-full flex-shrink-0">
               <PlayerControls
                 playback={playback}
@@ -497,8 +495,8 @@ export function App() {
                 onKeyShift={(n) => bridge.setKeyShift(n)}
               />
             </div>
-            <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">
-              <div className="w-[300px] flex-shrink-0 overflow-y-auto p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="flex flex-col sm:flex-row gap-4 flex-1 min-h-0 overflow-auto sm:overflow-hidden">
+              <div className="w-full sm:w-[300px] flex-shrink-0 sm:overflow-y-auto p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
                 <VisualizationSettings
                   bridge={bridge}
                   waveformSettings={waveformSettings}
@@ -507,7 +505,7 @@ export function App() {
                   onAutotuneChange={setAutotuneSettings}
                 />
               </div>
-              <div className="flex-1 flex flex-col min-w-0 overflow-auto">
+              <div className="flex-1 flex flex-col min-w-0 min-h-0 sm:overflow-auto">
                 <QuickSearch bridge={bridge} requester="Web Admin" />
 
                 <QueueList
