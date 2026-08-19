@@ -86,6 +86,21 @@ export function App() {
   const [waveformSettings, setWaveformSettings] = useState(null);
   const [autotuneSettings, setAutotuneSettings] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // Same hide-the-settings-sidebar affordance the Electron renderer has
+  // (SongInfoBarWrapper), so the queue isn't stuck behind it on a phone.
+  // Defaults collapsed there's no saved choice yet, so the queue is visible
+  // on first load instead of requiring a tap to get to it.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const saved = localStorage.getItem('adminSidebarCollapsed');
+    return saved === null ? true : saved === 'true';
+  });
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('adminSidebarCollapsed', String(next));
+      return next;
+    });
+  };
 
   // Check if we're on the admin path
   useEffect(() => {
@@ -425,7 +440,11 @@ export function App() {
         </button>
       </header>
 
-      <SongInfoBar currentSong={currentSong} />
+      <SongInfoBar
+        currentSong={currentSong}
+        onMenuClick={toggleSidebar}
+        sidebarCollapsed={sidebarCollapsed}
+      />
 
       {/* Phone: hamburger dropdown. sm and up: normal tab row (hamburger button is hidden there). */}
       {mobileMenuOpen && (
@@ -496,15 +515,17 @@ export function App() {
               />
             </div>
             <div className="flex flex-col sm:flex-row gap-4 flex-1 min-h-0 overflow-auto sm:overflow-hidden">
-              <div className="w-full sm:w-[300px] flex-shrink-0 sm:overflow-y-auto p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                <VisualizationSettings
-                  bridge={bridge}
-                  waveformSettings={waveformSettings}
-                  autotuneSettings={autotuneSettings}
-                  onWaveformChange={setWaveformSettings}
-                  onAutotuneChange={setAutotuneSettings}
-                />
-              </div>
+              {!sidebarCollapsed && (
+                <div className="w-full sm:w-[300px] flex-shrink-0 sm:overflow-y-auto p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <VisualizationSettings
+                    bridge={bridge}
+                    waveformSettings={waveformSettings}
+                    autotuneSettings={autotuneSettings}
+                    onWaveformChange={setWaveformSettings}
+                    onAutotuneChange={setAutotuneSettings}
+                  />
+                </div>
+              )}
               <div className="flex-1 flex flex-col min-w-0 min-h-0 sm:overflow-auto">
                 <QuickSearch bridge={bridge} requester="Web Admin" />
 

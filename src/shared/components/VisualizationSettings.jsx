@@ -11,8 +11,6 @@
 import React, { useState, useEffect } from 'react';
 import { WAVEFORM_DEFAULTS, AUTOTUNE_DEFAULTS } from '../defaults.js';
 
-const DISPLAY_OPTIONS_COLLAPSED_KEY = 'displayOptionsCollapsed';
-
 export function VisualizationSettings({
   bridge,
   waveformSettings: externalWaveform = null,
@@ -26,18 +24,6 @@ export function VisualizationSettings({
     ...AUTOTUNE_DEFAULTS,
     preferVocals: true,
   });
-
-  const [displayOptionsCollapsed, setDisplayOptionsCollapsed] = useState(
-    () => localStorage.getItem(DISPLAY_OPTIONS_COLLAPSED_KEY) === 'true'
-  );
-
-  const toggleDisplayOptions = () => {
-    setDisplayOptionsCollapsed((prev) => {
-      const next = !prev;
-      localStorage.setItem(DISPLAY_OPTIONS_COLLAPSED_KEY, String(next));
-      return next;
-    });
-  };
 
   // Load preferences on mount
   useEffect(() => {
@@ -132,89 +118,75 @@ export function VisualizationSettings({
     <div className="p-4 space-y-6">
       {/* Waveform Options */}
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
-        <button
-          type="button"
-          onClick={toggleDisplayOptions}
-          className="w-full flex items-center justify-between text-left"
-          aria-expanded={!displayOptionsCollapsed}
-        >
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            Display Options
-          </h3>
-          <span className="material-icons text-gray-500 dark:text-gray-400">
-            {displayOptionsCollapsed ? 'expand_more' : 'expand_less'}
-          </span>
-        </button>
-        {!displayOptionsCollapsed && (
-          <div className="space-y-3">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={waveformSettings.enableWaveforms}
-                onChange={(e) => handleWaveformChange('enableWaveforms', e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-              />
-              <span className="text-gray-900 dark:text-gray-100">Enable Waveforms</span>
-            </label>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Display Options</h3>
+        <div className="space-y-3">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={waveformSettings.enableWaveforms}
+              onChange={(e) => handleWaveformChange('enableWaveforms', e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-gray-900 dark:text-gray-100">Enable Waveforms</span>
+          </label>
 
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={waveformSettings.enableEffects}
-                onChange={(e) => handleWaveformChange('enableEffects', e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-              />
-              <span className="text-gray-900 dark:text-gray-100">Enable Background Effects</span>
-            </label>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={waveformSettings.enableEffects}
+              onChange={(e) => handleWaveformChange('enableEffects', e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-gray-900 dark:text-gray-100">Enable Background Effects</span>
+          </label>
 
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={waveformSettings.randomEffectOnSong}
-                onChange={(e) => handleWaveformChange('randomEffectOnSong', e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-              />
-              <span className="text-gray-900 dark:text-gray-100">Random Effect on New Song</span>
-            </label>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={waveformSettings.randomEffectOnSong}
+              onChange={(e) => handleWaveformChange('randomEffectOnSong', e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-gray-900 dark:text-gray-100">Random Effect on New Song</span>
+          </label>
 
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={waveformSettings.showUpcomingLyrics}
-                onChange={(e) => handleWaveformChange('showUpcomingLyrics', e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-              />
-              <span className="text-gray-900 dark:text-gray-100">Show Upcoming Lyrics</span>
-            </label>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={waveformSettings.showChords}
-                onChange={(e) => handleWaveformChange('showChords', e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-              />
-              <span className="text-gray-900 dark:text-gray-100">Show Chords</span>
-            </label>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={waveformSettings.showUpcomingLyrics}
+              onChange={(e) => handleWaveformChange('showUpcomingLyrics', e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-gray-900 dark:text-gray-100">Show Upcoming Lyrics</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={waveformSettings.showChords}
+              onChange={(e) => handleWaveformChange('showChords', e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-gray-900 dark:text-gray-100">Show Chords</span>
+          </label>
 
-            <div className="space-y-2">
-              <label className="flex items-center justify-between text-gray-900 dark:text-gray-100">
-                <span>Overlay Opacity:</span>
-                <span className="font-mono text-sm">
-                  {waveformSettings.overlayOpacity.toFixed(2)}
-                </span>
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={waveformSettings.overlayOpacity}
-                onChange={(e) => handleWaveformChange('overlayOpacity', parseFloat(e.target.value))}
-                className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
-              />
-            </div>
+          <div className="space-y-2">
+            <label className="flex items-center justify-between text-gray-900 dark:text-gray-100">
+              <span>Overlay Opacity:</span>
+              <span className="font-mono text-sm">
+                {waveformSettings.overlayOpacity.toFixed(2)}
+              </span>
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={waveformSettings.overlayOpacity}
+              onChange={(e) => handleWaveformChange('overlayOpacity', parseFloat(e.target.value))}
+              className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+            />
           </div>
-        )}
+        </div>
       </div>
 
       {/* Auto-Tune Settings */}
