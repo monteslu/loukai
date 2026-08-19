@@ -25,10 +25,10 @@ export function RequestsList({ requests, onApprove, onReject }) {
             {pendingRequests.map((request) => (
               <div
                 key={request.id}
-                className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 flex items-center justify-between gap-4"
+                className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4"
               >
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                  <div className="font-medium text-gray-900 dark:text-gray-100 break-words">
                     <strong>{request.song.title}</strong>
                     {request.song.artist && (
                       <span className="text-gray-600 dark:text-gray-400">
@@ -37,20 +37,20 @@ export function RequestsList({ requests, onApprove, onReject }) {
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-3 mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-gray-600 dark:text-gray-400">
                     <span>From: {request.requesterName}</span>
                     {request.message && <span className="italic">"{request.message}"</span>}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button
-                    className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition"
+                    className="flex-1 sm:flex-initial px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition"
                     onClick={() => handleApprove(request.id)}
                   >
                     ✓ Approve
                   </button>
                   <button
-                    className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition"
+                    className="flex-1 sm:flex-initial px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition"
                     onClick={() => handleReject(request.id)}
                   >
                     ✗ Reject
@@ -83,25 +83,23 @@ export function RequestsList({ requests, onApprove, onReject }) {
                   key={request.id}
                   className={`${statusColors[request.status] || 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'} border rounded-lg p-4`}
                 >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                        <strong>{request.song.title}</strong>
-                        {request.song.artist && (
-                          <span className="text-gray-600 dark:text-gray-400">
-                            {' '}
-                            - {request.song.artist}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 mt-1 text-sm text-gray-600 dark:text-gray-400">
-                        <span>From: {request.requesterName}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${badgeColors[request.status] || 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'}`}
-                        >
-                          {request.status}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900 dark:text-gray-100 break-words">
+                      <strong>{request.song.title}</strong>
+                      {request.song.artist && (
+                        <span className="text-gray-600 dark:text-gray-400">
+                          {' '}
+                          - {request.song.artist}
                         </span>
-                      </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-gray-600 dark:text-gray-400">
+                      <span>From: {request.requesterName}</span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${badgeColors[request.status] || 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'}`}
+                      >
+                        {request.status}
+                      </span>
                     </div>
                   </div>
                 </div>
