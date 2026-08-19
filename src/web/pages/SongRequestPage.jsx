@@ -353,17 +353,17 @@ export function SongRequestPage({ kiosk = false }) {
 
       <div className={kiosk ? 'max-w-none mx-auto p-3' : 'max-w-6xl mx-auto p-5'}>
         {/*
-          On a wide kiosk screen the search sits beside the song list as a third
-          column instead of above it, so the two are usable at once and results
-          never cover the songs. Below `lg` (a portrait tablet, a phone) it
-          stacks back on top, and its results push the list down rather than
-          floating over it.
+          On a wide kiosk screen the search is the left third and the song list
+          the right two thirds, so the two are usable at once and results never
+          cover the songs. Below `lg` (a portrait tablet, a phone) it stacks
+          back on top, and its results push the list down rather than floating
+          over it. Visual order matches DOM order, so no `order-*` is needed.
         */}
         <div className={kiosk ? 'lg:grid lg:grid-cols-3 lg:gap-4 lg:items-start' : undefined}>
           {/* Quick Search */}
           <div
             className={`bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 ${
-              kiosk ? 'mb-3 lg:mb-0 lg:order-2 lg:col-span-1 lg:sticky lg:top-3' : 'mb-5 relative'
+              kiosk ? 'mb-3 lg:mb-0 lg:col-span-1 lg:sticky lg:top-3' : 'mb-5 relative'
             }`}
             ref={quickSearchRef}
           >
@@ -383,7 +383,7 @@ export function SongRequestPage({ kiosk = false }) {
               <div
                 className={
                   kiosk
-                    ? 'mt-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md overflow-y-auto max-h-[300px] lg:max-h-[calc(100vh-16rem)]'
+                    ? 'kiosk-scroll mt-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md overflow-y-auto max-h-[300px] lg:max-h-[calc(100vh-16rem)]'
                     : 'absolute top-full left-4 right-4 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 border-t-0 rounded-b-md max-h-[300px] overflow-y-auto z-[1000] -mt-px'
                 }
               >
@@ -395,12 +395,21 @@ export function SongRequestPage({ kiosk = false }) {
                   quickSearchResults.map((song) => (
                     <div
                       key={song.id}
-                      className="p-3.5 cursor-pointer border-b border-gray-200 dark:border-gray-600 flex justify-between items-start gap-3 transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 last:border-b-0"
-                      onClick={() => {
-                        handleRequestSong(song);
-                        setShowQuickSearch(false);
-                        setQuickSearchTerm('');
-                      }}
+                      className={`p-3.5 border-b border-gray-200 dark:border-gray-600 flex justify-between items-start gap-3 transition-colors last:border-b-0 ${
+                        kiosk ? '' : 'cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600'
+                      }`}
+                      // Kiosk requests come from the button below, not the row:
+                      // this list is scrolled by dragging on a touchscreen, and a
+                      // whole-row target turns a scroll into somebody else's song.
+                      onClick={
+                        kiosk
+                          ? undefined
+                          : () => {
+                              handleRequestSong(song);
+                              setShowQuickSearch(false);
+                              setQuickSearchTerm('');
+                            }
+                      }
                     >
                       <div className="flex-1 flex flex-col items-start">
                         <div className="flex items-baseline gap-3 flex-wrap">
@@ -428,9 +437,31 @@ export function SongRequestPage({ kiosk = false }) {
                           </div>
                         )}
                       </div>
-                      <span className="text-gray-500 dark:text-gray-400 text-[0.9rem] font-medium">
-                        {formatDuration(song.duration)}
-                      </span>
+                      {kiosk ? (
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <span className="text-gray-500 dark:text-gray-400 text-[0.9rem] font-medium">
+                            {formatDuration(song.duration)}
+                          </span>
+                          <button
+                            className="px-3 py-2 bg-blue-600 dark:bg-blue-500 border-none rounded-md text-white cursor-pointer flex items-center gap-1 font-medium text-sm transition-colors whitespace-nowrap hover:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!allowRequests}
+                            onClick={() => {
+                              handleRequestSong(song);
+                              setShowQuickSearch(false);
+                              setQuickSearchTerm('');
+                            }}
+                          >
+                            <span className="material-icons" style={{ fontSize: 16 }}>
+                              add
+                            </span>
+                            Request
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-gray-500 dark:text-gray-400 text-[0.9rem] font-medium">
+                          {formatDuration(song.duration)}
+                        </span>
+                      )}
                     </div>
                   ))
                 )}
@@ -441,7 +472,7 @@ export function SongRequestPage({ kiosk = false }) {
           {/* Songs Section */}
           <div
             className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 ${
-              kiosk ? 'p-4 mb-3 lg:order-1 lg:col-span-2' : 'p-5 mb-5'
+              kiosk ? 'p-4 mb-3 lg:col-span-2' : 'p-5 mb-5'
             }`}
           >
             <div className="flex justify-between items-center mb-4">
@@ -486,7 +517,7 @@ export function SongRequestPage({ kiosk = false }) {
             <div
               className={
                 kiosk
-                  ? 'overflow-y-auto max-h-[60vh] lg:max-h-[calc(100vh-19rem)]'
+                  ? 'kiosk-scroll overflow-y-auto max-h-[60vh] lg:max-h-[calc(100vh-19rem)]'
                   : 'max-h-[500px] overflow-y-auto'
               }
             >
