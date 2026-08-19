@@ -423,7 +423,7 @@ export function SongRequestPage({ kiosk = false }) {
                             <span className="text-xs">{getFormatIcon(song.format)}</span>
                             {song.title}
                           </div>
-                          <div className="text-[0.9rem] text-gray-600 dark:text-gray-400">
+                          <div className="text-[0.9rem] text-blue-600 dark:text-blue-400">
                             {song.artist}
                           </div>
                         </div>
@@ -553,7 +553,7 @@ export function SongRequestPage({ kiosk = false }) {
                         <div className="font-semibold text-base text-gray-900 dark:text-white inline-flex items-center gap-2">
                           {getFormatIcon(song.format)} {song.title}
                         </div>
-                        <div className="text-[0.95rem] text-gray-600 dark:text-gray-400">
+                        <div className="text-[0.95rem] text-blue-600 dark:text-blue-400">
                           {song.artist}
                         </div>
                       </div>
