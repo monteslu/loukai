@@ -411,8 +411,14 @@ export function SongRequestPage({ kiosk = false }) {
                             }
                       }
                     >
-                      <div className="flex-1 flex flex-col items-start">
-                        <div className="flex items-baseline gap-3 flex-wrap">
+                      <div className="flex-1 flex flex-col items-start min-w-0">
+                        {/*
+                          Artist always on its own line under the title. Sharing a
+                          baseline row only lined them up when both were short; in
+                          a narrow column the artist wrapped to wherever the title
+                          happened to end, which read as one run-on string.
+                        */}
+                        <div className="flex flex-col items-start gap-0.5 w-full min-w-0">
                           <div className="font-semibold text-[0.95rem] inline-flex items-center gap-2 text-gray-900 dark:text-white">
                             <span className="text-xs">{getFormatIcon(song.format)}</span>
                             {song.title}
