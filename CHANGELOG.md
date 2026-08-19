@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-08-19
+
+### Fixed
+- Turning off visual effects in Server settings still showed them on the wait
+  screen before a song was playing; the setting only applied once a song
+  loaded or was changed live. The wait screen now respects the saved setting
+  from app startup, same as during playback
+
 ## [0.14.1] - 2026-08-19
 
 ### Fixed

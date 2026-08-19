@@ -48,6 +48,14 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.14.2" date="2026-08-19">
+      <description>
+        <p>Fixes visual effects appearing on the wait screen when turned off</p>
+        <ul>
+          <li>Turning off visual effects in Server settings still showed them on the wait screen before a song was playing; the setting only applied once a song loaded or was changed live. The wait screen now respects the saved setting from app startup, same as during playback</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.14.1" date="2026-08-19">
       <description>
         <p>Fixes singers connecting from a hostname, and a responsive kiosk layout</p>
