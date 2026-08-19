@@ -195,29 +195,15 @@ export class PlayerController {
   // debugLoadVocals removed - no longer needed
 
   applyWaveformSettings(settings) {
-    // Apply settings to active renderer (KAI or CDG)
-    if (this.currentFormat === 'kai' && this.karaokeRenderer) {
-      // Update waveformPreferences object (used by renderer)
+    // karaokeRenderer draws the wait screen before any song (and thus format)
+    // is chosen, so it must stay in sync regardless of currentFormat - only
+    // the KAI-specific side effects below are gated to when KAI is active.
+    if (this.karaokeRenderer) {
       if (settings.enableWaveforms !== undefined) {
         this.karaokeRenderer.waveformPreferences.enableWaveforms = settings.enableWaveforms;
       }
       if (settings.enableEffects !== undefined) {
         this.karaokeRenderer.waveformPreferences.enableEffects = settings.enableEffects;
-      }
-      if (settings.showChords !== undefined) {
-        this.karaokeRenderer.waveformPreferences.showChords = settings.showChords;
-        // Toggled ON with a chordless song loaded: analyze it now (the load-time
-        // backfill is skipped while the display is off).
-        const kp = window.app?.kaiPlayer || window.app?.player?.kaiPlayer;
-        if (settings.showChords && kp?.songData && !kp.songData.chords?.length) {
-          import('./songLoaders.js').then((m) => m.backfillChords(window.app, kp.songData));
-        } else if (
-          settings.showChords &&
-          !kp?.songData &&
-          window.app?.player?.cdgPlayer?.audioBuffer
-        ) {
-          import('./songLoaders.js').then((m) => m.backfillChordsCdg(window.app));
-        }
       }
       if (settings.showUpcomingLyrics !== undefined) {
         this.karaokeRenderer.waveformPreferences.showUpcomingLyrics = settings.showUpcomingLyrics;
@@ -225,7 +211,26 @@ export class PlayerController {
       if (settings.overlayOpacity !== undefined) {
         this.karaokeRenderer.waveformPreferences.overlayOpacity = settings.overlayOpacity;
       }
-    } else if (this.currentFormat === 'cdg' && this.cdgPlayer) {
+      if (settings.showChords !== undefined) {
+        this.karaokeRenderer.waveformPreferences.showChords = settings.showChords;
+        if (this.currentFormat === 'kai') {
+          // Toggled ON with a chordless song loaded: analyze it now (the
+          // load-time backfill is skipped while the display is off).
+          const kp = window.app?.kaiPlayer || window.app?.player?.kaiPlayer;
+          if (settings.showChords && kp?.songData && !kp.songData.chords?.length) {
+            import('./songLoaders.js').then((m) => m.backfillChords(window.app, kp.songData));
+          } else if (
+            settings.showChords &&
+            !kp?.songData &&
+            window.app?.player?.cdgPlayer?.audioBuffer
+          ) {
+            import('./songLoaders.js').then((m) => m.backfillChordsCdg(window.app));
+          }
+        }
+      }
+    }
+
+    if (this.cdgPlayer) {
       // CDG player settings
       if (settings.enableEffects !== undefined) {
         this.cdgPlayer.setEffectsEnabled(settings.enableEffects);

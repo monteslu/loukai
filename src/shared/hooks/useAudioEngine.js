@@ -7,6 +7,7 @@
 
 import { useEffect } from 'react';
 import { useAudio } from '../contexts/AudioContext.jsx';
+import { WAVEFORM_DEFAULTS } from '../defaults.js';
 
 export function useAudioEngine() {
   const { kaiPlayer, player, setKaiPlayer, setPlayer } = useAudio();
@@ -34,6 +35,18 @@ export function useAudioEngine() {
         // Expose player globally for legacy code that needs direct access
         window.app = window.app || {};
         window.app.player = playerController;
+
+        // Renderers default enableEffects/etc to true; without this the wait
+        // screen (drawn before any song, and thus before applyWaveformSettings
+        // ever fires from a settings-change event) shows effects even when
+        // the saved preference has them off.
+        const savedWaveformPrefs = await window.kaiAPI?.settings?.get?.(
+          'waveformPreferences',
+          WAVEFORM_DEFAULTS
+        );
+        if (savedWaveformPrefs) {
+          playerController.applyWaveformSettings(savedWaveformPrefs);
+        }
 
         console.log('✅ Audio engine initialized');
       } catch (error) {
