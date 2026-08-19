@@ -48,6 +48,16 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.14.1" date="2026-08-19">
+      <description>
+        <p>Fixes singers connecting from a hostname, and a responsive kiosk layout</p>
+        <ul>
+          <li>Singers reaching the app by its machine name or a .local address (the usual way a tablet finds it on the LAN) could load the page but never connect for live updates; the request page kept retrying forever instead of showing the queue. The server now allows the same same-origin connection Socket.IO already trusts from a plain IP</li>
+          <li>The kiosk request page now fills the screen on a tablet or laptop instead of staying a narrow mobile-width column, moves search to the left with a Request button on each result, and lists the artist on its own line under the title</li>
+          <li>Artist names in search results and the song list are now shown in blue</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.14.0" date="2026-08-18">
       <description>
         <p>A kiosk page for a shared tablet, and song search that actually finds the song</p>

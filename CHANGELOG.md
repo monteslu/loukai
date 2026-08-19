@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-08-19
+
+### Fixed
+- Singers reaching the app by its machine name or a `.local` address (the usual
+  way a tablet finds it on the LAN) could load the page but never connect for
+  live updates; the request page kept retrying forever instead of showing the
+  queue. Socket.IO's CORS check only recognized localhost and literal local
+  IPs; it now allows the same same-origin connection Express already trusts,
+  comparing the browser's Origin against the Host the request actually arrived
+  on (#124)
+
+### Changed
+- The kiosk request page now fills the screen on a tablet or laptop instead of
+  staying a narrow mobile-width column, moves search to the left with a
+  Request button on each result, and lists the artist on its own line under
+  the title (#125)
+- Artist names in search results and the song list are now shown in blue
+
 ## [0.14.0] - 2026-08-18
 
 ### Added
