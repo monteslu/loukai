@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.14.3] - 2026-08-19
+## [0.14.4] - 2026-08-19
 
 ### Added
-- The Display Options panel in the web admin can now be collapsed; the
-  collapsed state is saved to `localStorage`
+- The web admin's queue sidebar can now be hidden with the same hamburger
+  toggle the desktop app already used to hide it, so it can get out of the
+  way of the queue on a phone. Starts hidden when there's no saved choice yet,
+  so the queue is visible on first load
+
+## [0.14.3] - 2026-08-19
 
 ### Changed
 - The web admin screen is now usable on a phone: tabs collapse to a hamburger
