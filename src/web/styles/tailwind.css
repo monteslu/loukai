@@ -91,3 +91,35 @@ body {
 ::-webkit-scrollbar-thumb {
   @apply bg-gray-300 dark:bg-gray-600 rounded hover:bg-gray-400 dark:hover:bg-gray-500;
 }
+
+/*
+ * Fatter scrollbars for the kiosk, where the lists are dragged with a finger on
+ * a tablet rather than a mouse wheel. The 8px global thumb above is a hard
+ * target to hit; this doubles it and gives it contrast, scoped so the phone
+ * page and the admin keep the slim default.
+ */
+.kiosk-scroll {
+  scrollbar-width: auto;
+  scrollbar-color: theme('colors.gray.400') transparent;
+}
+
+.kiosk-scroll::-webkit-scrollbar {
+  @apply w-4 h-4;
+}
+
+.kiosk-scroll::-webkit-scrollbar-track {
+  @apply bg-gray-200 dark:bg-gray-800 rounded-lg;
+}
+
+.kiosk-scroll::-webkit-scrollbar-thumb {
+  @apply bg-gray-400 dark:bg-gray-500 rounded-lg border-4 border-solid border-transparent bg-clip-content;
+  min-height: 48px;
+}
+
+.kiosk-scroll::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-500 dark:bg-gray-400 bg-clip-content;
+}
+
+.dark .kiosk-scroll {
+  scrollbar-color: theme('colors.gray.500') transparent;
+}
