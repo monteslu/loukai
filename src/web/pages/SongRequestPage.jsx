@@ -321,65 +321,207 @@ export function SongRequestPage({ kiosk = false }) {
   // Main content
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
-      <div className="bg-white dark:bg-gray-800 py-8 px-8 text-center border-b-2 border-blue-600 dark:border-blue-500 relative">
-        <div className="absolute top-4 right-4">
-          <ThemeToggle />
-        </div>
-        <h1 className="m-0 mb-2 text-4xl text-gray-900 dark:text-white">{serverName}</h1>
-        <div className="text-gray-600 dark:text-gray-400 text-lg">
-          {kiosk
-            ? 'Pick a song — you’ll enter your name when you request it'
-            : 'Request your favorite songs!'}
-        </div>
-      </div>
-
-      <div className="max-w-6xl mx-auto p-5">
-        {/* Quick Search */}
-        <div
-          className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-5 border border-gray-200 dark:border-gray-700 relative"
-          ref={quickSearchRef}
-        >
-          <div className="text-base mb-2 flex items-center gap-2 text-gray-900 dark:text-white">
-            <span className="material-icons">search</span>
-            <span>Quick Song Search</span>
+      {/*
+        The kiosk header is one compact row rather than the centered stack: on a
+        tablet or laptop the banner was eating vertical space that the song list
+        needs, and a shared device is looked at from a distance for songs, not
+        for the server name.
+      */}
+      {kiosk ? (
+        <div className="bg-white dark:bg-gray-800 py-2.5 px-4 border-b-2 border-blue-600 dark:border-blue-500 flex items-center gap-3">
+          <h1 className="m-0 text-xl font-semibold text-gray-900 dark:text-white truncate">
+            {serverName}
+          </h1>
+          <div className="text-gray-600 dark:text-gray-400 text-sm hidden sm:block truncate">
+            Pick a song, then enter your name to request it
           </div>
-          <input
-            type="text"
-            className="w-full px-3 py-3 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md text-gray-900 dark:text-white text-base focus:outline-none focus:border-blue-600 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-600"
-            placeholder="Search songs to request..."
-            value={quickSearchTerm}
-            onChange={(e) => setQuickSearchTerm(e.target.value)}
-            onFocus={() => quickSearchTerm && setShowQuickSearch(true)}
-          />
-          {showQuickSearch && (
-            <div className="absolute top-full left-4 right-4 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 border-t-0 rounded-b-md max-h-[300px] overflow-y-auto z-[1000] -mt-px">
-              {quickSearchResults.length === 0 ? (
-                <div className="p-5 text-center text-gray-500 dark:text-gray-400">
-                  No songs found
+          <div className="ml-auto flex-shrink-0">
+            <ThemeToggle />
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-gray-800 py-8 px-8 text-center border-b-2 border-blue-600 dark:border-blue-500 relative">
+          <div className="absolute top-4 right-4">
+            <ThemeToggle />
+          </div>
+          <h1 className="m-0 mb-2 text-4xl text-gray-900 dark:text-white">{serverName}</h1>
+          <div className="text-gray-600 dark:text-gray-400 text-lg">
+            Request your favorite songs!
+          </div>
+        </div>
+      )}
+
+      <div className={kiosk ? 'max-w-none mx-auto p-3' : 'max-w-6xl mx-auto p-5'}>
+        {/*
+          On a wide kiosk screen the search sits beside the song list as a third
+          column instead of above it, so the two are usable at once and results
+          never cover the songs. Below `lg` (a portrait tablet, a phone) it
+          stacks back on top, and its results push the list down rather than
+          floating over it.
+        */}
+        <div className={kiosk ? 'lg:grid lg:grid-cols-3 lg:gap-4 lg:items-start' : undefined}>
+          {/* Quick Search */}
+          <div
+            className={`bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 ${
+              kiosk ? 'mb-3 lg:mb-0 lg:order-2 lg:col-span-1 lg:sticky lg:top-3' : 'mb-5 relative'
+            }`}
+            ref={quickSearchRef}
+          >
+            <div className="text-base mb-2 flex items-center gap-2 text-gray-900 dark:text-white">
+              <span className="material-icons">search</span>
+              <span>Quick Song Search</span>
+            </div>
+            <input
+              type="text"
+              className="w-full px-3 py-3 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md text-gray-900 dark:text-white text-base focus:outline-none focus:border-blue-600 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-600"
+              placeholder="Search songs to request..."
+              value={quickSearchTerm}
+              onChange={(e) => setQuickSearchTerm(e.target.value)}
+              onFocus={() => quickSearchTerm && setShowQuickSearch(true)}
+            />
+            {showQuickSearch && (
+              <div
+                className={
+                  kiosk
+                    ? 'mt-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md overflow-y-auto max-h-[300px] lg:max-h-[calc(100vh-16rem)]'
+                    : 'absolute top-full left-4 right-4 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 border-t-0 rounded-b-md max-h-[300px] overflow-y-auto z-[1000] -mt-px'
+                }
+              >
+                {quickSearchResults.length === 0 ? (
+                  <div className="p-5 text-center text-gray-500 dark:text-gray-400">
+                    No songs found
+                  </div>
+                ) : (
+                  quickSearchResults.map((song) => (
+                    <div
+                      key={song.id}
+                      className="p-3.5 cursor-pointer border-b border-gray-200 dark:border-gray-600 flex justify-between items-start gap-3 transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 last:border-b-0"
+                      onClick={() => {
+                        handleRequestSong(song);
+                        setShowQuickSearch(false);
+                        setQuickSearchTerm('');
+                      }}
+                    >
+                      <div className="flex-1 flex flex-col items-start">
+                        <div className="flex items-baseline gap-3 flex-wrap">
+                          <div className="font-semibold text-[0.95rem] inline-flex items-center gap-2 text-gray-900 dark:text-white">
+                            <span className="text-xs">{getFormatIcon(song.format)}</span>
+                            {song.title}
+                          </div>
+                          <div className="text-[0.9rem] text-gray-600 dark:text-gray-400">
+                            {song.artist}
+                          </div>
+                        </div>
+                        {(song.album || song.year || song.genre) && (
+                          <div className="text-[0.82rem] text-gray-500 dark:text-gray-500 mt-1">
+                            {song.album && <span>{song.album}</span>}
+                            {song.year && (
+                              <span className="before:content-['_•_'] before:text-gray-400 dark:before:text-gray-600">
+                                {song.year}
+                              </span>
+                            )}
+                            {song.genre && (
+                              <span className="before:content-['_•_'] before:text-gray-400 dark:before:text-gray-600">
+                                {song.genre}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-gray-500 dark:text-gray-400 text-[0.9rem] font-medium">
+                        {formatDuration(song.duration)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Songs Section */}
+          <div
+            className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 ${
+              kiosk ? 'p-4 mb-3 lg:order-1 lg:col-span-2' : 'p-5 mb-5'
+            }`}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <div className="text-xl font-semibold text-gray-900 dark:text-white">
+                Available Songs
+              </div>
+              <div className="text-gray-500 dark:text-gray-400 text-sm">{songs.length} songs</div>
+            </div>
+
+            {/* Alphabet Navigation */}
+            <div className="mb-4">
+              <div className="text-sm text-gray-600 dark:text-gray-300 mb-2">Browse by Artist:</div>
+              <div className="flex flex-wrap gap-1.5">
+                {allLetters.map((letter) => {
+                  const hasContent = availableLetters.includes(letter);
+                  return (
+                    <button
+                      key={letter}
+                      className={`px-3 py-2 rounded border transition-all text-sm min-w-[40px] ${
+                        currentLetter === letter
+                          ? 'bg-blue-600 dark:bg-blue-500 border-blue-600 dark:border-blue-500 text-white'
+                          : hasContent
+                            ? 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600 hover:border-blue-600 dark:hover:border-blue-500'
+                            : 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white opacity-30 cursor-not-allowed'
+                      }`}
+                      disabled={!hasContent}
+                      onClick={() => loadLetterPage(letter, 1)}
+                    >
+                      {letter}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Songs List */}
+            {/*
+            A fixed 500px list left a laptop or tablet mostly empty. In kiosk the
+            list grows with the viewport instead, and the search results beside
+            it are capped to match so the two columns end together.
+          */}
+            <div
+              className={
+                kiosk
+                  ? 'overflow-y-auto max-h-[60vh] lg:max-h-[calc(100vh-19rem)]'
+                  : 'max-h-[500px] overflow-y-auto'
+              }
+            >
+              {songs.length === 0 ? (
+                <div
+                  className={`text-center px-5 text-gray-500 dark:text-gray-500 ${
+                    kiosk ? 'py-8' : 'py-16'
+                  }`}
+                >
+                  <div
+                    className={`material-icons opacity-30 ${
+                      kiosk ? 'text-4xl mb-3' : 'text-6xl mb-5'
+                    }`}
+                  >
+                    library_music
+                  </div>
+                  <div>No songs found</div>
                 </div>
               ) : (
-                quickSearchResults.map((song) => (
+                songs.map((song) => (
                   <div
                     key={song.id}
-                    className="p-3.5 cursor-pointer border-b border-gray-200 dark:border-gray-600 flex justify-between items-start gap-3 transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 last:border-b-0"
-                    onClick={() => {
-                      handleRequestSong(song);
-                      setShowQuickSearch(false);
-                      setQuickSearchTerm('');
-                    }}
+                    className="flex justify-between items-start p-4 bg-gray-100 dark:bg-gray-700 rounded-md mb-2 transition-colors gap-4"
                   >
                     <div className="flex-1 flex flex-col items-start">
                       <div className="flex items-baseline gap-3 flex-wrap">
-                        <div className="font-semibold text-[0.95rem] inline-flex items-center gap-2 text-gray-900 dark:text-white">
-                          <span className="text-xs">{getFormatIcon(song.format)}</span>
-                          {song.title}
+                        <div className="font-semibold text-base text-gray-900 dark:text-white inline-flex items-center gap-2">
+                          {getFormatIcon(song.format)} {song.title}
                         </div>
-                        <div className="text-[0.9rem] text-gray-600 dark:text-gray-400">
+                        <div className="text-[0.95rem] text-gray-600 dark:text-gray-400">
                           {song.artist}
                         </div>
                       </div>
                       {(song.album || song.year || song.genre) && (
-                        <div className="text-[0.82rem] text-gray-500 dark:text-gray-500 mt-1">
+                        <div className="text-[0.85rem] text-gray-500 dark:text-gray-500 mt-1">
                           {song.album && <span>{song.album}</span>}
                           {song.year && (
                             <span className="before:content-['_•_'] before:text-gray-400 dark:before:text-gray-600">
@@ -394,170 +536,102 @@ export function SongRequestPage({ kiosk = false }) {
                         </div>
                       )}
                     </div>
-                    <span className="text-gray-500 dark:text-gray-400 text-[0.9rem] font-medium">
-                      {formatDuration(song.duration)}
-                    </span>
+                    <div className="flex items-start gap-4 flex-shrink-0 pt-0.5">
+                      <span className="text-gray-500 dark:text-gray-400 text-sm font-medium min-w-[45px] text-right">
+                        {formatDuration(song.duration)}
+                      </span>
+                      <button
+                        className="px-5 py-2.5 bg-blue-600 dark:bg-blue-500 border-none rounded-md text-white cursor-pointer flex items-center gap-1.5 font-medium text-[0.95rem] transition-all whitespace-nowrap hover:bg-blue-700 dark:hover:bg-blue-600 hover:-translate-y-px disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!allowRequests}
+                        onClick={() => handleRequestSong(song)}
+                      >
+                        <span className="material-icons" style={{ fontSize: 18 }}>
+                          add
+                        </span>
+                        Request
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
             </div>
-          )}
-        </div>
 
-        {/* Songs Section */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg p-5 mb-5 border border-gray-200 dark:border-gray-700">
-          <div className="flex justify-between items-center mb-4">
-            <div className="text-xl font-semibold text-gray-900 dark:text-white">
-              Available Songs
-            </div>
-            <div className="text-gray-500 dark:text-gray-400 text-sm">{songs.length} songs</div>
-          </div>
-
-          {/* Alphabet Navigation */}
-          <div className="mb-4">
-            <div className="text-sm text-gray-600 dark:text-gray-300 mb-2">Browse by Artist:</div>
-            <div className="flex flex-wrap gap-1.5">
-              {allLetters.map((letter) => {
-                const hasContent = availableLetters.includes(letter);
-                return (
-                  <button
-                    key={letter}
-                    className={`px-3 py-2 rounded border transition-all text-sm min-w-[40px] ${
-                      currentLetter === letter
-                        ? 'bg-blue-600 dark:bg-blue-500 border-blue-600 dark:border-blue-500 text-white'
-                        : hasContent
-                          ? 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600 hover:border-blue-600 dark:hover:border-blue-500'
-                          : 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white opacity-30 cursor-not-allowed'
-                    }`}
-                    disabled={!hasContent}
-                    onClick={() => loadLetterPage(letter, 1)}
-                  >
-                    {letter}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Songs List */}
-          <div className="max-h-[500px] overflow-y-auto">
-            {songs.length === 0 ? (
-              <div className="text-center py-16 px-5 text-gray-500 dark:text-gray-500">
-                <div className="material-icons text-6xl mb-5 opacity-30">library_music</div>
-                <div>No songs found</div>
-              </div>
-            ) : (
-              songs.map((song) => (
-                <div
-                  key={song.id}
-                  className="flex justify-between items-start p-4 bg-gray-100 dark:bg-gray-700 rounded-md mb-2 transition-colors gap-4"
+            {/* Page Navigation */}
+            {totalPages > 1 && (
+              <div className="flex justify-center items-center gap-2 mt-4 p-3 bg-gray-100 dark:bg-gray-700 rounded-md flex-wrap">
+                <button
+                  className="px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-sm transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 hover:border-blue-600 dark:hover:border-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={() => loadLetterPage(currentLetter, currentPage - 1)}
+                  disabled={currentPage === 1}
                 >
-                  <div className="flex-1 flex flex-col items-start">
-                    <div className="flex items-baseline gap-3 flex-wrap">
-                      <div className="font-semibold text-base text-gray-900 dark:text-white inline-flex items-center gap-2">
-                        {getFormatIcon(song.format)} {song.title}
-                      </div>
-                      <div className="text-[0.95rem] text-gray-600 dark:text-gray-400">
-                        {song.artist}
-                      </div>
-                    </div>
-                    {(song.album || song.year || song.genre) && (
-                      <div className="text-[0.85rem] text-gray-500 dark:text-gray-500 mt-1">
-                        {song.album && <span>{song.album}</span>}
-                        {song.year && (
-                          <span className="before:content-['_•_'] before:text-gray-400 dark:before:text-gray-600">
-                            {song.year}
-                          </span>
-                        )}
-                        {song.genre && (
-                          <span className="before:content-['_•_'] before:text-gray-400 dark:before:text-gray-600">
-                            {song.genre}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-start gap-4 flex-shrink-0 pt-0.5">
-                    <span className="text-gray-500 dark:text-gray-400 text-sm font-medium min-w-[45px] text-right">
-                      {formatDuration(song.duration)}
-                    </span>
-                    <button
-                      className="px-5 py-2.5 bg-blue-600 dark:bg-blue-500 border-none rounded-md text-white cursor-pointer flex items-center gap-1.5 font-medium text-[0.95rem] transition-all whitespace-nowrap hover:bg-blue-700 dark:hover:bg-blue-600 hover:-translate-y-px disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled={!allowRequests}
-                      onClick={() => handleRequestSong(song)}
-                    >
-                      <span className="material-icons" style={{ fontSize: 18 }}>
-                        add
-                      </span>
-                      Request
-                    </button>
-                  </div>
+                  Previous
+                </button>
+                <div className="flex gap-1 items-center">
+                  {getPageNumbers().map((page, index) => {
+                    if (page === '...') {
+                      return (
+                        <span
+                          key={`ellipsis-${index}`}
+                          className="px-2 text-gray-500 dark:text-gray-400 text-sm"
+                        >
+                          ...
+                        </span>
+                      );
+                    }
+                    return (
+                      <button
+                        key={page}
+                        className={`px-3 py-2 border rounded cursor-pointer text-sm min-w-[40px] transition-all ${
+                          page === currentPage
+                            ? 'bg-blue-600 dark:bg-blue-500 border-blue-600 dark:border-blue-500 font-semibold text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600 hover:border-blue-600 dark:hover:border-blue-500'
+                        }`}
+                        onClick={() => loadLetterPage(currentLetter, page)}
+                      >
+                        {page}
+                      </button>
+                    );
+                  })}
                 </div>
-              ))
+                <span className="text-gray-500 dark:text-gray-400 text-[0.85rem] ml-2">
+                  ({songs.length} songs)
+                </span>
+                <button
+                  className="px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-sm transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 hover:border-blue-600 dark:hover:border-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={() => loadLetterPage(currentLetter, currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </button>
+              </div>
             )}
           </div>
-
-          {/* Page Navigation */}
-          {totalPages > 1 && (
-            <div className="flex justify-center items-center gap-2 mt-4 p-3 bg-gray-100 dark:bg-gray-700 rounded-md flex-wrap">
-              <button
-                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-sm transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 hover:border-blue-600 dark:hover:border-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
-                onClick={() => loadLetterPage(currentLetter, currentPage - 1)}
-                disabled={currentPage === 1}
-              >
-                Previous
-              </button>
-              <div className="flex gap-1 items-center">
-                {getPageNumbers().map((page, index) => {
-                  if (page === '...') {
-                    return (
-                      <span
-                        key={`ellipsis-${index}`}
-                        className="px-2 text-gray-500 dark:text-gray-400 text-sm"
-                      >
-                        ...
-                      </span>
-                    );
-                  }
-                  return (
-                    <button
-                      key={page}
-                      className={`px-3 py-2 border rounded cursor-pointer text-sm min-w-[40px] transition-all ${
-                        page === currentPage
-                          ? 'bg-blue-600 dark:bg-blue-500 border-blue-600 dark:border-blue-500 font-semibold text-white'
-                          : 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600 hover:border-blue-600 dark:hover:border-blue-500'
-                      }`}
-                      onClick={() => loadLetterPage(currentLetter, page)}
-                    >
-                      {page}
-                    </button>
-                  );
-                })}
-              </div>
-              <span className="text-gray-500 dark:text-gray-400 text-[0.85rem] ml-2">
-                ({songs.length} songs)
-              </span>
-              <button
-                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-gray-900 dark:text-white cursor-pointer text-sm transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 hover:border-blue-600 dark:hover:border-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
-                onClick={() => loadLetterPage(currentLetter, currentPage + 1)}
-                disabled={currentPage === totalPages}
-              >
-                Next
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Queue Section */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg p-5 border border-gray-200 dark:border-gray-700">
+        <div
+          className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 ${
+            kiosk ? 'p-4' : 'p-5'
+          }`}
+        >
           <div className="text-xl font-semibold mb-4 flex items-center gap-2 text-gray-900 dark:text-white">
             <span className="material-icons">queue_music</span>
             Queue ({queue.length})
           </div>
           <ul className="list-none p-0 m-0">
             {queue.length === 0 ? (
-              <div className="text-center py-16 px-5 text-gray-500 dark:text-gray-500">
-                <div className="material-icons text-6xl mb-5 opacity-30">queue_music</div>
+              <div
+                className={`text-center px-5 text-gray-500 dark:text-gray-500 ${
+                  kiosk ? 'py-6' : 'py-16'
+                }`}
+              >
+                <div
+                  className={`material-icons opacity-30 ${
+                    kiosk ? 'text-4xl mb-2' : 'text-6xl mb-5'
+                  }`}
+                >
+                  queue_music
+                </div>
                 <div>Queue is empty</div>
               </div>
             ) : (
@@ -589,7 +663,7 @@ export function SongRequestPage({ kiosk = false }) {
         </div>
 
         {/* Footer */}
-        <footer className="mt-8 py-6 text-center">
+        <footer className={`text-center ${kiosk ? 'mt-3 py-3' : 'mt-8 py-6'}`}>
           <a
             href="https://loukai.com"
             target="_blank"
