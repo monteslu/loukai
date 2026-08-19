@@ -2580,21 +2580,32 @@ class WebServer {
         // Create HTTP server for Socket.IO
         this.httpServer = http.createServer(this.app);
 
-        // Initialize Socket.IO with restricted CORS (same as Express)
+        // Initialize Socket.IO CORS the same way Express does: a request whose
+        // Origin matches the host it arrived on is the page talking to its own
+        // server, whatever the singer typed to get there.
+        //
+        // The old rule enumerated allowed hostnames (localhost, literal local
+        // IPs, private ranges) and rejected everything else, so reaching the app
+        // by machine name or .local — which is how a tablet usually finds it —
+        // 400'd every socket request. The client connects with a bare `io()`,
+        // i.e. same-origin and relative, so those rejections could only ever
+        // break the page's own live queue updates while it retried forever.
+        //
+        // Uses `allowRequest` rather than the `cors.origin` callback because
+        // only this one receives the request, and the Host header is what makes
+        // the same-origin comparison possible.
         this.io = new Server(this.httpServer, {
+          allowRequest: (req, callback) => {
+            const origin = req.headers?.origin;
+            // No Origin: same-origin navigation, or a non-browser client.
+            const allow = !origin || this.isSameOriginViaProxy(origin, req);
+            // A genuine cross-site caller sends ITS origin against our host, so
+            // the two disagree and it is still refused.
+            callback(null, allow);
+          },
           cors: {
-            origin: (origin, callback) => {
-              // Allow requests with no origin (same-origin, non-browser clients)
-              if (!origin) {
-                return callback(null, true);
-              }
-
-              if (this.isAllowedOrigin(origin)) {
-                return callback(null, true);
-              }
-
-              callback(new Error('CORS not allowed for this origin'));
-            },
+            // Reflect the caller's origin; allowRequest above already decided.
+            origin: true,
             methods: ['GET', 'POST'],
             credentials: true,
           },
