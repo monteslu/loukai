@@ -7,7 +7,7 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![React 19](https://img.shields.io/badge/React-19-blue)](https://react.dev/)
 [![Electron 42](https://img.shields.io/badge/Electron-42-blue)](https://www.electronjs.org/)
-[![Tests](https://img.shields.io/badge/tests-485-green)](./.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-491-green)](./.github/workflows/ci.yml)
 
 Loukai is a free, open source karaoke software that runs locally on your computer to **play** and **create** karaoke files from your own music. Built on M4A Stems (MPEG-4 multi-track audio), it uses industry-standard formats compatible with DJ software, giving you full control over your personal karaoke library.
 
@@ -87,7 +87,7 @@ The first launch downloads Electron once into a per-user cache (`~/.cache/loukai
 
 ### Developer Features
 - **Modern Stack**: React 19, Vite 7, Electron 42
-- **Comprehensive Testing**: 340 tests with Vitest coverage reporting
+- **Comprehensive Testing**: 491 tests with Vitest coverage reporting
 - **ESLint + Prettier**: Automated code formatting and linting
 - **Pre-commit Hooks**: Husky + lint-staged for quality assurance
 - **Hot Module Replacement**: Fast development with Vite HMR
@@ -423,7 +423,7 @@ npm run test:coverage
 npm run test:ui
 ```
 
-**Current Coverage:** 485 tests across 27 test files
+**Current Coverage:** 491 tests across 27 test files
 
 ---
 

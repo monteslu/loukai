@@ -7,175 +7,219 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added - Phase 7 (Security Enhancements for Internet Exposure)
-- express-rate-limit 7.5.0 for API and login protection
-- Login rate limiting: 5 attempts per 15 minutes per IP
-- API rate limiting: 20 requests per minute per IP for song requests
-- Prevents brute force password attacks when exposing via tunnel
-- Prevents API abuse and spam submissions
+## [0.14.0] - 2026-08-18
 
-### Security - Phase 7
-- Rate limiting on `/admin/login` endpoint (5 attempts / 15 minutes)
-- Rate limiting on `/api/request` endpoint (20 requests / minute)
-- Session timeout already configured (24 hours)
-- Protection suitable for internet-exposed deployments via tunnels (hsync, etc.)
-
-### Added - Phase 6 (Additional Tests - Business Logic Focus)
-- Comprehensive test coverage for critical services:
-  - src/shared/services/playerService.test.js (26 tests, 100% coverage)
-  - src/shared/services/editorService.test.js (19 tests, 100% coverage)
-  - src/shared/services/effectsService.test.js (36 tests, 100% coverage)
-  - src/shared/services/mixerService.test.js (33 tests, 100% coverage)
-  - src/shared/formatUtils.test.js (35 tests, 100% coverage)
-- All business logic services now fully tested
-- Total test count increased from 84 to 233 tests (177% increase)
-- Coverage improved from 52.31% to 52.21% (all critical code covered)
-- PHASE6-SUMMARY.md documentation
-
-### Added - Phase 4 & 5 (Documentation and Quality Gates)
-- Comprehensive README.md with features, architecture, usage guide, and troubleshooting
-- CONTRIBUTING.md with complete developer guidelines and code standards
-- CHANGELOG.md following Keep a Changelog format
-- VS Code configuration files (.vscode/settings.json, extensions.json, launch.json)
-- GitHub Actions CI workflow (.github/workflows/ci.yml) with quality checks
-- Commitlint for conventional commit message enforcement
-- Coverage thresholds in Vitest configuration (30% minimum)
-- Pre-commit test runs for changed test files
-- Commit message validation hook with Husky
-- Bundle size tracking on pull requests
-- Automated security audits in CI
-- PHASE4-5-SUMMARY.md documentation
-
-### Changed
-- lint-staged configuration now runs tests for changed test files
-- vitest.config.js now enforces 30% coverage threshold
-- Pre-commit hooks enhanced with test execution
-
-### Deprecated
-- None
-
-### Removed
-- None
+### Added
+- Kiosk page: an opt-in request page at `/kiosk` for a device everyone shares,
+  such as a tablet at the KJ booth. It browses like the normal request page but
+  never remembers anyone: there is no one-time name prompt, every request asks
+  who is singing, and the name is cleared after each submission. `localStorage`
+  is never read or written in this mode, so a stale name from an earlier session
+  can't be reused. Off by default; `/kiosk` returns 404 until the KJ enables it
+  in Server settings (#121)
 
 ### Fixed
-- None
+- Library search in the app returned nothing for queries that should have
+  matched: a typo, words in a different order, or an artist and title together
+  (such as "queen bohemian") all came back empty. The Library panel was using a
+  literal substring filter instead of the shared Fuse-backed ranking already
+  used by quick search and the singer page; every surface now searches and ranks
+  identically (#122)
+- Search results were cut off at 8 rows in quick search and on the singer page,
+  which on a large library discarded the song you wanted before it could be
+  drawn. All search surfaces now return up to 50 rows; the dropdowns already
+  scrolled (#122)
+
+## [0.13.3] - 2026-08-12
+
+### Fixed
+- Singers can now scan the QR code and browse and request songs when the app is
+  reached through a reverse proxy or tunnel; the page and its requests
+  previously failed with server errors
+
+## [0.13.2] - 2026-08-12
+
+### Fixed
+- The custom QR code address now updates the on-screen QR code and the Server
+  tab as soon as it is saved, and reverts correctly when switched back off
+- The web server port setting is now saved and used (it was ignored, always
+  starting on 3069); changing it takes effect after restarting the app
+
+## [0.13.1] - 2026-08-12
+
+### Fixed
+- The song request page and the whole web admin failed to load (server errors)
+  when the app was started with `npx loukai-app`; installed desktop builds were
+  unaffected
+- The "Powered by Loukai" link on the song request page pointed at the wrong
+  domain
+
+## [0.13.0] - 2026-08-12
+
+### Added
+- Point the QR code at your own address, for when a reverse proxy, tunnel or
+  custom hostname fronts the app, so singers scan something they can actually
+  reach (Server settings)
+
+### Fixed
+- Tooltips stay visible instead of flashing and vanishing
+- Visuals keep running when the main window is minimized, so projected karaoke
+  and remote viewers no longer freeze while the control window is out of the way
+- Fixed a crash when quitting the app or turning the web server off during a song
+
+## [0.12.0] - 2026-08-08
+
+### Added
+- Game controller support: drive the entire app with a gamepad. D-pad or stick
+  moves a visible focus ring, A activates, B closes dialogs, Start toggles
+  play/pause, shoulder buttons switch tabs
+- Controllers are read natively (SDL), so they keep working when the window
+  isn't focused
+
+### Fixed
+- `npx loukai-app` failed to find Electron on every launch after the first
+- Disabled spellcheck underlines in text fields
 
 ### Security
-- Automated security audits on every push and pull request
+- Security updates for networking dependencies
 
----
+## [0.11.0] - 2026-08-02
+
+### Added
+- Chord detection v2: bass-first root notes for much more accurate chords
+- Evaluate/Reevaluate Chords button in the song editor
+- Editor search overhaul: better multi-word matching, artist matches on short
+  queries, stem-song-only results
+
+### Fixed
+- The app opened to a blank window on new installs and updates (a bad default in
+  saved settings crashed the player screen; existing installs heal automatically)
+- The editor keyboard froze after deleting or retiming lyric lines
+
+## [0.10.1] - 2026-07-21
+
+### Security
+- Updated bundled dependencies for newly published advisories (node-tar,
+  body-parser); no feature changes from 0.10.0
+
+## [0.10.0] - 2026-07-21
+
+### Added
+- Real-time chord display for players following along on guitar, bass, or keys:
+  current chord big, next chord previewed, top right of the karaoke screen and
+  on every phone/browser viewer
+- Chords are detected automatically when a song is created, and existing library
+  songs analyze themselves the first time they play with the display on
+- Works on CDG/MP3 songs too (display only)
+- Chord names transpose live with the key shift (Am becomes Bm at +2)
+- Edit chords in the song editor like lyrics: timeline rows, pick-list names,
+  and a tone preview per chord
+- Off by default; enable Show Chords under Display Options
+
+### Fixed
+- Deleting a lyric line no longer risks timing fields showing the wrong line's
+  values
+- Clearer wording on the web Create tab
+
+## [0.9.0] - 2026-07-18
+
+### Added
+- Key shift: transpose the loaded song up or down 6 semitones live from the
+  player or the web admin. The band and guide vocal shift together, the singer's
+  mic never does
+- Shows the transposed key while shifted (Am to Bm at +2) when the song's key is
+  known
+- Per-song by design: resets to 0 on every load and is never saved to settings
+- Zero cost when unshifted; the pitch processor is fully bypassed at 0
+
+## [0.8.1] - 2026-07-18
+
+### Fixed
+- Saving a song in the editor ran the whole file rebuild on the process that
+  routes keyboard input, freezing typing app-wide for seconds on larger files.
+  The save now runs in a worker thread and input stays live throughout
+
+## [0.8.0] - 2026-07-18
+
+### Added
+- Per-stem volume and mute on each output bus: give the singer a vocals-on
+  monitor mix while the room hears the karaoke mix, live from the web admin
+- Monitors (IEM) start fully muted so nothing leaks on single-sound-card setups
+
+### Changed
+- Better default lyrics model (Whisper large-v3-turbo, multilingual with
+  language auto-detect)
+- Stem separation runs on the GPU or fails fast with a clear message; no more
+  silent hour-long CPU runs
+- Newly created songs appear in the app library instantly, with no manual sync
+
+### Fixed
+- Linux: native Wayland with GPU song creation AND casting to phones/browser
+  viewers working at the same time; terminal launches always bring up the window
+- A second launch focuses the running app instead of failing
+- Queue Load works for `.stem.mp4` files
+- Editor timestamp fields no longer eat keystrokes
+
+### Removed
+- Legacy `.kai` code paths
 
 ## [0.7.0] - 2026-07-17
 
 ### Added
-- WebGPU creator: GPU karaoke creation from any surface — in-app, phone-commanded
-  host creation (upload from the web admin, the desktop player runs the GPU job),
-  and offsite creator (#59)
+- WebGPU creator: GPU karaoke creation from any surface (in-app,
+  phone-commanded host creation where the web admin uploads and the desktop
+  player runs the GPU job, and the offsite creator) (#59)
 - Chained 21-piece demucs split model with live toggle and cancel; optional
   htdemucs_ft "best quality" ensemble
 - Full Whisper language list in creator dropdowns; auto-detect with fallback
 - AIFF (.aif/.aiff) accepted by all import surfaces and the host-create upload (#58)
-- Creator JS/wasm libraries (onnxruntime-web, transformers.js, ffmpeg-core)
-  are now vendored into packages at build time — no CDN dependency at runtime;
+- Creator JS/wasm libraries (onnxruntime-web, transformers.js, ffmpeg-core) are
+  now vendored into packages at build time, with no CDN dependency at runtime;
   ML models remain download-on-first-use (#65)
+
+### Changed
+- Electron 42; no native modules remain (pure JS/WASM), so compiler toolchains
+  were removed from release CI; `ensure-electron` repair now reuses Electron's
+  own installer (#65)
+- Docs corrected across README/CONTRIBUTING/PACKAGING/architecture/flatpak to
+  match the post-Python reality (#65)
 
 ### Fixed
 - LAN web song requests failed with "Song ID and requester name are required":
   the client sent the sanitized-away `path` instead of the song `id` (#60)
 - Real first-run download progress for chained model files (stream-through)
 
-### Changed
-- Electron 42; no native modules remain (pure JS/WASM) — compiler toolchains
-  removed from release CI; `ensure-electron` repair now reuses Electron's own
-  installer (#65)
-- Docs corrected across README/CONTRIBUTING/PACKAGING/architecture/flatpak
-  to match the post-Python reality (#65)
-
 ### Removed
 - Dead `src/native/` legacy autotune module (#65)
 
-## [1.0.0] - 2025-10-11
-
-### Added - Phase 2 (Testing Infrastructure)
-- Vitest 3.2.4 testing framework with React support
-- @vitest/coverage-v8 for code coverage reporting
-- @testing-library/react 16.3.0 for component testing
-- @testing-library/jest-dom for enhanced assertions
-- jsdom 27.0.0 for browser environment simulation
-- Test scripts: `npm test`, `npm run test:ui`, `npm run test:run`, `npm run test:coverage`
-- vitest.config.js with React plugin, jsdom environment, and coverage config
-- src/test/setup.js with global test utilities and Electron IPC mocks
-- Comprehensive test suites:
-  - src/shared/services/queueService.test.js (25 tests, 100% coverage)
-  - src/shared/services/libraryService.test.js (36 tests, 95.76% coverage)
-  - src/shared/services/requestsService.test.js (23 tests, 100% coverage)
-- PHASE2-SUMMARY.md documentation
-- 52.31% overall code coverage (84 tests passing)
-
-### Added - Phase 1 (Dependency Updates)
-- React 19.2.0 (upgraded from 18.x)
-- React-DOM 19.2.0 (upgraded from 18.x)
-- Vite 7.1.9 (upgraded from 5.x)
-- @vitejs/plugin-react 5.0.4 (upgraded from 4.x)
-- electron-builder 26.0.12 (upgraded from 24.x)
-- Electron 38.2.2 (upgraded from 38.2.0)
-- All minor dependency updates via `npm update`
-
-### Changed - Phase 1
-- Updated Express middleware to Express 5 compatibility
-- Fixed wildcard route syntax for Express 5
-- Resolved React 19 deprecations
-- Updated Vite build configurations for Vite 7
-- Bundle size increased by 18% due to React 19 (expected)
-  - Renderer: 283.46 kB → 333.88 kB
-  - Web: 306.33 kB → 358.20 kB
-
-### Fixed - Bug Fixes (Pre-Phase 1)
-- Library panel sticky positioning (browse by artist and pagination now stay visible)
-- Library panel vertical spacing reduced for better space utilization
-- Audio device selection persistence for IEM devices
-- Default audio device selection now saves properly
-- Requests badge now shows correctly in renderer (not just web admin)
-- Effect names truncated to 28 characters with ellipsis to prevent overflow
-
-### Security
-- All dependencies updated to latest secure versions
-- 0 known vulnerabilities (verified with `npm audit`)
-
----
-
-## [0.9.0] - 2025-10-XX (Historical)
+## [0.6.0] - 2026-06-21
 
 ### Added
-- Multi-format support (M4A Stems, CDG, MP3+CDG pairs)
-- Real-time stem control with individual mute/solo
-- Dual output routing (PA + IEM)
-- Butterchurn visual effects integration (200+ presets)
-- Web admin interface with authentication
-- Socket.IO real-time synchronization
-- Song request system with approval workflow
-- WebRTC audio/video streaming (optional)
-- Library scanning with metadata extraction
-- Fuzzy search with alphabet navigation
-- Queue management with drag-and-drop reorder
-- Mixer with per-stem gain and routing
-- Lyrics editor with line-by-line editing
-- Song metadata editor
-- Settings persistence across sessions
-- Dark mode support
-- Pre-commit hooks with Husky + lint-staged
-- ESLint 9 + Prettier 3 code quality tools
+- In-app GPU acceleration for stem separation and transcription via WebGPU
+  (WASM fallback), with no Python or extra installs
+- Create karaoke files from the web admin, including file upload
+- Word-level lyric timing from timestamped Whisper models with vocal-energy
+  refinement
 
-### Technical Stack
-- Electron 38 for desktop application
-- React 19 for UI components
-- Vite 7 for fast builds and HMR
-- Express 5 for web server
-- Socket.IO 4 for real-time communication
-- Web Audio API for audio processing
-- Butterchurn for visualizations
-- CDGraphics for CDG rendering
-- Tailwind CSS 3 for styling
+## [0.1.22] - 2025-10-12
+
+### Added
+- Improved lyric editor: clicking a text field now selects the row
+
+### Changed
+- Enhanced selection visibility with better color contrast
+- Text inputs are now more clearly editable
+
+## [0.1.21] - 2025-10-12
+
+Early development release with core karaoke features.
+
+### Added
+- Multi-format support (KAI, CDG, MP3+CDG)
+- Real-time stem mixing and vocal effects
+- Web-based song request system
+- Auto-tune system with pitch correction
+- Butterchurn visualizations
 
 ---
 
@@ -184,22 +228,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Version Numbering
 
 - **Major (X.0.0)**: Breaking changes, major new features
-- **Minor (1.X.0)**: New features, backwards-compatible
-- **Patch (1.0.X)**: Bug fixes, small improvements
+- **Minor (0.X.0)**: New features, backwards-compatible
+- **Patch (0.0.X)**: Bug fixes, small improvements
 
 ### Release Process
 
 1. Update CHANGELOG.md with all changes
-2. Update version in package.json: `npm version [major|minor|patch]`
-3. Create git tag: `git tag -a v1.0.0 -m "Release v1.0.0"`
-4. Push with tags: `git push --follow-tags`
-5. Create GitHub Release with changelog excerpt
+2. Add a `<release>` entry to `com.loukai.app.metainfo.xml`
+3. Update the version in package.json: `npm version [major|minor|patch]`
+4. Push the release branch and merge its pull request
+5. Tag the merge commit and push tags: `git push --follow-tags`
 6. Build and publish packages
 
 ### Links
 
-- [Unreleased Changes](https://github.com/monteslu/loukai/compare/v1.0.0...HEAD)
-- [1.0.0 Release](https://github.com/monteslu/loukai/releases/tag/v1.0.0)
+- [Unreleased Changes](https://github.com/monteslu/loukai/compare/v0.14.0...HEAD)
+- [0.14.0 Release](https://github.com/monteslu/loukai/releases/tag/v0.14.0)
 
 ---
 
