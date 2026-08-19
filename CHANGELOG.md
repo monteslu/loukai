@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.3] - 2026-08-19
+
+### Added
+- The Display Options panel in the web admin can now be collapsed; the
+  collapsed state is saved to `localStorage`
+
+### Changed
+- The web admin screen is now usable on a phone: tabs collapse to a hamburger
+  menu below the tablet breakpoint instead of overflowing, the Queue tab's
+  sidebar and queue stack vertically instead of sitting side by side, and the
+  player controls wrap so the seek bar isn't squeezed away by the transport
+  buttons
+
 ## [0.14.2] - 2026-08-19
 
 ### Fixed
