@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Songs that open with backup-singer lines (e.g. a "backup:PA" chant before the
+  first verse) showed the intro progress bar counting down to the backup line
+  and previewed it as the line the singer was about to sing. The intro now
+  waits for the first line the singer actually performs, previews that line,
+  and draws the backup lines in their usual faded spot at the bottom
+- During a backup-only stretch before the first sung line, that line was drawn
+  twice in the five seconds before it started: once as the progress-bar
+  preview and again as the "upcoming" lyric
+
+### Added
+- `npm run inspect:stem <file.stem.mp4>` dumps a stem file the way Loukai sees
+  it: container layout, per-track sample tables, NI Stems and karaoke atoms,
+  the sequence of screens the canvas will show (intro, sung lines, gaps,
+  outro, with overlapping backup lines), and warnings for data the renderer
+  will mishandle. `--lines`, `--atoms`, and `--json` add detail
+
 ## [0.14.4] - 2026-08-19
 
 ### Added

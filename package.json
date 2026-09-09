@@ -29,7 +29,8 @@
     "format:check": "prettier --check \"src/**/*.{js,jsx,json,css,md}\"",
     "prepare": "husky",
     "prepublishOnly": "npm run build:all",
-    "pack:webgpu": "node scripts/pack-webgpu-assets.js"
+    "pack:webgpu": "node scripts/pack-webgpu-assets.js",
+    "inspect:stem": "node scripts/inspect-stem.js"
   },
   "keywords": [
     "karaoke",

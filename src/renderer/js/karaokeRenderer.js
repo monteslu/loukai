@@ -1,5 +1,6 @@
 // TODO: State should be passed to renderer instead of accessing globals
 import { shiftKeyName } from '../../shared/utils/musicKey.js';
+import { findFirstMainLineIndex } from '../../shared/lyricTimeline.js';
 
 export class KaraokeRenderer {
   constructor(canvasId) {
@@ -2380,16 +2381,25 @@ export class KaraokeRenderer {
     });
   }
 
+  /**
+   * The intro lasts until the first line the singer performs. Backup lines
+   * (e.g. a "backup:PA" chant before the first verse) are drawn at the bottom
+   * of the screen during the intro and must not end it or be shown as the
+   * "up next" line under the progress bar.
+   */
+  getFirstMainSingerLineIndex() {
+    return findFirstMainLineIndex(this.lyrics);
+  }
+
   isInInstrumentalIntro() {
     if (!this.lyrics || this.lyrics.length === 0) return false;
 
+    const firstMainIndex = this.getFirstMainSingerLineIndex();
+    if (firstMainIndex < 0) return false;
+
     const now = this.getInterpolatedTime();
-    const firstLine = this.lyrics[0];
-
-    if (!firstLine) return false;
-
-    // Check if we're before the first lyric starts
-    return now < firstLine.startTime;
+    // Check if we're before the first sung lyric starts
+    return now < this.lyrics[firstMainIndex].startTime;
   }
 
   isInInstrumentalOutro() {
@@ -2567,7 +2577,8 @@ export class KaraokeRenderer {
 
     // Use interpolated time for smooth 60fps progress bar
     const now = this.getInterpolatedTime();
-    const firstLine = this.lyrics[0];
+    const firstMainIndex = this.getFirstMainSingerLineIndex();
+    const firstLine = firstMainIndex >= 0 ? this.lyrics[firstMainIndex] : null;
 
     if (!firstLine) return;
 
@@ -2591,25 +2602,17 @@ export class KaraokeRenderer {
     // Calculate where the upcoming lyric is being drawn
     const upcomingY = barY + this.settings.progressBarMargin;
 
-    // Lock the first lyric as upcoming during intro
-    if (this.lockedUpcomingIndex !== 0) {
-      this.lockedUpcomingIndex = 0;
+    // Lock the first sung lyric as upcoming during intro
+    if (this.lockedUpcomingIndex !== firstMainIndex) {
+      this.lockedUpcomingIndex = firstMainIndex;
     }
 
     // Check if we should start the transition animation (0.3s before first lyric starts)
     // This ensures smooth transition from intro preview to active lyric
     this.startTransitionAnimations([], upcomingY);
 
-    // Draw transitioning lyrics if animation has started
-    for (const [lineIndex, transition] of this.lyricTransitions.entries()) {
-      const lyricLine = this.lyrics[lineIndex];
-      if (lyricLine) {
-        this.drawTransitioningLine(lyricLine, canvasWidth, transition);
-      }
-    }
-
     // Draw upcoming first lyrics with proper spacing (if not transitioning)
-    if (!this.lyricTransitions.has(0)) {
+    if (!this.lyricTransitions.has(firstMainIndex)) {
       this.drawUpcomingLyricsPreview(
         firstLine,
         canvasWidth,
@@ -2618,6 +2621,11 @@ export class KaraokeRenderer {
         upcomingY
       );
     }
+
+    // Draw any backup singer lines active during the intro (at the bottom, faded)
+    // and the transitioning first lyric once its animation starts. Skip the
+    // upcoming-lyric pass: the preview above already shows the first line.
+    this.drawActiveLines(canvasWidth, canvasHeight, true); // true = skip upcoming lyrics
   }
 
   drawInstrumentalOutro(canvasWidth, canvasHeight) {
@@ -2723,8 +2731,10 @@ export class KaraokeRenderer {
       barY + this.settings.progressBarMargin
     );
 
-    // Still render any active backup singers below the progress bar
-    this.drawActiveLines(canvasWidth, canvasHeight);
+    // Still render any active backup singers below the progress bar. Skip the
+    // upcoming-lyric pass: the preview above already shows the next main line,
+    // and drawing it again within 5s of its start put it on screen twice.
+    this.drawActiveLines(canvasWidth, canvasHeight, true); // true = skip upcoming lyrics
   }
 
   drawUpcomingLyricsPreview(nextLine, canvasWidth, canvasHeight, progress, startY) {
