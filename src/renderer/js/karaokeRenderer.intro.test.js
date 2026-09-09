@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { KaraokeRenderer } from './karaokeRenderer.js';
 
 // A song that opens with four backup:PA chants before the first line the
@@ -12,6 +12,8 @@ const lyricsData = [
   { start: 22.67, end: 26.64, text: 'Second verse line' },
 ];
 
+const renderers = [];
+
 function makeRenderer(time) {
   const canvas = document.createElement('canvas');
   canvas.id = 'test-canvas';
@@ -22,7 +24,11 @@ function makeRenderer(time) {
     new Proxy(
       {},
       {
-        get: (target, key) => (key in target ? target[key] : vi.fn()),
+        get: (target, key) => {
+          if (key in target) return target[key];
+          if (key === 'measureText') return () => ({ width: 0 });
+          return vi.fn();
+        },
         set: (target, key, value) => {
           target[key] = value;
           return true;
@@ -31,6 +37,10 @@ function makeRenderer(time) {
     );
   document.body.appendChild(canvas);
   const renderer = new KaraokeRenderer('test-canvas');
+  // The constructor starts a requestAnimationFrame loop; stop it so no frame
+  // draws through the stub context after the test has finished.
+  renderer.stopAnimation();
+  renderers.push(renderer);
   renderer.lyrics = renderer.parseLyricsData(lyricsData);
   renderer.songDuration = 200;
   renderer.currentTime = time;
@@ -41,6 +51,10 @@ function makeRenderer(time) {
 describe('KaraokeRenderer intro with leading backup lines', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    renderers.splice(0).forEach((r) => r.destroy());
   });
 
   it('treats everything before the first sung line as the intro', () => {
