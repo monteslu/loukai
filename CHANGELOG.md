@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.5] - 2026-09-09
+
 ### Fixed
 - Songs that open with backup-singer lines (e.g. a "backup:PA" chant before the
   first verse) showed the intro progress bar counting down to the backup line
@@ -20,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chant before the first verse) did not route their vocals to the PA: the
   singer-change check ran after the intro/outro screens had already returned.
   It now runs every frame before those screens
+
+### Changed
+- The web admin's pending-request row put the Approve/Reject buttons beside the
+  song info with no wrap, so both got squeezed on a phone. The buttons now drop
+  below the text and go full width on a phone, and the From/message and
+  From/status lines wrap
 
 ### Added
 - `npm run inspect:stem <file.stem.mp4>` dumps a stem file the way Loukai sees
