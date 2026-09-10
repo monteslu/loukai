@@ -1640,6 +1640,11 @@ export class KaraokeRenderer {
       return;
     }
 
+    // Route vocals for the backup:PA feature before any early return below.
+    // Backup lines can be active during the intro (a chant before the first
+    // verse) or the outro, and those screens return before the lyric branch.
+    this.checkSingerChange();
+
     // Check for instrumental intro first
     if (this.isInInstrumentalIntro()) {
       this.drawInstrumentalIntro(width, height);
@@ -1656,9 +1661,6 @@ export class KaraokeRenderer {
 
     // Find current line
     const currentLineIndex = this.findCurrentLine();
-
-    // Check for singer change (for backup:PA feature)
-    this.checkSingerChange(currentLineIndex);
 
     if (currentLineIndex >= 0 && currentLineIndex < this.lyrics.length) {
       // Check if we're in an instrumental gap first

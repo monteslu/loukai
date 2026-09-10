@@ -93,6 +93,27 @@ describe('KaraokeRenderer intro with leading backup lines', () => {
     expect(renderer.drawActiveLines).toHaveBeenCalledWith(1280, 720, true);
   });
 
+  it('reports backup:PA singers during the intro so their vocals reach the PA', () => {
+    const renderer = makeRenderer(4); // inside the first backup chant
+    renderer.isPlaying = true;
+    for (const name of ['drawInstrumentalIntro', 'drawVocalsWaveform', 'drawMicrophoneWaveform']) {
+      renderer[name] = vi.fn();
+    }
+    const onSingerChange = vi.fn();
+    renderer.onSingerChange = onSingerChange;
+
+    renderer.draw();
+    expect(onSingerChange).toHaveBeenCalledWith('backup:PA');
+    expect(renderer.drawInstrumentalIntro).toHaveBeenCalled();
+
+    // Chant over, still in the intro: routing goes back to normal
+    onSingerChange.mockClear();
+    renderer.currentTime = 6;
+    renderer.getInterpolatedTime = () => 6;
+    renderer.draw();
+    expect(onSingerChange).toHaveBeenCalledWith(null);
+  });
+
   it('does not draw the next sung line twice during a backup-only stretch', () => {
     const renderer = makeRenderer(15);
     renderer.drawProgressBar = vi.fn();

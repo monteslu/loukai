@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - During a backup-only stretch before the first sung line, that line was drawn
   twice in the five seconds before it started: once as the progress-bar
   preview and again as the "upcoming" lyric
+- Backup-singer lines that fall inside the intro or outro (a `backup:PA`
+  chant before the first verse) did not route their vocals to the PA: the
+  singer-change check ran after the intro/outro screens had already returned.
+  It now runs every frame before those screens
 
 ### Added
 - `npm run inspect:stem <file.stem.mp4>` dumps a stem file the way Loukai sees
