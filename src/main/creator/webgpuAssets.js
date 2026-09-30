@@ -24,7 +24,7 @@ import {
   renameSync,
   rmSync,
 } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, normalize, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
 import https from 'https';
 import { getCacheDir } from './systemChecker.js';
@@ -272,7 +272,10 @@ export function registerWebGpuAssets(app) {
     // Express 5 (path-to-regexp v8) requires a named splat, not a bare '*'.
     // Strip the prefix; reject traversal.
     const key = decodeURIComponent(req.path.replace(/^\/webgpu-assets\//, ''));
-    if (key.includes('..')) return res.status(400).json({ error: 'bad path' });
+    const normalizedKey = normalize(key);
+    if (normalizedKey.startsWith('..') || isAbsolute(normalizedKey) || normalizedKey.includes('\0')) {
+      return res.status(400).json({ error: 'bad path' });
+    }
     // Locally-bundled assets in static/webgpu (ft-ensemble.js, ft_cpu_nodes.json,
     // and any vendored libs) take precedence; otherwise fall to the CDN cache map.
     const localFile = join(STATIC_WEBGPU, key);
@@ -305,7 +308,10 @@ export function registerWebGpuAssets(app) {
   // Cached to disk on first request; served same-origin thereafter.
   app.get('/webgpu-models/*splat', async (req, res) => {
     const rel = decodeURIComponent(req.path.replace(/^\/webgpu-models\//, ''));
-    if (!rel || rel.includes('..')) return res.status(400).json({ error: 'bad path' });
+    const normalizedRel = rel && normalize(rel);
+    if (!rel || normalizedRel.startsWith('..') || isAbsolute(normalizedRel) || normalizedRel.includes('\0')) {
+      return res.status(400).json({ error: 'bad path' });
+    }
 
     // crepe (tiny) is bundled in static/webgpu → serve directly, offline, no fetch.
     const bundled = join(STATIC_WEBGPU, rel);
