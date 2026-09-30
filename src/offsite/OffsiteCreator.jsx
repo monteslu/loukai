@@ -19,6 +19,8 @@ import {
   Spinner,
   ErrorDisplay,
   StemProgressBars,
+  IndeterminateProgress,
+  ENCODED_STEMS,
 } from '../shared/components/creatorUi.jsx';
 
 /**
@@ -43,6 +45,7 @@ export default function OffsiteCreator() {
   const [dragActive, setDragActive] = useState(false);
   const [status, setStatus] = useState('idle'); // idle|separating|transcribing|pitch|saving|done|error
   const [stemProgress, setStemProgress] = useState({});
+  const [encodeProgress, setEncodeProgress] = useState({});
   const [transcribeInfo, setTranscribeInfo] = useState('');
   const [lyrics, setLyrics] = useState([]);
   const [logLines, setLogLines] = useState([]);
@@ -162,7 +165,8 @@ export default function OffsiteCreator() {
       );
 
       // --- Encode stems → AAC, mux the .stem.mp4 IN-BROWSER, offer a download. ---
-      setStatus('saving');
+      setStatus('encoding');
+      setEncodeProgress({});
       log('encoding stems to AAC (ffmpeg-wasm) …');
       const result = created.stems;
       const sr = audio.sampleRate;
@@ -175,7 +179,14 @@ export default function OffsiteCreator() {
       };
       // CONCURRENT on the encoder worker pool (see aacEncoder.js).
       const stemKeys = Object.keys(wavBlobs);
-      const encoded = await Promise.all(stemKeys.map((k) => encodeWavToAac(wavBlobs[k])));
+      const encoded = await Promise.all(
+        stemKeys.map((k) =>
+          encodeWavToAac(wavBlobs[k], {
+            onProgress: (frac) => setEncodeProgress((p) => ({ ...p, [k]: frac })),
+          })
+        )
+      );
+      setStatus('saving');
       const aac = {};
       stemKeys.forEach((k, i) => {
         aac[k] = encoded[i];
@@ -219,7 +230,7 @@ export default function OffsiteCreator() {
     }
   }
 
-  const busy = ['separating', 'transcribing', 'pitch', 'saving'].includes(status);
+  const busy = ['separating', 'transcribing', 'pitch', 'encoding', 'saving'].includes(status);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
@@ -379,15 +390,23 @@ export default function OffsiteCreator() {
             {status === 'separating' && (
               <StemProgressBars progress={stemProgress} label="Separating stems…" />
             )}
-            {status !== 'separating' && (
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                <span className="inline-block animate-pulse">●</span>{' '}
-                {status === 'transcribing'
-                  ? transcribeInfo || 'Transcribing vocals…'
-                  : status === 'pitch'
-                    ? 'Detecting pitch + key…'
-                    : 'Encoding + muxing .stem.mp4…'}
-              </div>
+            {status === 'encoding' && (
+              <StemProgressBars
+                progress={encodeProgress}
+                stems={ENCODED_STEMS}
+                label="Encoding stems to AAC…"
+              />
+            )}
+            {!['separating', 'encoding'].includes(status) && (
+              <IndeterminateProgress
+                label={
+                  status === 'transcribing'
+                    ? transcribeInfo || 'Transcribing vocals…'
+                    : status === 'pitch'
+                      ? 'Detecting pitch + key…'
+                      : 'Muxing .stem.mp4…'
+                }
+              />
             )}
           </div>
         )}

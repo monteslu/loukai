@@ -22,6 +22,9 @@ import { dom as domTransport } from 'rawr/transports/worker';
 // scales with the machine. Workers spawn lazily, up to the cap.
 const _slots = [];
 let _poolCap = defaultPoolSize();
+// Progress callbacks by request id; workers send progress(id, 0..1) notifications.
+const _progressListeners = new Map();
+let _nextProgressId = 1;
 
 function defaultPoolSize() {
   const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
@@ -51,6 +54,7 @@ function getSlot() {
     });
     // Generous timeout: first call also fetches + instantiates the 32MB core.
     const peer = rawr({ transport: domTransport(worker), timeout: 120000 });
+    peer.notifications.onprogress((id, frac) => _progressListeners.get(id)?.(frac));
     const slot = { worker, peer, busy: 0 };
     _slots.push(slot);
     return slot;
@@ -74,9 +78,10 @@ async function withSlot(fn) {
  * @param {Blob|Uint8Array|ArrayBuffer} wav - WAV (PCM) input
  * @param {Object} [opts]
  * @param {number} [opts.bitrate=192000] - AAC bitrate (bits/sec)
+ * @param {(fraction:number)=>void} [opts.onProgress] - called with 0..1 while encoding
  * @returns {Promise<Uint8Array>} the .m4a bytes (AAC-LC in an MP4 container)
  */
-export async function encodeWavToAac(wav, { bitrate = 192000 } = {}) {
+export async function encodeWavToAac(wav, { bitrate = 192000, onProgress } = {}) {
   let bytes;
   if (wav instanceof Uint8Array) bytes = wav;
   else if (wav instanceof ArrayBuffer) bytes = new Uint8Array(wav);
@@ -84,7 +89,15 @@ export async function encodeWavToAac(wav, { bitrate = 192000 } = {}) {
 
   // rawr serializes args via structured clone; pass the bytes through and get the
   // encoded .m4a back. (The transferable fast-path is a future optimization.)
-  const result = await withSlot((peer) => peer.methods.encode(bytes, bitrate));
+  const progressId = onProgress ? _nextProgressId++ : null;
+  if (progressId) _progressListeners.set(progressId, onProgress);
+  let result;
+  try {
+    result = await withSlot((peer) => peer.methods.encode(bytes, bitrate, progressId));
+  } finally {
+    if (progressId) _progressListeners.delete(progressId);
+  }
+  onProgress?.(1);
   return result instanceof Uint8Array ? result : new Uint8Array(result);
 }
 

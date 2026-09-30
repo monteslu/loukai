@@ -527,7 +527,9 @@ export async function importStemFile({
             llmSettings
           );
           if (llmResult?.output?.lines?.length) {
-            await M4AAtoms.writeKaraAtom(outputPath, { lines: llmResult.output.lines });
+            // Merge: writing { lines } alone drops word timing, singers and chords
+            // (same fix as updateStemLyrics).
+            await M4AAtoms.writeKaraAtom(outputPath, { ...kara, lines: llmResult.output.lines });
             llmStats = llmResult.stats;
             corrected = true;
           }

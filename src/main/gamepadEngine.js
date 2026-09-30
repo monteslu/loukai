@@ -75,6 +75,13 @@ export class GamepadEngine extends EventEmitter {
    * degrade to "no gamepads", not a failed app launch.
    */
   initialize() {
+    // @kmamal/sdl initializes SDL's video subsystem and polls events on a 0ms
+    // interval as soon as it loads. On macOS that starts the Cocoa driver inside
+    // Electron's main process, and its event pump dequeues and re-sends native
+    // NSEvents (keystrokes included) out from under Chromium. Gamepads only need
+    // the joystick/controller subsystems, so point video at SDL's no-op driver.
+    // Must be set before the require: SDL reads it during module load.
+    process.env.SDL_VIDEODRIVER = 'dummy';
     try {
       this.sdl = require('@kmamal/sdl');
     } catch (error) {
