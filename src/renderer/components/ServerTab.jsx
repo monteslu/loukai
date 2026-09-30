@@ -28,6 +28,7 @@ export function ServerTab({ bridge }) {
   const [totalRequests, setTotalRequests] = useState(0);
   const [message, setMessage] = useState(null);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState(null);
+  const [appVersion, setAppVersion] = useState(null);
 
   // Show what the typed override actually resolves to (it accepts a bare host
   // and assumes https), so a bad value is obvious before saving.
@@ -117,6 +118,13 @@ export function ServerTab({ bridge }) {
 
     return () => clearInterval(pollInterval);
   }, [bridge, updateRequestsStats]);
+
+  useEffect(() => {
+    bridge
+      ?.getAppVersion?.()
+      .then(setAppVersion)
+      .catch(() => {});
+  }, [bridge]);
 
   const handleSaveSettings = async () => {
     try {
@@ -548,6 +556,12 @@ export function ServerTab({ bridge }) {
               </p>
             </div>
           </div>
+        )}
+
+        {appVersion && (
+          <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+            Loukai v{appVersion}
+          </p>
         )}
       </div>
       {confirmModal}
