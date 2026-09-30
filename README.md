@@ -6,7 +6,7 @@
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![React 19](https://img.shields.io/badge/React-19-blue)](https://react.dev/)
-[![Electron 42](https://img.shields.io/badge/Electron-42-blue)](https://www.electronjs.org/)
+[![Electron 44](https://img.shields.io/badge/Electron-44-blue)](https://www.electronjs.org/)
 [![Tests](https://img.shields.io/badge/tests-491-green)](./.github/workflows/ci.yml)
 
 Loukai is a free, open source karaoke software that runs locally on your computer to **play** and **create** karaoke files from your own music. Built on M4A Stems (MPEG-4 multi-track audio), it uses industry-standard formats compatible with DJ software, giving you full control over your personal karaoke library.
@@ -86,7 +86,7 @@ The first launch downloads Electron once into a per-user cache (`~/.cache/loukai
 - **Song Metadata Editor**: Update title, artist, album, and other metadata
 
 ### Developer Features
-- **Modern Stack**: React 19, Vite 7, Electron 42
+- **Modern Stack**: React 19, Vite 7, Electron 44
 - **Comprehensive Testing**: 491 tests with Vitest coverage reporting
 - **ESLint + Prettier**: Automated code formatting and linting
 - **Pre-commit Hooks**: Husky + lint-staged for quality assurance
@@ -240,7 +240,7 @@ Loukai is built with a multi-process architecture:
 |----------|------------|
 | **Frontend** | React 19, Tailwind CSS 3 |
 | **Build Tool** | Vite 7 |
-| **Desktop** | Electron 42 |
+| **Desktop** | Electron 44 |
 | **Backend** | Node.js, Express 5 |
 | **Real-time** | Socket.IO 4 |
 | **Testing** | Vitest 3, Testing Library 16 |

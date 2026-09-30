@@ -504,7 +504,7 @@ Channels organized by domain:
 ## Technology Stack
 
 ### Main Process
-- **Electron 42** - Desktop framework
+- **Electron 44** - Desktop framework
 - **Express 5** - Web server
 - **Socket.io 4** - Real-time communication
 - **stem-mp4** - NI Stems + karaoke atom reading/writing
