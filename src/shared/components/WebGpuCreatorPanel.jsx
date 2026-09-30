@@ -5,6 +5,8 @@ import {
   WHISPER_LANGUAGES,
   DEMUCS_MODELS,
   encodeWav,
+  assertHasAudioTrack,
+  decodeFailure,
 } from '../creator/creatorAudio.js';
 import { encodeWavToAac } from '../creator/aacEncoder.js';
 import { createKaraokeInWorker } from '../creator/createKaraokeClient.js';
@@ -416,8 +418,14 @@ export default function WebGpuCreatorPanel() {
   // leaked a real AudioContext per decode (Chromium caps ~6 live).
   async function decodeAudio(file) {
     const arr = await file.arrayBuffer();
+    assertHasAudioTrack(arr, file.name);
     const ctx = new OfflineAudioContext(2, 1, 44100);
-    const buf = await ctx.decodeAudioData(arr);
+    let buf;
+    try {
+      buf = await ctx.decodeAudioData(arr);
+    } catch (e) {
+      throw decodeFailure(file.name, e);
+    }
     const left = buf.getChannelData(0);
     const right = buf.numberOfChannels > 1 ? buf.getChannelData(1) : buf.getChannelData(0);
     return {
@@ -448,9 +456,14 @@ export default function WebGpuCreatorPanel() {
     const u8 = trackBuf instanceof Uint8Array ? trackBuf : new Uint8Array(trackBuf);
     // 44.1k offline decode (see decodeAudio) — no leaked AudioContext.
     const ctx = new OfflineAudioContext(2, 1, 44100);
-    const buf = await ctx.decodeAudioData(
-      u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)
-    );
+    let buf;
+    try {
+      buf = await ctx.decodeAudioData(
+        u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)
+      );
+    } catch (e) {
+      throw decodeFailure(`the vocals track of ${file.name}`, e);
+    }
     const left = buf.getChannelData(0);
     const right = buf.numberOfChannels > 1 ? buf.getChannelData(1) : buf.getChannelData(0);
     return {

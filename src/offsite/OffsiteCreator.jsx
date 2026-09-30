@@ -8,6 +8,8 @@ import {
   WHISPER_LANGUAGES,
   DEMUCS_MODELS,
   encodeWav,
+  assertHasAudioTrack,
+  decodeFailure,
 } from '../shared/creator/creatorAudio.js';
 import { encodeWavToAac } from '../shared/creator/aacEncoder.js';
 import { createKaraokeInWorker } from '../shared/creator/createKaraokeClient.js';
@@ -84,8 +86,14 @@ export default function OffsiteCreator() {
   // it slow audio), and OfflineAudioContext doesn't leak a live AudioContext.
   async function decodeAudio(file) {
     const arr = await file.arrayBuffer();
+    assertHasAudioTrack(arr, file.name);
     const ctx = new OfflineAudioContext(2, 1, 44100);
-    const buf = await ctx.decodeAudioData(arr);
+    let buf;
+    try {
+      buf = await ctx.decodeAudioData(arr);
+    } catch (e) {
+      throw decodeFailure(file.name, e);
+    }
     const left = buf.getChannelData(0);
     const right = buf.numberOfChannels > 1 ? buf.getChannelData(1) : buf.getChannelData(0);
     return {
