@@ -21,6 +21,7 @@ export default defineConfig({
         'src/shared/services/**/*.js',
         'src/shared/creator/**/*.js',
         'src/shared/formatUtils.js',
+        'src/shared/lyricTimeline.js',
         'src/shared/utils/stemGain.js',
         'src/shared/utils/stemClassify.js',
         'src/main/creator/creatorJob.js',

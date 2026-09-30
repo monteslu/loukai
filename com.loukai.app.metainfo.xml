@@ -48,6 +48,17 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.14.5" date="2026-09-09">
+      <description>
+        <p>Songs that open with backup-singer lines now show the right intro</p>
+        <ul>
+          <li>When a song opened with backup-singer lines before the first verse, the intro progress bar counted down to the backup line and previewed it as the line the singer was about to sing. The intro now waits for the first line the singer actually performs, previews that line once instead of twice, and draws the backup lines faded at the bottom as usual</li>
+          <li>Backup-singer lines inside the intro or outro did not route their vocals to the PA; they now do</li>
+          <li>The web admin's pending-request buttons no longer get squeezed beside the song info on a phone</li>
+          <li>New developer tool: npm run inspect:stem dumps a stem file the way Loukai reads it, with the sequence of screens the canvas will show and warnings for bad lyric data</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.14.4" date="2026-08-19">
       <description>
         <p>The web admin's settings sidebar can now be hidden on a phone</p>
