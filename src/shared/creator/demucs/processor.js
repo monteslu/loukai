@@ -339,6 +339,7 @@ export class DemucsProcessor {
               out.right[start + i] + timeData[timeBase + samples + i] * window[i];
           }
         }
+        // eslint-disable-next-line no-await-in-loop -- yield between chunks so the UI stays responsive
         if (this.pipeline) await yieldToLoop();
       }
       for (let i = 0; i < copyLen; i++) {
@@ -368,10 +369,13 @@ export class DemucsProcessor {
             this.inputs[(n + 1) % 2],
             session
           );
+          // eslint-disable-next-line no-await-in-loop -- yield while the next segment is in flight so the UI stays responsive
           await yieldToLoop();
         }
+        // eslint-disable-next-line no-await-in-loop -- pipelined on purpose: wait for this segment while the next one is prepared
         const results = await inFlight;
         if (n + 1 < totalSegments) inFlight = session.run(feeds);
+        // eslint-disable-next-line no-await-in-loop -- overlap-add into the shared output in segment order
         await postProcess(starts[n], results);
         this.onProgress({
           progress: (n + 1) / totalSegments,
@@ -392,13 +396,16 @@ export class DemucsProcessor {
           this.inputs[n % 2],
           session
         );
+        // eslint-disable-next-line no-await-in-loop -- sequential/gentle path: one segment on the GPU at a time
         const results = await session.run(feeds);
+        // eslint-disable-next-line no-await-in-loop -- overlap-add into the shared output in segment order
         await postProcess(starts[n], results);
         this.onProgress({
           progress: (n + 1) / totalSegments,
           currentSegment: n + 1,
           totalSegments,
         });
+        // eslint-disable-next-line no-await-in-loop -- gentle mode: pause between segments to share the GPU
         if (n + 1 < totalSegments) await pace(Date.now() - t0);
       }
     }

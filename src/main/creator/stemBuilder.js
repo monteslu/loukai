@@ -25,110 +25,6 @@ import { Atoms as M4AAtoms } from 'stem-mp4';
 // NI-Stems metadata, all via the pure-JS stem-mp4 library (no ffmpeg).
 
 /**
- * Inject karaoke atoms into an MP4 file using stem-mp4 library
- *
- * @param {string} filePath - Path to M4A file
- * @param {Object} data - Karaoke data to embed
- */
-async function injectKaraokeAtoms(filePath, data) {
-  const { lyrics, llmCorrections, tags, chords } = data;
-
-  // Convert lyrics segments to lines format expected by kara atom
-  // Include word-level timing if available from Whisper
-  const lines = [];
-  if (lyrics && lyrics.lines && lyrics.lines.length > 0) {
-    const words = lyrics.words || [];
-
-    for (const line of lyrics.lines) {
-      const lineData = {
-        start: line.start,
-        end: line.end,
-        text: line.text,
-      };
-
-      // Find words that fall within this line's time range
-      const lineWords = words.filter((w) => w.start >= line.start && w.start < line.end);
-
-      if (lineWords.length > 0) {
-        // Compute relative timings: [startOffset, endOffset] from line.start
-        // Round to 3 decimal places for reasonable precision
-        const timings = lineWords.map((w) => [
-          Math.round((w.start - line.start) * 1000) / 1000,
-          Math.round(((w.end || w.start + 0.1) - line.start) * 1000) / 1000,
-        ]);
-        lineData.words = { timings };
-      }
-
-      lines.push(lineData);
-    }
-  }
-
-  // Build kara data structure for stem-mp4
-  // Note: Audio sources are read from the NI Stems 'stem' atom, not stored in kara
-  const karaData = {
-    ...(chords && chords.length > 0 && { chords }),
-    // Timing information
-    timing: {
-      offset_sec: 0,
-      encoder_delay_samples: 0,
-    },
-
-    // Tags for filtering (e.g., 'edited', 'ai_corrected')
-    tags: tags || [],
-
-    // Lyrics (lines)
-    lines: lines,
-  };
-
-  // Add LLM corrections metadata if available
-  // Uses same structure as KAI format for consistency with SongEditor
-  if (
-    llmCorrections &&
-    (llmCorrections.corrections?.length > 0 || llmCorrections.missing_lines?.length > 0)
-  ) {
-    karaData.meta = {
-      corrections: {
-        // Applied corrections (for reference/audit)
-        applied: (llmCorrections.corrections || []).map((c) => ({
-          line: c.line_num,
-          start: c.start_time,
-          end: c.end_time,
-          old: c.old_text,
-          new: c.new_text,
-          reason: c.reason,
-          word_retention: c.retention_rate,
-        })),
-        // Suggested missing lines (user can review/add in editor)
-        missing_lines_suggested: (llmCorrections.missing_lines || []).map((s) => ({
-          suggested_text: s.suggested_text,
-          start: s.start_time,
-          end: s.end_time,
-          confidence: s.confidence,
-          reason: s.reason,
-        })),
-        // Stats
-        provider: llmCorrections.provider,
-        model: llmCorrections.model,
-      },
-    };
-  }
-
-  // Write kara atom using stem-mp4 library
-  log(`💾 Writing kara atom: ${lines.length} lines`);
-  await M4AAtoms.writeKaraAtom(filePath, karaData);
-
-  // Verify final file size (debug)
-  const { stat } = await import('fs/promises');
-  const finalSize = (await stat(filePath)).size;
-  log(`📊 Final file size after kara atom: ${finalSize} bytes`);
-
-  // Note: Vocal pitch tracking is done at runtime, not stored in file.
-  // CREPE output is used only for key detection (stored in standard metadata).
-
-  log('✅ Karaoke atoms written successfully');
-}
-
-/**
  * Inject lyrics into an existing .stem.mp4 file
  * Used for "lyrics only" mode when stems already exist
  *
@@ -308,6 +204,7 @@ export async function repairStemFiles(filePaths, options = {}) {
   };
 
   for (const filePath of filePaths) {
+    // eslint-disable-next-line no-await-in-loop -- repair one file at a time; each repair rewrites a whole stem file
     const result = await repairStemFile(filePath, options);
     results.files.push(result);
     if (result.success) {

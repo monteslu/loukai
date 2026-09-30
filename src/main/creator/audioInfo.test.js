@@ -6,7 +6,7 @@
  * not on PATH (so CI without them stays green).
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync } from 'child_process';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
@@ -57,6 +57,10 @@ describe.skipIf(!HAVE_FFMPEG)('getAudioInfo conformance vs ffprobe', () => {
     const meta = ['-metadata', 'title=TestSong', '-metadata', 'artist=TestArtist'];
     execFileSync('ffmpeg', ['-y', ...sine, ...meta, files.mp3], { stdio: 'ignore' });
     execFileSync('ffmpeg', ['-y', ...sine, '-c:a', 'aac', ...meta, files.m4a], { stdio: 'ignore' });
+  });
+
+  afterAll(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
   for (const kind of ['mp3', 'm4a']) {

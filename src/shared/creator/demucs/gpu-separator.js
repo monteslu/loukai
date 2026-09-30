@@ -75,6 +75,7 @@ export class GpuSeparator {
         preferredOutputLocation: 'gpu-buffer',
         ...(i === 0 ? this.extraSessionOptions : {}),
       };
+      // eslint-disable-next-line no-await-in-loop -- load chain sessions one at a time to keep peak GPU memory down
       const session = await this.ort.InferenceSession.create(p.buf, opts);
       pieces.push({
         session,
@@ -229,8 +230,10 @@ export class GpuSeparator {
           feeds[nm] = v;
         }
         if (piece.fetches) {
+          // eslint-disable-next-line no-await-in-loop -- chain pieces run in order; each consumes the previous piece's outputs
           await piece.session.run(feeds, piece.fetches);
         } else {
+          // eslint-disable-next-line no-await-in-loop -- chain pieces run in order; each consumes the previous piece's outputs
           const res = await piece.session.run(feeds);
           for (const nm of piece.outputs) {
             vals[nm] = res[nm];
@@ -238,7 +241,9 @@ export class GpuSeparator {
           }
         }
         if (this.gentle) {
+          // eslint-disable-next-line no-await-in-loop -- gentle mode: let the GPU drain between pieces
           await this.device.queue.onSubmittedWorkDone();
+          // eslint-disable-next-line no-await-in-loop -- gentle mode: let the GPU drain between pieces
           await new Promise((r) => setTimeout(r, 3));
         }
       }
@@ -261,6 +266,7 @@ export class GpuSeparator {
         : [];
     this.chain = null;
     this.session = null;
+    // eslint-disable-next-line no-await-in-loop -- teardown is not a hot path; release sessions one at a time
     for (const s of sessions) await s.release?.().catch(() => {});
   }
   /**
@@ -355,6 +361,7 @@ export class GpuSeparator {
         this.dsp.encodeStft(pre, 0);
         this.dsp.encodeStft(pre, 1);
         this.device.queue.submit([pre.finish()]);
+        // eslint-disable-next-line no-await-in-loop -- segments reuse the same GPU buffers; each finishes before the next is encoded
         await runModel();
         const post = this.device.createCommandEncoder({ label: `post-${n}` });
         this.dsp.encodePost(post, binds, {
@@ -372,6 +379,7 @@ export class GpuSeparator {
         // Gentle pacing: give the compositor (and the host's rendering) the GPU
         // for about as long as this segment held it.
         if (this.gentle && n + 1 < totalSegments) {
+          // eslint-disable-next-line no-await-in-loop -- gentle mode: hand the GPU back to the compositor between segments
           await new Promise((r) => setTimeout(r, Math.min(1500, Date.now() - segT0)));
         }
       }
@@ -382,7 +390,9 @@ export class GpuSeparator {
       const out = {};
       for (let t = 0; t < TRACKS.length; t++) {
         out[TRACKS[t]] = {
+          // eslint-disable-next-line no-await-in-loop -- one full-song staging buffer at a time instead of eight
           left: await this.readback(accs[t][0], totalSamples),
+          // eslint-disable-next-line no-await-in-loop -- one full-song staging buffer at a time instead of eight
           right: await this.readback(accs[t][1], totalSamples),
         };
       }

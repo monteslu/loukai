@@ -133,6 +133,7 @@ export async function setSettings(updates, options = {}) {
   const results = {};
 
   for (const [key, value] of Object.entries(updates)) {
+    // eslint-disable-next-line no-await-in-loop -- apply updates in order; each one writes the same settings store
     const result = await setSetting(key, value, { ...options, skipBroadcast: true });
     results[key] = result;
   }

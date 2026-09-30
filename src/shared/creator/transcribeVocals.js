@@ -420,6 +420,7 @@ export async function transcribeVocals(input, opts = {}, emit = {}) {
       const s1 = Math.min(totalSamples, Math.ceil(end * SR16));
       const window = mono.subarray(s0, s1);
       onTranscribeInfo(`segment ${chunkIdx}/${plan.length} @ ${start.toFixed(0)}s …`);
+      // eslint-disable-next-line no-await-in-loop -- one Whisper window at a time; the model cannot run windows concurrently
       const w = await transcribeWindow(window);
       if (noSpeechGate && w.noSpeech != null && w.noSpeech > 0.6) {
         onLog(

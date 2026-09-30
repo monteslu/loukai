@@ -237,8 +237,8 @@ describe('DemucsProcessor.separate', { timeout: 60000 }, () => {
     for (let f = 0; f < MODEL_SPEC_FRAMES; f++) {
       for (let b = 0; b < MODEL_SPEC_BINS; b++) {
         const src = (f + 2) * spec.numBins + b;
-        freq[0 * MODEL_SPEC_BINS * MODEL_SPEC_FRAMES + b * MODEL_SPEC_FRAMES + f] = spec.real[src];
-        freq[1 * MODEL_SPEC_BINS * MODEL_SPEC_FRAMES + b * MODEL_SPEC_FRAMES + f] = spec.imag[src];
+        freq[b * MODEL_SPEC_FRAMES + f] = spec.real[src];
+        freq[MODEL_SPEC_BINS * MODEL_SPEC_FRAMES + b * MODEL_SPEC_FRAMES + f] = spec.imag[src];
       }
     }
     const freqModel = () => ({

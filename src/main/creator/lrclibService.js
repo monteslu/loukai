@@ -82,6 +82,7 @@ export async function searchLyrics(title, artist) {
 
     let results = null;
     for (const url of queries) {
+      // eslint-disable-next-line no-await-in-loop -- try each query in turn and stop at the first one with results
       const response = await fetch(url, {
         headers: { 'User-Agent': 'Loukai/1.0' },
         signal: AbortSignal.timeout(10000),
@@ -90,6 +91,7 @@ export async function searchLyrics(title, artist) {
         console.warn(`LRCLIB search failed: ${response.status}`);
         continue;
       }
+      // eslint-disable-next-line no-await-in-loop -- same query loop; the body is read before deciding to try the next query
       const json = await response.json();
       if (Array.isArray(json) && json.length) {
         results = json;
