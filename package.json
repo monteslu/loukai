@@ -1,6 +1,6 @@
 {
   "name": "loukai-app",
-  "version": "0.14.4",
+  "version": "0.14.5",
   "type": "module",
   "description": "Loukai Karaoke - Free and open source karaoke system for playing and creating stem-based karaoke files",
   "main": "src/main/main.js",
@@ -29,7 +29,8 @@
     "format:check": "prettier --check \"src/**/*.{js,jsx,json,css,md}\"",
     "prepare": "husky",
     "prepublishOnly": "npm run build:all",
-    "pack:webgpu": "node scripts/pack-webgpu-assets.js"
+    "pack:webgpu": "node scripts/pack-webgpu-assets.js",
+    "inspect:stem": "node scripts/inspect-stem.js"
   },
   "keywords": [
     "karaoke",
