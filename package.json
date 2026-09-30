@@ -258,5 +258,9 @@
     "bin/",
     "static/",
     "scripts/ensure-electron.js"
-  ]
+  ],
+  "allowScripts": {
+    "@kmamal/sdl": true,
+    "esbuild": true
+  }
 }
