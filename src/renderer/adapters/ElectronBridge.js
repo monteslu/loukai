@@ -576,6 +576,11 @@ export class ElectronBridge extends BridgeInterface {
     return await this.api.webServer.getUrl();
   }
 
+  /** Loukai's version (app.getVersion(), i.e. package.json). */
+  async getAppVersion() {
+    return await this.api.app.getVersion();
+  }
+
   /** The real listening address, ignoring any public-URL override. */
   async getLocalServerUrl() {
     return await this.api.webServer.getLocalUrl?.();
