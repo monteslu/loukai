@@ -15,7 +15,7 @@
 
 import { detectWebGpu } from './creatorLibs.js';
 import { createKaraokeInWorker } from './createKaraokeClient.js';
-import { encodeWav } from './creatorAudio.js';
+import { encodeWav, assertHasAudioTrack, decodeFailure } from './creatorAudio.js';
 import { encodeWavToAac } from './aacEncoder.js';
 
 // Decode raw file bytes (any browser-decodable container) → stereo Float32 channels.
@@ -24,10 +24,14 @@ import { encodeWavToAac } from './aacEncoder.js';
 // avoids leaking a live AudioContext per decode.
 async function decodeBytes(bytes) {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  assertHasAudioTrack(u8, 'The uploaded file');
   const ctx = new OfflineAudioContext(2, 1, 44100);
-  const buf = await ctx.decodeAudioData(
-    u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)
-  );
+  let buf;
+  try {
+    buf = await ctx.decodeAudioData(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength));
+  } catch (e) {
+    throw decodeFailure('the uploaded file', e);
+  }
   const left = buf.getChannelData(0);
   const right = buf.numberOfChannels > 1 ? buf.getChannelData(1) : buf.getChannelData(0);
   return {

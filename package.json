@@ -23,7 +23,7 @@
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint src/",
+    "lint": "eslint src/ --max-warnings 0",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write \"src/**/*.{js,jsx,json,css,md}\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,json,css,md}\"",
@@ -220,7 +220,14 @@
       ],
       "icon": "static/images/logo.png",
       "artifactName": "${productName}-${version}-macos-${arch}.${ext}",
-      "identity": null
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Loukai uses the microphone to play your singing through the speakers and score your pitch."
+      }
     },
     "dmg": {
       "writeUpdateInfo": false
@@ -251,5 +258,9 @@
     "bin/",
     "static/",
     "scripts/ensure-electron.js"
-  ]
+  ],
+  "allowScripts": {
+    "@kmamal/sdl": true,
+    "esbuild": true
+  }
 }

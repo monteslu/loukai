@@ -231,6 +231,7 @@ export async function createKaraoke(
             const reader = res.body.getReader();
             const chunks = [];
             for (;;) {
+              // eslint-disable-next-line no-await-in-loop -- a stream reader has to be read one chunk at a time
               const { done, value } = await reader.read();
               if (done) break;
               chunks.push(value);
@@ -351,6 +352,7 @@ export async function createKaraoke(
     const label = typeof dtype === 'string' ? dtype : JSON.stringify(dtype);
     onLog(`loading Whisper model · ${want} · ${device}/${label} (first run downloads it) …`);
     try {
+      // eslint-disable-next-line no-await-in-loop -- try each dtype in order and keep the first that loads
       asr = await pipeline('automatic-speech-recognition', want, {
         device,
         dtype,

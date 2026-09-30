@@ -9,14 +9,14 @@ on:
 jobs:
   quality-checks:
     name: Code Quality & Security
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -40,14 +40,14 @@ jobs:
 
   test:
     name: Run Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -58,18 +58,8 @@ jobs:
       - name: Run tests with coverage
         run: npm run test:coverage
 
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
-        if: always()
-        with:
-          files: ./coverage/coverage-final.json
-          flags: unittests
-          name: codecov-umbrella
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
       - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-report
@@ -78,15 +68,15 @@ jobs:
 
   build:
     name: Build Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [quality-checks, test]
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -118,7 +108,7 @@ jobs:
           echo "✅ Build artifacts verified"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-artifacts
           path: |
@@ -129,7 +119,7 @@ jobs:
   # Optional: Bundle size check
   bundle-size:
     name: Bundle Size Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build
     if: github.event_name == 'pull_request'
     permissions:
@@ -138,10 +128,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-artifacts
 
@@ -164,7 +154,7 @@ jobs:
           find renderer/ web/ -type f -name "*.js" -exec ls -lh {} \; | sort -k5 -hr | head -5 | awk '{print $9, $5}'
 
       - name: Comment PR with bundle size
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         if: github.event_name == 'pull_request'
         with:
           script: |
@@ -186,7 +176,7 @@ jobs:
   # Success summary
   ci-success:
     name: CI Success
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [quality-checks, test, build]
     if: success()
 

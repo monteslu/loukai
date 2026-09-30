@@ -309,3 +309,81 @@ export function groupWordsIntoLines(
   lines.dropped = dropped; // non-breaking: expose what grouping culled
   return lines;
 }
+
+// Walk ISO-BMFF boxes in [start, end) and return the ones of `type`.
+function mp4Boxes(view, start, end, type) {
+  const found = [];
+  let pos = start;
+  while (pos + 8 <= end) {
+    let size = view.getUint32(pos);
+    let header = 8;
+    if (size === 1) {
+      if (pos + 16 > end) break;
+      size = Number(view.getBigUint64(pos + 8));
+      header = 16;
+    } else if (size === 0) {
+      size = end - pos;
+    }
+    if (size < header || pos + size > end) break;
+    const name = String.fromCharCode(
+      view.getUint8(pos + 4),
+      view.getUint8(pos + 5),
+      view.getUint8(pos + 6),
+      view.getUint8(pos + 7)
+    );
+    if (name === type) found.push({ start: pos + header, end: pos + size });
+    pos += size;
+  }
+  return found;
+}
+
+/**
+ * Does an MP4/M4A/MOV file contain an audio track? Reads the handler type of
+ * every moov/trak/mdia/hdlr. Returns null when the bytes aren't an MP4-family
+ * container (so the caller can't say either way).
+ */
+export function mp4HasAudioTrack(bytes) {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  const [moov] = mp4Boxes(view, 0, u8.byteLength, 'moov');
+  if (!moov) return null;
+  for (const trak of mp4Boxes(view, moov.start, moov.end, 'trak')) {
+    for (const mdia of mp4Boxes(view, trak.start, trak.end, 'mdia')) {
+      for (const hdlr of mp4Boxes(view, mdia.start, mdia.end, 'hdlr')) {
+        // full-box version/flags (4) + pre_defined (4), then the handler type
+        if (hdlr.start + 12 > hdlr.end) continue;
+        const handler = String.fromCharCode(...u8.subarray(hdlr.start + 8, hdlr.start + 12));
+        if (handler === 'soun') return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Throw a clear error for an MP4-family file with no audio track (a video-only
+ * download is a common way to end up with one). Chromium's decodeAudioData only
+ * says "Unable to decode audio data" for these. Call before decoding: decoding
+ * detaches the buffer, so it can't be inspected afterwards.
+ */
+export function assertHasAudioTrack(bytes, fileName) {
+  let hasAudio = null;
+  try {
+    hasAudio = mp4HasAudioTrack(bytes);
+  } catch {
+    /* unreadable container: leave it to the decoder */
+  }
+  if (hasAudio === false) {
+    throw new Error(
+      `${fileName || 'This file'} has no audio track (it's video only). Get a copy that includes the audio and try again.`
+    );
+  }
+}
+
+/** Wrap a decodeAudioData failure in a message that names the file and says what to try. */
+export function decodeFailure(fileName, err) {
+  const reason = err?.message ? ` (${err.message})` : '';
+  return new Error(
+    `Couldn't decode the audio in ${fileName || 'this file'}${reason}. The file may be damaged or in a format the browser can't play; try converting it to MP3 or WAV.`
+  );
+}

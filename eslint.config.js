@@ -158,6 +158,15 @@ export default [
     },
   },
 
+  // Tests: fakes for async APIs (ONNX session.run, the Whisper pipeline) stay
+  // async so they return promises like the real thing, with or without an await.
+  {
+    files: ['**/*.test.js', '**/*.test.jsx'],
+    rules: {
+      'require-await': 'off',
+    },
+  },
+
   // Prettier must be last to override formatting rules
   prettierConfig,
 ];
