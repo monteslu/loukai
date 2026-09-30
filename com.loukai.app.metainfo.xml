@@ -48,6 +48,20 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.15.0" date="2026-09-30">
+      <description>
+        <p>Electron 44, signed Mac builds, and progress bars in the creator</p>
+        <ul>
+          <li>Upgraded to Electron 44 (Chromium 152). On Mac, macOS 13 or later is now required</li>
+          <li>The Mac builds are signed and notarized, so the Apple Silicon build no longer shows as damaged</li>
+          <li>The creator shows a progress bar for each stem while encoding, and an animated bar for transcribing, pitch detection and saving, including when the LLM is correcting lyrics</li>
+          <li>Fixed characters sometimes repeating when typing on macOS</li>
+          <li>A video file with no audio track now gets a clear "no audio track" message in the creator</li>
+          <li>Importing a stem file with lyric correction no longer drops its word timing, singers and chords</li>
+          <li>Security updates for several server dependencies</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.14.5" date="2026-09-09">
       <description>
         <p>Songs that open with backup-singer lines now show the right intro</p>

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-30
+
+### Changed
+- Upgraded Electron from 42 to 44 (Chromium 152). Electron 42 stops getting
+  fixes on October 20. macOS 13 (Ventura) or later is now required on Mac
+- The macOS builds are now signed and notarized. The Apple Silicon build was
+  unsigned, so macOS reported it as damaged and refused to open it (#127)
+- The creator shows a progress bar for each stem and the mixdown while it
+  encodes them, instead of a pulsing dot. Steps with no measurable progress
+  (transcribing, pitch detection, saving) show an animated bar, and while
+  saving it says when the LLM is correcting lyrics
+
+### Fixed
+- Characters could repeat when typing in text fields on macOS. The gamepad
+  library started a macOS video driver inside the app that read keystrokes
+  from the same queue as the app window; it now uses a no-op video driver,
+  which gamepads don't need
+- Creating a song from a video file with no audio track failed with "Unable
+  to decode audio data". It now says the file has no audio track, and other
+  decode failures name the file and suggest converting it to MP3 or WAV
+- Importing a stem file with lyric correction on dropped its word timing,
+  singers and chords, keeping only the corrected lines. It now keeps them
+
+### Security
+- Updated multer, engine.io, qs and ip-address for published advisories
+
 ## [0.14.5] - 2026-09-09
 
 ### Fixed
