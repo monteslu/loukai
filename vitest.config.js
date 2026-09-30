@@ -64,10 +64,15 @@ export default defineConfig({
       // main, JSX, vendored libs, .flatpak-builder copies) and the gate had been red on
       // main since early June. These reflect what jsdom unit tests can honestly cover;
       // GPU/Worker/IO code is verified by build + manual/integration tests instead.
+      // Branches dropped from 82 to 71 with vitest 3 -> 5, from measurement alone:
+      // vitest 4+ counts every branch in the source (AST-aware remapping), while
+      // vitest 3 only counted branches V8 reported, which leaves out functions that
+      // never ran. creatorService.js alone went from 41 counted branches to 190
+      // (35 covered). Raise this as tests land there.
       thresholds: {
         lines: 85,
         functions: 88,
-        branches: 82,
+        branches: 71,
         statements: 85,
       },
     },
