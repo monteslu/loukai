@@ -219,7 +219,14 @@
       ],
       "icon": "static/images/logo.png",
       "artifactName": "${productName}-${version}-macos-${arch}.${ext}",
-      "identity": null
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Loukai uses the microphone to play your singing through the speakers and score your pitch."
+      }
     },
     "dmg": {
       "writeUpdateInfo": false
