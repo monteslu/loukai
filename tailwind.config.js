@@ -14,8 +14,13 @@ export default {
     extend: {
       animation: {
         'slide-in': 'slideIn 0.3s ease',
+        indeterminate: 'indeterminate 1.4s ease-in-out infinite',
       },
       keyframes: {
+        indeterminate: {
+          '0%': { left: '-33%' },
+          '100%': { left: '100%' },
+        },
         slideIn: {
           'from': {
             transform: 'translateX(100%)',

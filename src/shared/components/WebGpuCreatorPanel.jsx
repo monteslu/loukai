@@ -17,6 +17,8 @@ import {
   SongTitle,
   StemProgressBars,
   CreatorJobBanner,
+  IndeterminateProgress,
+  ENCODED_STEMS,
 } from './creatorUi.jsx';
 import { useCreatorJob } from '../hooks/useCreatorJob.js';
 
@@ -57,6 +59,7 @@ export default function WebGpuCreatorPanel() {
   const [whisperDtype, setWhisperDtype] = useState('q4f16');
   const [status, setStatus] = useState('idle'); // idle | separating | transcribing | done | error
   const [stemProgress, setStemProgress] = useState({}); // per-stem 0..1 (ft ensemble)
+  const [encodeProgress, setEncodeProgress] = useState({}); // per-stem AAC encode 0..1
   // Demucs separation model — default to the fast single htdemucs.
   const [demucsModel, setDemucsModel] = useState('htdemucs');
   const [ftAvailable, setFtAvailable] = useState(true); // htdemucs_ft models present?
@@ -595,8 +598,7 @@ export default function WebGpuCreatorPanel() {
       }
 
       // --- Save as .stem.mp4 (encode 4 stems → POST → backend muxes via ffmpeg) ---
-      setStatus('saving');
-      log('encoding stems + saving .stem.mp4 …');
+      setStatus(lyricsOnly ? 'saving' : 'encoding');
       // Title/artist: prefer the UI fields, else parse "Artist - Title.ext".
       const baseName = file.name.replace(/\.[^.]+$/, '');
       const dash = baseName.match(/^(.+?)\s*-\s*(.+)$/);
@@ -666,10 +668,17 @@ export default function WebGpuCreatorPanel() {
       // CONCURRENT on the encoder worker pool: sequential encoding pinned one
       // core 5x as long as needed.
       log('encoding stems to AAC (ffmpeg-wasm, parallel)…');
+      setEncodeProgress({});
       const stemKeys = Object.keys(wavBlobs);
       const encoded = await Promise.all(
-        stemKeys.map((k) => encodeWavToAac(wavBlobs[k], { tag: k }))
+        stemKeys.map((k) =>
+          encodeWavToAac(wavBlobs[k], {
+            onProgress: (frac) => setEncodeProgress((p) => ({ ...p, [k]: frac })),
+          })
+        )
       );
+      setStatus('saving');
+      log('saving .stem.mp4 …');
       const aacBytes = {};
       stemKeys.forEach((k, i) => {
         aacBytes[k] = encoded[i];
@@ -753,6 +762,7 @@ export default function WebGpuCreatorPanel() {
     status === 'transcribing' ||
     status === 'correcting' ||
     status === 'pitch' ||
+    status === 'encoding' ||
     status === 'saving';
 
   // A creation is running on ANOTHER surface (web admin / phone). We don't own it,
@@ -1150,24 +1160,39 @@ export default function WebGpuCreatorPanel() {
           </div>
         )}
         {status === 'transcribing' && (
-          <div className="text-sm text-gray-600 dark:text-gray-400">
-            <span className="inline-block animate-pulse">●</span>{' '}
-            {transcribeInfo || 'Transcribing vocals…'}
+          <div className={STYLES.card}>
+            <IndeterminateProgress label={transcribeInfo || 'Transcribing vocals…'} />
           </div>
         )}
         {status === 'correcting' && (
-          <div className="text-sm text-gray-600 dark:text-gray-400">
-            <span className="inline-block animate-pulse">●</span> Correcting lyrics with LLM…
+          <div className={STYLES.card}>
+            <IndeterminateProgress label="Correcting lyrics with LLM…" />
           </div>
         )}
         {status === 'pitch' && (
-          <div className="text-sm text-gray-600 dark:text-gray-400">
-            <span className="inline-block animate-pulse">●</span> Detecting pitch + key (CREPE)…
+          <div className={STYLES.card}>
+            <IndeterminateProgress label="Detecting pitch + key (CREPE)…" />
+          </div>
+        )}
+        {status === 'encoding' && (
+          <div className={STYLES.card}>
+            <StemProgressBars
+              progress={encodeProgress}
+              stems={ENCODED_STEMS}
+              label="Encoding stems to AAC…"
+            />
           </div>
         )}
         {status === 'saving' && (
-          <div className="text-sm text-gray-600 dark:text-gray-400">
-            <span className="inline-block animate-pulse">●</span> Encoding stems + saving .stem.mp4…
+          <div className={STYLES.card}>
+            {/* The backend runs LLM lyric correction inside the save request. */}
+            <IndeterminateProgress
+              label={
+                llmSettings.enabled && !/\.stem\.mp4$/i.test(fileName || '')
+                  ? 'Correcting lyrics with LLM + saving .stem.mp4…'
+                  : 'Saving .stem.mp4…'
+              }
+            />
           </div>
         )}
 

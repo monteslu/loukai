@@ -143,27 +143,31 @@ export function CreatorJobBanner({ job, selfActive = false, own = false }) {
   );
 }
 
+export const SEPARATED_STEMS = [
+  { key: 'drums', emoji: '🥁' },
+  { key: 'bass', emoji: '🎸' },
+  { key: 'other', emoji: '🎹' },
+  { key: 'vocals', emoji: '🎤' },
+];
+
+// Encoding also covers the original mix (NI-Stems track 0).
+export const ENCODED_STEMS = [{ key: 'master', emoji: '🎚️', name: 'mixdown' }, ...SEPARATED_STEMS];
+
 /**
- * Per-stem progress bars (drums/bass/other/vocals) — the WebGPU creator's nicer
- * separation progress, shared so it's reusable. `progress` is { stem: 0..1 }.
+ * Per-stem progress bars — the WebGPU creator's separation progress, shared so
+ * encoding can use it too. `progress` is { stem: 0..1 }.
  */
-export function StemProgressBars({ progress = {}, label }) {
-  const stems = [
-    { key: 'drums', emoji: '🥁' },
-    { key: 'bass', emoji: '🎸' },
-    { key: 'other', emoji: '🎹' },
-    { key: 'vocals', emoji: '🎤' },
-  ];
+export function StemProgressBars({ progress = {}, label, stems = SEPARATED_STEMS }) {
   return (
     <div>
       {label && <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">{label}</div>}
       <div className="flex flex-col gap-1.5">
-        {stems.map(({ key, emoji }) => {
+        {stems.map(({ key, emoji, name = key }) => {
           const frac = progress[key] || 0;
           return (
             <div key={key} className="flex items-center gap-2">
               <span className="w-20 text-xs text-gray-600 dark:text-gray-400">
-                {emoji} {key}
+                {emoji} {name}
               </span>
               <div className="flex-1 h-2 rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
                 <div
@@ -177,6 +181,21 @@ export function StemProgressBars({ progress = {}, label }) {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Progress bar for a step with no measurable progress (an LLM request, pitch
+ * detection): a sliding segment, so it reads as working rather than stalled.
+ */
+export function IndeterminateProgress({ label }) {
+  return (
+    <div role="progressbar" aria-busy="true" aria-label={label}>
+      {label && <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">{label}</div>}
+      <div className="relative h-2 rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
+        <div className="absolute inset-y-0 w-1/3 rounded bg-blue-600 animate-indeterminate motion-reduce:left-0 motion-reduce:w-full motion-reduce:animate-pulse" />
       </div>
     </div>
   );
